@@ -1,0 +1,45 @@
+[package]
+name = "pedalboard-gui"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Modern GUI for Pedalboard3"
+
+[dependencies]
+pedalboard-utils = { path = "../pedalboard-utils" }
+pedalboard-core = { path = "../pedalboard-core" }
+pedalboard-audio = { path = "../pedalboard-audio" }
+pedalboard-plugins = { path = "../pedalboard-plugins" }
+
+# GUI Framework
+egui = { workspace = true }
+eframe = { version = "0.24", default-features = false, features = [
+    "accesskit",
+    "default_fonts",
+    "glow",
+    "persistence",
+] }
+
+# Async and threading
+tokio = { workspace = true, features = ["full"] }
+crossbeam = { workspace = true }
+
+# Audio visualization
+plotters = "0.3"
+plotters-bitmap = "0.3"
+
+# Utilities
+anyhow = { workspace = true }
+serde = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# Color and styling
+egui_extras = { version = "0.24", features = ["default"] }
+egui_plot = "0.24"
+
+[[bin]]
+name = "pedalboard3-gui"
+path = "src/main.rs"

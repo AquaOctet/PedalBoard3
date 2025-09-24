@@ -1,0 +1,193 @@
+# =============================================================================
+# Pedalboard3 Project .gitignore
+# Audio plugin host modernization project
+# =============================================================================
+
+# =============================================================================
+# KEEP ORIGINAL FILES (READ-ONLY)
+# =============================================================================
+# Note: Original executables and source code are preserved for reference
+# Don't ignore these as they're needed for analysis and testing
+
+# =============================================================================
+# RUST/CARGO BUILD ARTIFACTS
+# =============================================================================
+target/
+pedalboard3/target/
+Cargo.lock
+**/*.rs.bk
+*.pdb
+
+# =============================================================================
+# C++/JUCE BUILD ARTIFACTS (for alternative C++ path)
+# =============================================================================
+# Visual Studio
+*.vcxproj.user
+*.vcproj.user
+*.suo
+*.user
+*.sdf
+*.opensdf
+*.db
+*.opendb
+.vs/
+Debug/
+Release/
+x64/
+x86/
+Win32/
+*.exe
+*.dll
+*.lib
+*.exp
+*.pdb
+*.ilk
+*.manifest
+*.res
+
+# Xcode
+*.xcworkspace
+xcuserdata/
+DerivedData/
+*.xccheckout
+*.moved-aside
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CMakeScripts/
+install_manifest.txt
+compile_commands.json
+
+# Make
+*.o
+*.so
+*.dylib
+*.a
+
+# =============================================================================
+# AUDIO/PLUGIN SPECIFIC
+# =============================================================================
+# Audio files generated during testing
+*.wav
+*.aiff
+*.aif
+*.mp3
+*.flac
+*.ogg
+recordings/
+test_audio/
+
+# Plugin scan cache
+plugin_cache/
+*.vst3_cache
+*.au_cache
+*.clap_cache
+
+# JUCE generated files
+JuceLibraryCode/
+*.jucer.bak
+
+# VST SDK (if downloaded locally)
+VST_SDK/
+VST3_SDK/
+ASIO_SDK/
+
+# Plugin presets and patches (unless part of test suite)
+user_patches/
+user_presets/
+*.filtergraph.bak
+
+# =============================================================================
+# DEVELOPMENT ENVIRONMENT
+# =============================================================================
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Editor directories and files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+
+# Environment variables
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# =============================================================================
+# WEB/NODE (for potential web-based GUI)
+# =============================================================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.yarn-integrity
+*.tgz
+package-lock.json
+yarn.lock
+
+# Build outputs
+dist/
+build/
+out/
+
+# =============================================================================
+# TESTING AND COVERAGE
+# =============================================================================
+coverage/
+*.lcov
+.nyc_output
+test_results/
+benchmarks/
+
+# =============================================================================
+# LOGGING AND TEMPORARY FILES
+# =============================================================================
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# =============================================================================
+# DOCUMENTATION BUILD (auto-generated)
+# =============================================================================
+# Keep original documentation/ and pedalboard3 development docs
+# Only ignore auto-generated documentation
+generated_docs/
+api_docs/
+target/doc/
+**/target/doc/
+
+# =============================================================================
+# PROJECT-SPECIFIC ARTIFACTS
+# =============================================================================
+# Demo and development scripts outputs
+*.bat.log
+demo_output/
+test_output/
+
+# Workspace files (if using VS Code workspace)
+*.code-workspace
