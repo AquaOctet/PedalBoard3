@@ -1,0 +1,159 @@
+// Tests for pedalboard3::engine::AudioGraphRuntime — the atomic graph-swap
+// primitive. Phase 1.A scope: null-safety, swap correctness, generation
+// counter, built-in OutputSanitiser pass. The full patch-switch state
+// machine arrives in Phase 1.D.
+
+#include <catch2/catch_test_macros.hpp>
+
+#include "engine/AudioGraphRuntime.h"
+#include "support/OfflineRender.h"
+#include "support/TestGainProcessor.h"
+
+#include <juce_audio_processors/juce_audio_processors.h>
+
+#include <limits>
+#include <memory>
+
+using namespace pedalboard3;
+using namespace pedalboard3::testing;
+
+namespace
+{
+
+using AudioGraph = juce::AudioProcessorGraph;
+
+// Build a minimal stereo graph: audioInput → gainProc → audioOutput.
+// Return the graph (ownership moves to caller) and the gain node's id so
+// tests can introspect if needed. The graph is NOT prepared yet.
+struct BuiltGraph
+{
+    std::unique_ptr<AudioGraph> graph;
+    AudioGraph::NodeID          gainNodeId;
+};
+
+BuiltGraph buildGainGraph(float gain)
+{
+    auto g = std::make_unique<AudioGraph>();
+    g->setPlayConfigDetails(2, 2, kDefaultSampleRate, kDefaultBlockSize);
+
+    auto inNode  = g->addNode(std::make_unique<AudioGraph::AudioGraphIOProcessor>(
+                                  AudioGraph::AudioGraphIOProcessor::audioInputNode));
+    auto outNode = g->addNode(std::make_unique<AudioGraph::AudioGraphIOProcessor>(
+                                  AudioGraph::AudioGraphIOProcessor::audioOutputNode));
+    auto gainNode = g->addNode(std::make_unique<TestGainProcessor>(gain));
+
+    // Wire stereo input → gain → output.
+    g->addConnection({ { inNode->nodeID,   0 }, { gainNode->nodeID, 0 } });
+    g->addConnection({ { inNode->nodeID,   1 }, { gainNode->nodeID, 1 } });
+    g->addConnection({ { gainNode->nodeID, 0 }, { outNode->nodeID,  0 } });
+    g->addConnection({ { gainNode->nodeID, 1 }, { outNode->nodeID,  1 } });
+
+    return { std::move(g), gainNode->nodeID };
+}
+
+} // namespace
+
+TEST_CASE("AudioGraphRuntime: no live graph produces silence", "[engine][runtime]")
+{
+    engine::AudioGraphRuntime rt;
+    rt.setPlayConfigDetails(2, 2, kDefaultSampleRate, kDefaultBlockSize);
+    rt.prepareToPlay(kDefaultSampleRate, kDefaultBlockSize);
+
+    auto buf = makeTestBuffer(2, kDefaultBlockSize);
+    fillDC(buf, 0.5f);
+
+    renderBlocks(rt, buf);
+
+    REQUIRE(isSilent(buf));
+    REQUIRE(rt.getLiveGraph() == nullptr);
+}
+
+TEST_CASE("AudioGraphRuntime: swapped-in graph runs and audio flows", "[engine][runtime]")
+{
+    engine::AudioGraphRuntime rt;
+    rt.setPlayConfigDetails(2, 2, kDefaultSampleRate, kDefaultBlockSize);
+    rt.prepareToPlay(kDefaultSampleRate, kDefaultBlockSize);
+
+    auto built = buildGainGraph(2.0f);
+    built.graph->prepareToPlay(kDefaultSampleRate, kDefaultBlockSize);
+    auto* graphRaw = built.graph.get();
+
+    auto prev = rt.swapPreparedGraph(std::move(built.graph));
+    REQUIRE(prev == nullptr);                          // no prior live graph
+    REQUIRE(rt.getLiveGraph() == graphRaw);
+
+    auto buf = makeTestBuffer(2, kDefaultBlockSize);
+    fillDC(buf, 0.25f);
+
+    renderBlocks(rt, buf);
+
+    // Gain of 2 applied: 0.25 -> 0.5. Sanitiser lets it through (well under
+    // the 1.5 ceiling).
+    for (int ch = 0; ch < buf.getNumChannels(); ++ch)
+        for (int n = 0; n < buf.getNumSamples(); ++n)
+            REQUIRE(buf.getReadPointer(ch)[n] == 0.5f);
+}
+
+TEST_CASE("AudioGraphRuntime: swapping returns the previously-live graph",
+          "[engine][runtime]")
+{
+    engine::AudioGraphRuntime rt;
+    rt.setPlayConfigDetails(2, 2, kDefaultSampleRate, kDefaultBlockSize);
+    rt.prepareToPlay(kDefaultSampleRate, kDefaultBlockSize);
+
+    auto a = buildGainGraph(2.0f);
+    a.graph->prepareToPlay(kDefaultSampleRate, kDefaultBlockSize);
+    auto* aRaw = a.graph.get();
+    auto pre = rt.swapPreparedGraph(std::move(a.graph));
+    REQUIRE(pre == nullptr);
+
+    auto b = buildGainGraph(3.0f);
+    b.graph->prepareToPlay(kDefaultSampleRate, kDefaultBlockSize);
+    auto* bRaw = b.graph.get();
+    auto outA = rt.swapPreparedGraph(std::move(b.graph));
+
+    REQUIRE(outA.get() == aRaw);
+    REQUIRE(rt.getLiveGraph() == bRaw);
+
+    // Clean up the returned graph on the message thread (we are the
+    // message thread for testing purposes). The runtime dtor will dispose
+    // of `b` when `rt` goes out of scope.
+    outA.reset();
+}
+
+TEST_CASE("AudioGraphRuntime: generation counter advances with each processed block",
+          "[engine][runtime]")
+{
+    engine::AudioGraphRuntime rt;
+    rt.setPlayConfigDetails(2, 2, kDefaultSampleRate, kDefaultBlockSize);
+    rt.prepareToPlay(kDefaultSampleRate, kDefaultBlockSize);
+
+    const auto startGen = rt.getGenerationAckedByAudio();
+
+    auto buf = makeTestBuffer(2, kDefaultBlockSize * 3);
+    renderBlocks(rt, buf);
+
+    REQUIRE(rt.getGenerationAckedByAudio() - startGen == 3u);
+}
+
+TEST_CASE("AudioGraphRuntime: sanitiser pass zeros any NaN/Inf/out-of-range the graph emits",
+          "[engine][runtime][sanitiser]")
+{
+    // Build a graph whose sole effect is to produce 2.0 (over the 1.5 ceiling)
+    // regardless of input. The runtime's sanitiser should zero it.
+    engine::AudioGraphRuntime rt;
+    rt.setPlayConfigDetails(2, 2, kDefaultSampleRate, kDefaultBlockSize);
+    rt.prepareToPlay(kDefaultSampleRate, kDefaultBlockSize);
+
+    auto built = buildGainGraph(10.0f);                 // input 0.25 * 10 = 2.5 -> clipped
+    built.graph->prepareToPlay(kDefaultSampleRate, kDefaultBlockSize);
+    rt.swapPreparedGraph(std::move(built.graph));
+
+    auto buf = makeTestBuffer(2, kDefaultBlockSize);
+    fillDC(buf, 0.25f);                                 // graph produces 2.5, sanitiser -> 0
+
+    renderBlocks(rt, buf);
+
+    REQUIRE(isSilent(buf));
+    REQUIRE(isFiniteEverywhere(buf));
+}
