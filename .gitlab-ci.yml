@@ -1,0 +1,136 @@
+# Pedalboard 3 — GitLab CI pipeline.
+#
+# Phase 0: Linux-only lint + build + unit tests using a stock ubuntu:24.04
+# image with inline apt installs. The custom CI Dockerfile at
+# ci/docker/Dockerfile.linux will be published to the project's Container
+# Registry in Phase 6, and the `image:` lines here will switch to it.
+#
+# Windows/macOS jobs are manual stubs that exit non-zero by design — they
+# light up in Phase 6 when self-hosted runners + signing creds are provisioned.
+#
+# Full multi-platform + signing pipeline lives in the plan at
+# docs/plans/2026-04-12-001-feat-pedalboard-3-rewrite-plan.md (Appendix C).
+
+stages:
+  - lint
+  - build
+  - test
+
+variables:
+  CI_DEBUG_TRACE: "false"              # AC-SE-19: never leak secrets to logs
+  GIT_DEPTH: "20"
+  GIT_SUBMODULE_STRATEGY: "recursive"  # harmless in Phase 0; future-proofs
+  CPM_SOURCE_CACHE: "${CI_PROJECT_DIR}/.cpm-cache"
+  CCACHE_DIR: "${CI_PROJECT_DIR}/.ccache"
+  CCACHE_MAXSIZE: "2G"
+  DEBIAN_FRONTEND: "noninteractive"
+
+default:
+  interruptible: true
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+      - scheduler_failure
+
+.rules-default: &rules-default
+  - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+  - if: '$CI_COMMIT_BRANCH == "v3-rewrite"'   # initial dev branch
+
+.cache-linux: &cache-linux
+  cache:
+    - key: "cpm-${CI_PROJECT_PATH_SLUG}"
+      paths: [ .cpm-cache/ ]
+      policy: pull-push
+    - key: "ccache-${CI_JOB_NAME_SLUG}"
+      paths: [ .ccache/ ]
+      policy: pull-push
+
+# Install the bare-minimum toolchain on top of ubuntu:24.04. Replaced by the
+# custom Dockerfile image in Phase 6.
+.ubuntu-setup: &ubuntu-setup
+  - apt-get update -qq
+  - >
+    apt-get install -y --no-install-recommends
+    ca-certificates curl git
+    build-essential cmake ninja-build pkg-config
+    clang-18 clang-format-18
+    libasound2-dev libjack-jackd2-dev
+    libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev
+    libxext-dev libxcomposite-dev libxrender-dev
+    libfreetype-dev libfontconfig1-dev
+    libgl-dev libglu1-mesa-dev
+    libcurl4-openssl-dev libwebkit2gtk-4.1-dev
+    ccache just
+  - ln -sf /usr/bin/clang-format-18 /usr/local/bin/clang-format
+
+# ===========================================================================
+# LINT
+# ===========================================================================
+lint:format:
+  stage: lint
+  image: ubuntu:24.04
+  rules: *rules-default
+  before_script: *ubuntu-setup
+  script:
+    - just format-check
+
+# ===========================================================================
+# BUILD
+# ===========================================================================
+build:linux:
+  stage: build
+  image: ubuntu:24.04
+  rules: *rules-default
+  <<: *cache-linux
+  variables:
+    CMAKE_C_COMPILER_LAUNCHER: ccache
+    CMAKE_CXX_COMPILER_LAUNCHER: ccache
+  before_script: *ubuntu-setup
+  script:
+    - ccache --zero-stats || true
+    - cmake --preset linux-dev -S app-v3
+    - cmake --build --preset linux-dev -- -j$(nproc)
+    - ccache --show-stats || true
+  artifacts:
+    paths:
+      - build/linux-dev/
+    expire_in: 1 day
+    when: on_success
+
+# Phase 6 stubs. `when: manual` ensures these never auto-run until we have
+# the runners. allow_failure keeps MR merges unblocked.
+build:windows:
+  stage: build
+  tags: [ self-hosted-windows ]
+  rules:
+    - when: manual
+  allow_failure: true
+  script:
+    - echo "Phase 6 stub — waiting on self-hosted Windows runner + signing creds."
+    - exit 1
+
+build:macos:
+  stage: build
+  tags: [ self-hosted-macos ]
+  rules:
+    - when: manual
+  allow_failure: true
+  script:
+    - echo "Phase 6 stub — waiting on self-hosted macOS runner + Developer ID."
+    - exit 1
+
+# ===========================================================================
+# TEST
+# ===========================================================================
+test:linux:unit:
+  stage: test
+  image: ubuntu:24.04
+  rules: *rules-default
+  needs: [ build:linux ]
+  <<: *cache-linux
+  before_script: *ubuntu-setup
+  script:
+    - ctest --preset linux-dev

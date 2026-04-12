@@ -1,0 +1,42 @@
+---
+# Pedalboard 3 house style. Based on JUCE's own style with minor tightening.
+Language: Cpp
+Standard: c++20
+BasedOnStyle: LLVM
+
+# Indentation
+IndentWidth: 4
+ContinuationIndentWidth: 4
+UseTab: Never
+AccessModifierOffset: -4
+NamespaceIndentation: All
+
+# Braces (Allman-ish, JUCE-flavored)
+BreakBeforeBraces: Allman
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+
+# Wrapping
+ColumnLimit: 120
+BinPackArguments: false
+BinPackParameters: false
+AlignAfterOpenBracket: Align
+AlwaysBreakTemplateDeclarations: Yes
+PenaltyReturnTypeOnItsOwnLine: 10000
+
+# Spacing
+SpacesInParentheses: false
+SpaceAfterCStyleCast: false
+SpaceBeforeParens: ControlStatements
+PointerAlignment: Left
+
+# Includes
+IncludeBlocks: Preserve
+SortIncludes: CaseInsensitive
+
+# Misc
+FixNamespaceComments: true
+CompactNamespaces: false
+ReflowComments: true
