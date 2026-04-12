@@ -11,6 +11,8 @@
 # Phase 1.C: PluginHost + PluginScanner.
 
 target_sources(Pedalboard3 PRIVATE
+    AudioGraphRuntime.cpp
+    AudioGraphRuntime.h
     BypassableInstance.cpp
     BypassableInstance.h
     processors/OutputSanitiser.cpp
