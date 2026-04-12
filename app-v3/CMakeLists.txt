@@ -65,21 +65,32 @@ if(PB3_ENABLE_CLAP AND NOT PB3_LINT_ONLY)
         GITHUB_REPOSITORY free-audio/clap
         GIT_TAG     1.2.7
     )
+    # clap-helpers has no release tags; track `main` and re-pin to a SHA
+    # once we have a known-good commit for the fork work in Phase 1.
     CPMAddPackage(
         NAME        clap-helpers
         GITHUB_REPOSITORY free-audio/clap-helpers
-        GIT_TAG     a61bcdf0ec12ee8d1b9d9d88ad56ee8aee3dc59e
+        GIT_TAG     main
     )
-    # Vendored fork (areadenialgames) for JUCE 8 compat + MIDI + macOS GUI.
-    # Ship-in-v3.0 decision per 2026-04-12 /ce:work kickoff.
+    # juce_clap_hosting — community module (upstream by Jatin Chowdhury).
+    # JUCE's `juce_add_module()` derives the module ID from the source
+    # directory's basename, so we can't point it at CPM's `-src` suffixed
+    # directory. Symlink to a correctly-named sibling and register from that.
+    # Ship-in-v3.0 decision per 2026-04-12 /ce:work kickoff; pin to a SHA
+    # in Phase 1 once we exercise hosting end-to-end.
     CPMAddPackage(
         NAME           juce_clap_hosting
-        GITHUB_REPOSITORY areadenialgames/juce_clap_hosting
-        GIT_TAG        926ba2522b2f8d2272fa1c9d411d27e5408ea15b
+        GITHUB_REPOSITORY jatinchowdhury18/juce_clap_hosting
+        GIT_TAG        main
         DOWNLOAD_ONLY  YES
     )
     if(juce_clap_hosting_ADDED)
-        juce_add_module(${juce_clap_hosting_SOURCE_DIR})
+        set(PB3_CLAP_HOSTING_LINK "${CMAKE_BINARY_DIR}/_deps/juce_clap_hosting")
+        if(NOT EXISTS "${PB3_CLAP_HOSTING_LINK}")
+            file(CREATE_LINK "${juce_clap_hosting_SOURCE_DIR}"
+                             "${PB3_CLAP_HOSTING_LINK}" SYMBOLIC)
+        endif()
+        juce_add_module("${PB3_CLAP_HOSTING_LINK}")
     endif()
 endif()
 

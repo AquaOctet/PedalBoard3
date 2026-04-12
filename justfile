@@ -61,7 +61,7 @@ format-check:
 
 # Launch the built hello-world app (Linux dev build).
 run:
-    build/linux-dev/Pedalboard3_artefacts/Debug/Pedalboard3
+    "build/linux-dev/src/Pedalboard3_artefacts/Debug/Pedalboard 3"
 
 # ---------- Clean ----------
 

@@ -11,7 +11,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "PB3_BUILD_TESTS": "ON",
-        "PB3_ENABLE_CLAP": "ON",
+        "PB3_ENABLE_CLAP": "OFF",
         "PB3_ENABLE_VST2": "OFF",
         "PB3_ENABLE_RTSAN": "OFF"
       },
@@ -30,7 +30,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "PB3_BUILD_TESTS": "ON",
-        "PB3_ENABLE_CLAP": "ON"
+        "PB3_ENABLE_CLAP": "OFF"
       },
       "condition": {
         "type": "equals",
