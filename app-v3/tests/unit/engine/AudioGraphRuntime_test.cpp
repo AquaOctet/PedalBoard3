@@ -28,7 +28,7 @@ using AudioGraph = juce::AudioProcessorGraph;
 struct BuiltGraph
 {
     std::unique_ptr<AudioGraph> graph;
-    AudioGraph::NodeID          gainNodeId;
+    AudioGraph::NodeID gainNodeId;
 };
 
 BuiltGraph buildGainGraph(float gain)
@@ -36,19 +36,19 @@ BuiltGraph buildGainGraph(float gain)
     auto g = std::make_unique<AudioGraph>();
     g->setPlayConfigDetails(2, 2, kDefaultSampleRate, kDefaultBlockSize);
 
-    auto inNode  = g->addNode(std::make_unique<AudioGraph::AudioGraphIOProcessor>(
-                                  AudioGraph::AudioGraphIOProcessor::audioInputNode));
-    auto outNode = g->addNode(std::make_unique<AudioGraph::AudioGraphIOProcessor>(
-                                  AudioGraph::AudioGraphIOProcessor::audioOutputNode));
+    auto inNode = g->addNode(
+        std::make_unique<AudioGraph::AudioGraphIOProcessor>(AudioGraph::AudioGraphIOProcessor::audioInputNode));
+    auto outNode = g->addNode(
+        std::make_unique<AudioGraph::AudioGraphIOProcessor>(AudioGraph::AudioGraphIOProcessor::audioOutputNode));
     auto gainNode = g->addNode(std::make_unique<TestGainProcessor>(gain));
 
     // Wire stereo input → gain → output.
-    g->addConnection({ { inNode->nodeID,   0 }, { gainNode->nodeID, 0 } });
-    g->addConnection({ { inNode->nodeID,   1 }, { gainNode->nodeID, 1 } });
-    g->addConnection({ { gainNode->nodeID, 0 }, { outNode->nodeID,  0 } });
-    g->addConnection({ { gainNode->nodeID, 1 }, { outNode->nodeID,  1 } });
+    g->addConnection({{inNode->nodeID, 0}, {gainNode->nodeID, 0}});
+    g->addConnection({{inNode->nodeID, 1}, {gainNode->nodeID, 1}});
+    g->addConnection({{gainNode->nodeID, 0}, {outNode->nodeID, 0}});
+    g->addConnection({{gainNode->nodeID, 1}, {outNode->nodeID, 1}});
 
-    return { std::move(g), gainNode->nodeID };
+    return {std::move(g), gainNode->nodeID};
 }
 
 } // namespace
@@ -79,7 +79,7 @@ TEST_CASE("AudioGraphRuntime: swapped-in graph runs and audio flows", "[engine][
     auto* graphRaw = built.graph.get();
 
     auto prev = rt.swapPreparedGraph(std::move(built.graph));
-    REQUIRE(prev == nullptr);                          // no prior live graph
+    REQUIRE(prev == nullptr); // no prior live graph
     REQUIRE(rt.getLiveGraph() == graphRaw);
 
     auto buf = makeTestBuffer(2, kDefaultBlockSize);
@@ -94,8 +94,7 @@ TEST_CASE("AudioGraphRuntime: swapped-in graph runs and audio flows", "[engine][
             REQUIRE(buf.getReadPointer(ch)[n] == 0.5f);
 }
 
-TEST_CASE("AudioGraphRuntime: swapping returns the previously-live graph",
-          "[engine][runtime]")
+TEST_CASE("AudioGraphRuntime: swapping returns the previously-live graph", "[engine][runtime]")
 {
     engine::AudioGraphRuntime rt;
     rt.setPlayConfigDetails(2, 2, kDefaultSampleRate, kDefaultBlockSize);
@@ -121,8 +120,7 @@ TEST_CASE("AudioGraphRuntime: swapping returns the previously-live graph",
     outA.reset();
 }
 
-TEST_CASE("AudioGraphRuntime: generation counter advances with each processed block",
-          "[engine][runtime]")
+TEST_CASE("AudioGraphRuntime: generation counter advances with each processed block", "[engine][runtime]")
 {
     engine::AudioGraphRuntime rt;
     rt.setPlayConfigDetails(2, 2, kDefaultSampleRate, kDefaultBlockSize);
@@ -145,12 +143,12 @@ TEST_CASE("AudioGraphRuntime: sanitiser pass zeros any NaN/Inf/out-of-range the 
     rt.setPlayConfigDetails(2, 2, kDefaultSampleRate, kDefaultBlockSize);
     rt.prepareToPlay(kDefaultSampleRate, kDefaultBlockSize);
 
-    auto built = buildGainGraph(10.0f);                 // input 0.25 * 10 = 2.5 -> clipped
+    auto built = buildGainGraph(10.0f); // input 0.25 * 10 = 2.5 -> clipped
     built.graph->prepareToPlay(kDefaultSampleRate, kDefaultBlockSize);
     rt.swapPreparedGraph(std::move(built.graph));
 
     auto buf = makeTestBuffer(2, kDefaultBlockSize);
-    fillDC(buf, 0.25f);                                 // graph produces 2.5, sanitiser -> 0
+    fillDC(buf, 0.25f); // graph produces 2.5, sanitiser -> 0
 
     renderBlocks(rt, buf);
 

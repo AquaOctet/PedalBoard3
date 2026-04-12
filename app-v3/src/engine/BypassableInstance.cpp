@@ -7,7 +7,7 @@ namespace pedalboard3::engine
 
 BypassableInstance::BypassableInstance(std::unique_ptr<juce::AudioProcessor> inner)
     : juce::AudioProcessor(BusesProperties()
-                               .withInput("Input",  juce::AudioChannelSet::stereo(), true)
+                               .withInput("Input", juce::AudioChannelSet::stereo(), true)
                                .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       inner_(std::move(inner))
 {
@@ -16,8 +16,8 @@ BypassableInstance::BypassableInstance(std::unique_ptr<juce::AudioProcessor> inn
 
 bool BypassableInstance::isBusesLayoutSupported(const BusesLayout& layouts) const
 {
-    return layouts.getMainInputChannelSet() == layouts.getMainOutputChannelSet()
-        && !layouts.getMainInputChannelSet().isDisabled();
+    return layouts.getMainInputChannelSet() == layouts.getMainOutputChannelSet() &&
+           !layouts.getMainInputChannelSet().isDisabled();
 }
 
 void BypassableInstance::prepareToPlay(double sampleRate, int blockSize)
@@ -28,7 +28,7 @@ void BypassableInstance::prepareToPlay(double sampleRate, int blockSize)
     // Scratch for the pre-plugin (dry) snapshot. 2x buffer gives a little
     // headroom for host block-size variation without reallocating mid-stream.
     const int scratchChannels = juce::jmax(getTotalNumInputChannels(), 2);
-    const int scratchFrames   = juce::jmax(blockSize * 2, 256);
+    const int scratchFrames = juce::jmax(blockSize * 2, 256);
     dryScratch_.setSize(scratchChannels, scratchFrames, false, false, true);
 
     inner_->setRateAndBufferSizeDetails(sampleRate, blockSize);
@@ -54,19 +54,18 @@ void BypassableInstance::setMidiChannel(int channel1To16Or0) noexcept
 
 BypassableInstance::CpuStats BypassableInstance::consumeCpuStats() noexcept
 {
-    return CpuStats {
+    return CpuStats{
         elapsedNanosAccum_.exchange(0, std::memory_order_acq_rel),
-        blockCountAccum_  .exchange(0, std::memory_order_acq_rel),
+        blockCountAccum_.exchange(0, std::memory_order_acq_rel),
     };
 }
 
-void BypassableInstance::processBlock(juce::AudioBuffer<float>& buffer,
-                                      juce::MidiBuffer& midi)
+void BypassableInstance::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
     const juce::ScopedNoDenormals nodn;
     const auto startTicks = std::chrono::steady_clock::now();
 
-    const int numSamples  = buffer.getNumSamples();
+    const int numSamples = buffer.getNumSamples();
     const int numChannels = buffer.getNumChannels();
 
     dryRamp_.setTargetValue(wantBypass_.load(std::memory_order_relaxed) ? 1.0f : 0.0f);
@@ -105,8 +104,8 @@ void BypassableInstance::processBlock(juce::AudioBuffer<float>& buffer,
     //    r == 1 -> fully dry. Linear sample-accurate ramp.
     for (int n = 0; n < numSamples; ++n)
     {
-        const float r        = dryRamp_.getNextValue();
-        const float wetGain  = 1.0f - r;
+        const float r = dryRamp_.getNextValue();
+        const float wetGain = 1.0f - r;
         for (int ch = 0; ch < numChannels; ++ch)
         {
             auto* out = buffer.getWritePointer(ch);
@@ -117,10 +116,9 @@ void BypassableInstance::processBlock(juce::AudioBuffer<float>& buffer,
 
     // 4. Metering. Relaxed add is fine — no cross-thread publication of
     //    partial results matters; message thread reads via exchange(0).
-    const auto elapsedNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                               std::chrono::steady_clock::now() - startTicks).count();
-    elapsedNanosAccum_.fetch_add(static_cast<std::uint64_t>(elapsedNs),
-                                 std::memory_order_relaxed);
+    const auto elapsedNs =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - startTicks).count();
+    elapsedNanosAccum_.fetch_add(static_cast<std::uint64_t>(elapsedNs), std::memory_order_relaxed);
     blockCountAccum_.fetch_add(1, std::memory_order_relaxed);
 }
 

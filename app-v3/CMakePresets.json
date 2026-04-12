@@ -7,7 +7,7 @@
       "displayName": "Linux Debug (dev inner loop)",
       "description": "Debug build on Linux with sanitizers off — the default dev preset.",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/../build/linux-dev",
+      "binaryDir": "${fileDir}/../build/linux-dev",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "PB3_BUILD_TESTS": "ON",
@@ -26,7 +26,7 @@
       "displayName": "Linux Release",
       "description": "Optimized release build on Linux. Used for CI release artifacts.",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/../build/linux-release",
+      "binaryDir": "${fileDir}/../build/linux-release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "PB3_BUILD_TESTS": "ON",
@@ -43,7 +43,7 @@
       "displayName": "Linux Debug + RealtimeSanitizer",
       "description": "Debug build with Clang -fsanitize=realtime. Requires clang-18+.",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/../build/linux-rtsan",
+      "binaryDir": "${fileDir}/../build/linux-rtsan",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_C_COMPILER": "clang",
@@ -62,7 +62,7 @@
       "displayName": "Lint-only configure",
       "description": "Fast configure that skips heavy dependencies (JUCE/CLAP/Catch2). Used by the lint CI stage.",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/../build/lint",
+      "binaryDir": "${fileDir}/../build/lint",
       "cacheVariables": {
         "PB3_LINT_ONLY": "ON"
       }
@@ -72,7 +72,7 @@
       "displayName": "Windows MSVC (CI)",
       "description": "Release build on Windows using MSVC. Runs on self-hosted QA runner (Phase 6).",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/../build/windows-ci",
+      "binaryDir": "${fileDir}/../build/windows-ci",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "PB3_BUILD_TESTS": "ON",
@@ -89,7 +89,7 @@
       "displayName": "macOS Universal (x86_64 + arm64)",
       "description": "Release build on macOS, universal binary. Runs on self-hosted Mac mini (Phase 6).",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/../build/macos-universal",
+      "binaryDir": "${fileDir}/../build/macos-universal",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "CMAKE_OSX_ARCHITECTURES": "x86_64;arm64",

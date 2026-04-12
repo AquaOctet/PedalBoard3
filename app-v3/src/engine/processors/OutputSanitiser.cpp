@@ -14,7 +14,7 @@ OutputSanitiser::OutputSanitiser()
 
 bool OutputSanitiser::isBusesLayoutSupported(const BusesLayout& layouts) const
 {
-    const auto inMain  = layouts.getMainInputChannelSet();
+    const auto inMain = layouts.getMainInputChannelSet();
     const auto outMain = layouts.getMainOutputChannelSet();
     return inMain == outMain && !inMain.isDisabled();
 }
@@ -24,7 +24,7 @@ void OutputSanitiser::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
     const juce::ScopedNoDenormals nodn;
 
     const int numChannels = buffer.getNumChannels();
-    const int numSamples  = buffer.getNumSamples();
+    const int numSamples = buffer.getNumSamples();
     bool sawBadSample = false;
 
     for (int ch = 0; ch < numChannels; ++ch)
