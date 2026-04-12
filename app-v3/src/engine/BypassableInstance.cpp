@@ -157,10 +157,11 @@ void BypassableInstance::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     elapsedNanosAccum_.fetch_add(static_cast<std::uint64_t>(elapsedNs), std::memory_order_relaxed);
     blockCountAccum_.fetch_add(1, std::memory_order_relaxed);
 
-    // 5. Watchdog. Budget is 0 until prepareToPlay sets it — skip the check
-    //    in that window so pre-prepare smoke tests don't die spuriously.
+    // 5. Watchdog. Default budget is UINT64_MAX, so un-prepared instances
+    //    don't trip. prepareToPlay lowers it to a realistic value; tests
+    //    set budget to 0 to force every block into the overrun branch.
     const auto budget = blockBudgetNanos_.load(std::memory_order_relaxed);
-    if (budget > 0 && static_cast<std::uint64_t>(elapsedNs) > budget)
+    if (static_cast<std::uint64_t>(elapsedNs) > budget)
     {
         if (consecutiveOverruns_.fetch_add(1, std::memory_order_relaxed) + 1 >= kConsecutiveOverrunsToDie)
         {

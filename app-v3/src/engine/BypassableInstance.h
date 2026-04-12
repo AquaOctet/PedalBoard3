@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <limits>
 #include <memory>
 
 namespace pedalboard3::engine
@@ -117,8 +118,11 @@ private:
     std::atomic<std::uint64_t> elapsedNanosAccum_{0};
     std::atomic<std::uint64_t> blockCountAccum_{0};
 
-    // Watchdog state.
-    std::atomic<std::uint64_t> blockBudgetNanos_{0}; // 0 until prepareToPlay sets it
+    // Watchdog state. Default budget is "infinite" so an un-prepared
+    // instance cannot trip the watchdog spuriously. prepareToPlay lowers
+    // it to a real value; setBlockBudgetNanos(0) in tests means "every
+    // block is an overrun".
+    std::atomic<std::uint64_t> blockBudgetNanos_{std::numeric_limits<std::uint64_t>::max()};
     std::atomic<int> consecutiveOverruns_{0};
     std::atomic<bool> dead_{false};
 
