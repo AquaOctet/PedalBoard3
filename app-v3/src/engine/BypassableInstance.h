@@ -81,6 +81,28 @@ public:
     // owns the BypassableInstance; nothing else needs this.
     juce::AudioProcessor* getHostedProcessor() const noexcept { return inner_.get(); }
 
+    // Watchdog — block-budget overrun tracking ----------------------------
+    //
+    // Measures how long each call into the hosted processor takes. If it
+    // exceeds `blockBudgetNanos_` three times in a row, the instance is
+    // marked "dead": subsequent processBlock calls output silence without
+    // invoking the hosted processor at all. A healthy (under-budget) block
+    // resets the overrun counter. The Phase 1.B SEH/signal guard lands on
+    // top of this and flips the same flag on a hard fault.
+    //
+    // Default budget in prepareToPlay is 75% of one block's wall-clock
+    // time, so a plugin that eats the entire block is immediately over.
+    // Tests set budget to 0 (every block overruns) or to uint64 max
+    // (unreachable) to drive behaviour deterministically.
+
+    void setBlockBudgetNanos(std::uint64_t ns) noexcept;
+    std::uint64_t getBlockBudgetNanos() const noexcept { return blockBudgetNanos_.load(std::memory_order_relaxed); }
+
+    bool isDead() const noexcept { return dead_.load(std::memory_order_acquire); }
+    void clearDeath() noexcept;
+
+    static constexpr int kConsecutiveOverrunsToDie = 3;
+
 private:
     static constexpr double kRampSeconds = 0.020; // 20 ms linear bypass fade
 
@@ -94,6 +116,11 @@ private:
 
     std::atomic<std::uint64_t> elapsedNanosAccum_{0};
     std::atomic<std::uint64_t> blockCountAccum_{0};
+
+    // Watchdog state.
+    std::atomic<std::uint64_t> blockBudgetNanos_{0}; // 0 until prepareToPlay sets it
+    std::atomic<int> consecutiveOverruns_{0};
+    std::atomic<bool> dead_{false};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BypassableInstance)
 };
