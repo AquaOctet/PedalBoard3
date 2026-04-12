@@ -9,6 +9,7 @@
 set(PB3_TEST_SOURCES
     smoke_test.cpp
     unit/engine/OutputSanitiser_test.cpp
+    unit/engine/BypassableInstance_test.cpp
 )
 
 add_executable(pb3_smoke_tests ${PB3_TEST_SOURCES})
@@ -18,6 +19,7 @@ add_executable(pb3_smoke_tests ${PB3_TEST_SOURCES})
 # Add source files here as they become testable. Keep this minimal — a unit
 # test for Foo should only pull Foo's .cpp + its direct deps.
 target_sources(pb3_smoke_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/engine/BypassableInstance.cpp
     ${CMAKE_SOURCE_DIR}/src/engine/processors/OutputSanitiser.cpp
 )
 
