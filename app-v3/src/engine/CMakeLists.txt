@@ -17,4 +17,6 @@ target_sources(Pedalboard3 PRIVATE
     BypassableInstance.h
     processors/OutputSanitiser.cpp
     processors/OutputSanitiser.h
+    processors/TestToneProcessor.cpp
+    processors/TestToneProcessor.h
 )

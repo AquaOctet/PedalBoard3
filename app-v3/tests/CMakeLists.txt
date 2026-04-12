@@ -11,6 +11,7 @@ set(PB3_TEST_SOURCES
     unit/engine/OutputSanitiser_test.cpp
     unit/engine/BypassableInstance_test.cpp
     unit/engine/AudioGraphRuntime_test.cpp
+    unit/engine/TestToneProcessor_test.cpp
 )
 
 add_executable(pb3_smoke_tests ${PB3_TEST_SOURCES})
@@ -23,6 +24,7 @@ target_sources(pb3_smoke_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/engine/AudioGraphRuntime.cpp
     ${CMAKE_SOURCE_DIR}/src/engine/BypassableInstance.cpp
     ${CMAKE_SOURCE_DIR}/src/engine/processors/OutputSanitiser.cpp
+    ${CMAKE_SOURCE_DIR}/src/engine/processors/TestToneProcessor.cpp
 )
 
 target_include_directories(pb3_smoke_tests PRIVATE
