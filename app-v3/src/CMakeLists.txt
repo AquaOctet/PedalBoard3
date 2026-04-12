@@ -49,3 +49,6 @@ if(PB3_ENABLE_CLAP)
 endif()
 
 target_include_directories(Pedalboard3 PRIVATE .)
+
+# Subsystems — each pulls sources into the Pedalboard3 target via target_sources.
+add_subdirectory(engine)
