@@ -9,7 +9,7 @@ IndentWidth: 4
 ContinuationIndentWidth: 4
 UseTab: Never
 AccessModifierOffset: -4
-NamespaceIndentation: All
+NamespaceIndentation: None
 
 # Braces (Allman-ish, JUCE-flavored)
 BreakBeforeBraces: Allman

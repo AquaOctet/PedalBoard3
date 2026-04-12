@@ -16,16 +16,14 @@
 
 using namespace pedalboard3;
 
-TEST_CASE("AudioEngine: constructs without crashing even if no audio device is available",
-          "[engine][audioengine]")
+TEST_CASE("AudioEngine: constructs without crashing even if no audio device is available", "[engine][audioengine]")
 {
     engine::AudioEngine eng;
     REQUIRE(eng.getRuntime() != nullptr);
     REQUIRE(eng.getDeviceManager() != nullptr);
 }
 
-TEST_CASE("AudioEngine: initialise with default devices is safe on headless systems",
-          "[engine][audioengine]")
+TEST_CASE("AudioEngine: initialise with default devices is safe on headless systems", "[engine][audioengine]")
 {
     engine::AudioEngine eng;
     const auto result = eng.initialise();
@@ -62,12 +60,11 @@ TEST_CASE("AudioEngine: loadGraph(nullptr) clears the runtime", "[engine][audioe
     REQUIRE(eng.getRuntime()->getLiveGraph() == nullptr);
 }
 
-TEST_CASE("AudioEngine: shutdown is idempotent and destructor is safe after it",
-          "[engine][audioengine]")
+TEST_CASE("AudioEngine: shutdown is idempotent and destructor is safe after it", "[engine][audioengine]")
 {
     engine::AudioEngine eng;
     eng.initialise();
     eng.shutdown();
-    eng.shutdown();   // must not crash
+    eng.shutdown(); // must not crash
     // Destructor runs at end of scope — should not double-shutdown.
 }

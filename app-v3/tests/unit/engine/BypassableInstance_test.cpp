@@ -16,22 +16,20 @@ using namespace pedalboard3::testing;
 
 namespace
 {
-std::unique_ptr<engine::BypassableInstance>
-makeBypassable(float gain = 2.0f, int blockSize = kDefaultBlockSize)
+std::unique_ptr<engine::BypassableInstance> makeBypassable(float gain = 2.0f, int blockSize = kDefaultBlockSize)
 {
     auto inner = std::make_unique<TestGainProcessor>(gain);
-    auto* innerRaw = inner.get();                 // kept for test inspection
+    auto* innerRaw = inner.get(); // kept for test inspection
     inner->setPlayConfigDetails(2, 2, kDefaultSampleRate, blockSize);
     auto wrapper = std::make_unique<engine::BypassableInstance>(std::move(inner));
     wrapper->setPlayConfigDetails(2, 2, kDefaultSampleRate, blockSize);
     wrapper->prepareToPlay(kDefaultSampleRate, blockSize);
-    (void) innerRaw;                              // for future extension
+    (void)innerRaw; // for future extension
     return wrapper;
 }
 } // namespace
 
-TEST_CASE("BypassableInstance: passes audio through the wrapped processor when not bypassed",
-          "[engine][bypassable]")
+TEST_CASE("BypassableInstance: passes audio through the wrapped processor when not bypassed", "[engine][bypassable]")
 {
     auto wrapper = makeBypassable(/*gain*/ 2.0f);
     REQUIRE_FALSE(wrapper->isBypassed());
@@ -47,8 +45,7 @@ TEST_CASE("BypassableInstance: passes audio through the wrapped processor when n
             REQUIRE(buf.getReadPointer(ch)[n] == 0.5f);
 }
 
-TEST_CASE("BypassableInstance: steady-state bypass passes dry signal unchanged",
-          "[engine][bypassable]")
+TEST_CASE("BypassableInstance: steady-state bypass passes dry signal unchanged", "[engine][bypassable]")
 {
     auto wrapper = makeBypassable(/*gain*/ 2.0f);
     wrapper->setBypass(true);
@@ -56,7 +53,8 @@ TEST_CASE("BypassableInstance: steady-state bypass passes dry signal unchanged",
     // Run a few blocks to let the ramp settle to 100% dry before measuring.
     auto warm = makeTestBuffer(2, kDefaultBlockSize);
     fillDC(warm, 0.0f);
-    for (int i = 0; i < 10; ++i) renderBlocks(*wrapper, warm);
+    for (int i = 0; i < 10; ++i)
+        renderBlocks(*wrapper, warm);
 
     auto buf = makeTestBuffer(2, kDefaultBlockSize);
     fillDC(buf, 0.25f);
@@ -68,8 +66,7 @@ TEST_CASE("BypassableInstance: steady-state bypass passes dry signal unchanged",
             REQUIRE(buf.getReadPointer(ch)[n] == 0.25f);
 }
 
-TEST_CASE("BypassableInstance: toggling bypass ramps instead of clicking",
-          "[engine][bypassable]")
+TEST_CASE("BypassableInstance: toggling bypass ramps instead of clicking", "[engine][bypassable]")
 {
     auto wrapper = makeBypassable(/*gain*/ 2.0f);
     REQUIRE_FALSE(wrapper->isBypassed());
@@ -77,7 +74,8 @@ TEST_CASE("BypassableInstance: toggling bypass ramps instead of clicking",
     // Let the wet-state ramp settle to fully wet.
     auto warm = makeTestBuffer(2, kDefaultBlockSize);
     fillDC(warm, 0.0f);
-    for (int i = 0; i < 10; ++i) renderBlocks(*wrapper, warm);
+    for (int i = 0; i < 10; ++i)
+        renderBlocks(*wrapper, warm);
 
     wrapper->setBypass(true);
 
@@ -90,7 +88,7 @@ TEST_CASE("BypassableInstance: toggling bypass ramps instead of clicking",
     renderBlocks(*wrapper, buf);
 
     const float first = buf.getReadPointer(0)[0];
-    const float last  = buf.getReadPointer(0)[kDefaultBlockSize - 1];
+    const float last = buf.getReadPointer(0)[kDefaultBlockSize - 1];
 
     // Moved toward dry.
     REQUIRE(first > last);
@@ -102,16 +100,15 @@ TEST_CASE("BypassableInstance: toggling bypass ramps instead of clicking",
     REQUIRE(isFiniteEverywhere(buf));
 }
 
-TEST_CASE("BypassableInstance: MIDI channel filter — 0 passes everything",
-          "[engine][bypassable][midi]")
+TEST_CASE("BypassableInstance: MIDI channel filter — 0 passes everything", "[engine][bypassable][midi]")
 {
     auto wrapper = makeBypassable();
-    wrapper->setMidiChannel(0);        // omni
+    wrapper->setMidiChannel(0); // omni
 
     auto buf = makeTestBuffer(2, kDefaultBlockSize);
     juce::MidiBuffer midi;
-    midi.addEvent(juce::MidiMessage::noteOn(3, 60, (juce::uint8) 100), 0);
-    midi.addEvent(juce::MidiMessage::noteOn(11, 60, (juce::uint8) 100), 0);
+    midi.addEvent(juce::MidiMessage::noteOn(3, 60, (juce::uint8)100), 0);
+    midi.addEvent(juce::MidiMessage::noteOn(11, 60, (juce::uint8)100), 0);
 
     renderBlocks(*wrapper, buf, midi);
 
@@ -120,16 +117,15 @@ TEST_CASE("BypassableInstance: MIDI channel filter — 0 passes everything",
     REQUIRE(inner->lastMidiEventCount.load() == 2);
 }
 
-TEST_CASE("BypassableInstance: MIDI channel filter — non-zero drops off-channel events",
-          "[engine][bypassable][midi]")
+TEST_CASE("BypassableInstance: MIDI channel filter — non-zero drops off-channel events", "[engine][bypassable][midi]")
 {
     auto wrapper = makeBypassable();
     wrapper->setMidiChannel(3);
 
     auto buf = makeTestBuffer(2, kDefaultBlockSize);
     juce::MidiBuffer midi;
-    midi.addEvent(juce::MidiMessage::noteOn(3, 60, (juce::uint8) 100), 0);     // kept
-    midi.addEvent(juce::MidiMessage::noteOn(11, 60, (juce::uint8) 100), 0);    // dropped
+    midi.addEvent(juce::MidiMessage::noteOn(3, 60, (juce::uint8)100), 0);  // kept
+    midi.addEvent(juce::MidiMessage::noteOn(11, 60, (juce::uint8)100), 0); // dropped
 
     renderBlocks(*wrapper, buf, midi);
 
@@ -138,8 +134,7 @@ TEST_CASE("BypassableInstance: MIDI channel filter — non-zero drops off-channe
     REQUIRE(inner->lastMidiEventCount.load() == 1);
 }
 
-TEST_CASE("BypassableInstance: CPU metering accumulates across blocks",
-          "[engine][bypassable][metering]")
+TEST_CASE("BypassableInstance: CPU metering accumulates across blocks", "[engine][bypassable][metering]")
 {
     auto wrapper = makeBypassable();
 

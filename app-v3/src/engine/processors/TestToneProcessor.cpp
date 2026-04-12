@@ -7,7 +7,7 @@ namespace pedalboard3::engine::processors
 
 TestToneProcessor::TestToneProcessor()
     : juce::AudioProcessor(BusesProperties()
-                               .withInput("Input",  juce::AudioChannelSet::stereo(), true)
+                               .withInput("Input", juce::AudioChannelSet::stereo(), true)
                                .withOutput("Output", juce::AudioChannelSet::stereo(), true))
 {
 }
@@ -22,8 +22,8 @@ void TestToneProcessor::prepareToPlay(double sampleRate, int /*blockSize*/)
 
 bool TestToneProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
 {
-    return layouts.getMainInputChannelSet() == layouts.getMainOutputChannelSet()
-        && !layouts.getMainInputChannelSet().isDisabled();
+    return layouts.getMainInputChannelSet() == layouts.getMainOutputChannelSet() &&
+           !layouts.getMainInputChannelSet().isDisabled();
 }
 
 void TestToneProcessor::setEnabled(bool shouldBeEnabled) noexcept
@@ -47,13 +47,11 @@ void TestToneProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
 
     gain_.setTargetValue(enabled_.load(std::memory_order_relaxed) ? 1.0f : 0.0f);
 
-    const float    amp       = amplitude_.load(std::memory_order_relaxed);
-    const double   freq      = static_cast<double>(frequency_.load(std::memory_order_relaxed));
-    const double   phaseStep = (sampleRate_ > 0.0)
-                               ? juce::MathConstants<double>::twoPi * freq / sampleRate_
-                               : 0.0;
+    const float amp = amplitude_.load(std::memory_order_relaxed);
+    const double freq = static_cast<double>(frequency_.load(std::memory_order_relaxed));
+    const double phaseStep = (sampleRate_ > 0.0) ? juce::MathConstants<double>::twoPi * freq / sampleRate_ : 0.0;
 
-    const int numSamples  = buffer.getNumSamples();
+    const int numSamples = buffer.getNumSamples();
     const int numChannels = buffer.getNumChannels();
 
     for (int n = 0; n < numSamples; ++n)

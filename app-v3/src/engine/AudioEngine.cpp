@@ -3,10 +3,7 @@
 namespace pedalboard3::engine
 {
 
-AudioEngine::AudioEngine()
-    : runtime_(std::make_unique<AudioGraphRuntime>())
-{
-}
+AudioEngine::AudioEngine() : runtime_(std::make_unique<AudioGraphRuntime>()) {}
 
 AudioEngine::~AudioEngine()
 {
@@ -46,8 +43,7 @@ void AudioEngine::shutdown()
     initialised_ = false;
 }
 
-std::unique_ptr<juce::AudioProcessorGraph>
-AudioEngine::loadGraph(std::unique_ptr<juce::AudioProcessorGraph> next)
+std::unique_ptr<juce::AudioProcessorGraph> AudioEngine::loadGraph(std::unique_ptr<juce::AudioProcessorGraph> next)
 {
     return runtime_->swapPreparedGraph(std::move(next));
 }

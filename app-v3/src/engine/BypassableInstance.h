@@ -27,8 +27,8 @@ class BypassableInstance : public juce::AudioProcessor
 public:
     struct CpuStats
     {
-        std::uint64_t elapsedNanos { 0 };
-        std::uint64_t blockCount   { 0 };
+        std::uint64_t elapsedNanos{0};
+        std::uint64_t blockCount{0};
     };
 
     explicit BypassableInstance(std::unique_ptr<juce::AudioProcessor> inner);
@@ -44,21 +44,20 @@ public:
 
     void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) override;
 
-    bool acceptsMidi()  const override { return inner_->acceptsMidi(); }
+    bool acceptsMidi() const override { return inner_->acceptsMidi(); }
     bool producesMidi() const override { return inner_->producesMidi(); }
     bool isMidiEffect() const override { return inner_->isMidiEffect(); }
     double getTailLengthSeconds() const override { return inner_->getTailLengthSeconds(); }
-    int getLatencySamples();                   // not override: we compute locally
+    int getLatencySamples(); // not override: we compute locally
 
     juce::AudioProcessorEditor* createEditor() override { return inner_->createEditor(); }
     bool hasEditor() const override { return inner_->hasEditor(); }
 
-    int getNumPrograms() override                      { return inner_->getNumPrograms(); }
-    int getCurrentProgram() override                   { return inner_->getCurrentProgram(); }
-    void setCurrentProgram(int i) override             { inner_->setCurrentProgram(i); }
-    const juce::String getProgramName(int i) override  { return inner_->getProgramName(i); }
-    void changeProgramName(int i, const juce::String& n) override
-    { inner_->changeProgramName(i, n); }
+    int getNumPrograms() override { return inner_->getNumPrograms(); }
+    int getCurrentProgram() override { return inner_->getCurrentProgram(); }
+    void setCurrentProgram(int i) override { inner_->setCurrentProgram(i); }
+    const juce::String getProgramName(int i) override { return inner_->getProgramName(i); }
+    void changeProgramName(int i, const juce::String& n) override { inner_->changeProgramName(i, n); }
 
     void getStateInformation(juce::MemoryBlock& m) override { inner_->getStateInformation(m); }
     void setStateInformation(const void* d, int s) override { inner_->setStateInformation(d, s); }
@@ -72,7 +71,7 @@ public:
     // MIDI channel filter. 0 = omni (pass everything). 1-16 = only pass
     // events whose channel matches. Matches Pedalboard2's MIDIChannel attr.
     void setMidiChannel(int channel1To16Or0) noexcept;
-    int  getMidiChannel() const noexcept { return midiChannel_; }
+    int getMidiChannel() const noexcept { return midiChannel_; }
 
     // Lock-free CPU-metering read. Resets counters as a side effect so the
     // next read accumulates fresh numbers. Called by UI/diagnostics Timer.
@@ -83,18 +82,18 @@ public:
     juce::AudioProcessor* getHostedProcessor() const noexcept { return inner_.get(); }
 
 private:
-    static constexpr double kRampSeconds = 0.020;  // 20 ms linear bypass fade
+    static constexpr double kRampSeconds = 0.020; // 20 ms linear bypass fade
 
     std::unique_ptr<juce::AudioProcessor> inner_;
 
     juce::AudioBuffer<float> dryScratch_;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> dryRamp_;
 
-    std::atomic<bool> wantBypass_ { false };
-    int               midiChannel_ = 0;            // UI-thread writer, RT reader
+    std::atomic<bool> wantBypass_{false};
+    int midiChannel_ = 0; // UI-thread writer, RT reader
 
-    std::atomic<std::uint64_t> elapsedNanosAccum_ { 0 };
-    std::atomic<std::uint64_t> blockCountAccum_   { 0 };
+    std::atomic<std::uint64_t> elapsedNanosAccum_{0};
+    std::atomic<std::uint64_t> blockCountAccum_{0};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BypassableInstance)
 };

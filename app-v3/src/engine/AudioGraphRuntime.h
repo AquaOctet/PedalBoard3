@@ -43,7 +43,7 @@ public:
 
     void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) override;
 
-    bool acceptsMidi()  const override { return true; }
+    bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return true; }
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 0.0; }
@@ -82,31 +82,31 @@ public:
     //     destruct it on the message thread (plugin dtors often require it).
     //
     // Returns nullptr if no graph was previously live.
-    std::unique_ptr<juce::AudioProcessorGraph>
-    swapPreparedGraph(std::unique_ptr<juce::AudioProcessorGraph> next);
+    std::unique_ptr<juce::AudioProcessorGraph> swapPreparedGraph(std::unique_ptr<juce::AudioProcessorGraph> next);
 
     // Snapshot of the currently-active graph pointer. Null iff the runtime
     // has no patch loaded. Provided for test + diagnostic inspection;
     // production code should operate on the Session view.
-    juce::AudioProcessorGraph* getLiveGraph() const noexcept
-    { return live_.load(std::memory_order_acquire); }
+    juce::AudioProcessorGraph* getLiveGraph() const noexcept { return live_.load(std::memory_order_acquire); }
 
     // Monotonic counter of processBlock completions since construction.
     // Used by swapPreparedGraph to wait for the audio thread to observe
     // the new pointer; also useful in tests.
     std::uint64_t getGenerationAckedByAudio() const noexcept
-    { return generationAckedByAudio_.load(std::memory_order_acquire); }
+    {
+        return generationAckedByAudio_.load(std::memory_order_acquire);
+    }
 
 private:
-    std::atomic<juce::AudioProcessorGraph*> live_                 { nullptr };
-    std::atomic<std::uint64_t>              generationAckedByAudio_ { 0 };
-    processors::OutputSanitiser             sanitiser_;
+    std::atomic<juce::AudioProcessorGraph*> live_{nullptr};
+    std::atomic<std::uint64_t> generationAckedByAudio_{0};
+    processors::OutputSanitiser sanitiser_;
 
     // Cached prepareToPlay params so the AudioGraphRuntime can forward them
     // to a newly swapped-in graph if we ever allow swapping an un-prepared
     // one. Phase 1.A forbids that; kept here for Phase 1.D use.
-    double currentSampleRate_ { 0.0 };
-    int    currentBlockSize_  { 0 };
+    double currentSampleRate_{0.0};
+    int currentBlockSize_{0};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioGraphRuntime)
 };

@@ -29,7 +29,7 @@ namespace pedalboard3::testing
 {
 
 inline constexpr double kDefaultSampleRate = 48000.0;
-inline constexpr int    kDefaultBlockSize  = 256;
+inline constexpr int kDefaultBlockSize = 256;
 
 // Build an empty AudioBuffer<float> with the given shape, zero-initialised.
 inline juce::AudioBuffer<float> makeTestBuffer(int numChannels, int numFrames)
@@ -51,8 +51,10 @@ inline void fillDC(juce::AudioBuffer<float>& buf, float value)
 }
 
 // Fill `buf` with a sine of the given frequency. Used as a smoke input.
-inline void fillSine(juce::AudioBuffer<float>& buf, double freqHz,
-                     double sampleRate = kDefaultSampleRate, float amplitude = 0.5f)
+inline void fillSine(juce::AudioBuffer<float>& buf,
+                     double freqHz,
+                     double sampleRate = kDefaultSampleRate,
+                     float amplitude = 0.5f)
 {
     const double phaseInc = juce::MathConstants<double>::twoPi * freqHz / sampleRate;
     for (int ch = 0; ch < buf.getNumChannels(); ++ch)
@@ -67,12 +69,13 @@ inline void fillSine(juce::AudioBuffer<float>& buf, double freqHz,
 // Drive `proc` across `buffer` block-by-block, mutating in place.
 // `proc` must already have been prepareToPlay'd with the test's sample rate
 // and block size. Empty MIDI each block (see midiOverload below for MIDI).
-inline void renderBlocks(juce::AudioProcessor& proc, juce::AudioBuffer<float>& buffer,
+inline void renderBlocks(juce::AudioProcessor& proc,
+                         juce::AudioBuffer<float>& buffer,
                          int blockSize = kDefaultBlockSize)
 {
     juce::MidiBuffer midi;
     const int numFrames = buffer.getNumSamples();
-    const int numCh     = buffer.getNumChannels();
+    const int numCh = buffer.getNumChannels();
 
     for (int frame = 0; frame < numFrames; frame += blockSize)
     {
@@ -90,7 +93,7 @@ inline void renderBlocks(juce::AudioProcessor& proc,
                          int blockSize = kDefaultBlockSize)
 {
     const int numFrames = buffer.getNumSamples();
-    const int numCh     = buffer.getNumChannels();
+    const int numCh = buffer.getNumChannels();
 
     for (int frame = 0; frame < numFrames; frame += blockSize)
     {

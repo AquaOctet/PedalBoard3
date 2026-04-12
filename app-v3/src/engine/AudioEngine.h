@@ -39,7 +39,7 @@ public:
         static Result ok() { return Result({}); }
         static Result fail(juce::String message) { return Result(std::move(message)); }
 
-        bool        isOk()           const noexcept { return errorMessage_.isEmpty(); }
+        bool isOk() const noexcept { return errorMessage_.isEmpty(); }
         const auto& getErrorMessage() const noexcept { return errorMessage_; }
 
     private:
@@ -63,20 +63,19 @@ public:
     // nullptr) for caller-side deferred destruction. Thin wrapper over
     // AudioGraphRuntime::swapPreparedGraph that exists so higher layers
     // don't hand out a raw runtime reference unnecessarily.
-    std::unique_ptr<juce::AudioProcessorGraph>
-    loadGraph(std::unique_ptr<juce::AudioProcessorGraph> next);
+    std::unique_ptr<juce::AudioProcessorGraph> loadGraph(std::unique_ptr<juce::AudioProcessorGraph> next);
 
     // Accessors for code that needs the low-level JUCE objects. The
     // AudioDeviceSelectorComponent wants the ADM. Tests want the runtime.
-    AudioGraphRuntime*        getRuntime()        noexcept { return runtime_.get(); }
-    juce::AudioDeviceManager* getDeviceManager()  noexcept { return &deviceManager_; }
+    AudioGraphRuntime* getRuntime() noexcept { return runtime_.get(); }
+    juce::AudioDeviceManager* getDeviceManager() noexcept { return &deviceManager_; }
 
 private:
-    juce::AudioDeviceManager                deviceManager_;
-    juce::AudioProcessorPlayer              player_;
-    std::unique_ptr<AudioGraphRuntime>      runtime_;
+    juce::AudioDeviceManager deviceManager_;
+    juce::AudioProcessorPlayer player_;
+    std::unique_ptr<AudioGraphRuntime> runtime_;
 
-    bool initialised_ { false };
+    bool initialised_{false};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioEngine)
 };

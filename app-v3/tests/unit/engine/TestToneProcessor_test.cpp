@@ -16,9 +16,7 @@ using namespace pedalboard3::testing;
 
 namespace
 {
-void prepare(engine::processors::TestToneProcessor& t,
-             int blockSize = kDefaultBlockSize,
-             int channels  = 2)
+void prepare(engine::processors::TestToneProcessor& t, int blockSize = kDefaultBlockSize, int channels = 2)
 {
     t.setPlayConfigDetails(channels, channels, kDefaultSampleRate, blockSize);
     t.prepareToPlay(kDefaultSampleRate, blockSize);
@@ -37,8 +35,7 @@ TEST_CASE("TestToneProcessor: disabled + warmed up is silent", "[engine][testton
     REQUIRE(isSilent(buf));
 }
 
-TEST_CASE("TestToneProcessor: when enabled and ramped up, emits signal near target amplitude",
-          "[engine][testtone]")
+TEST_CASE("TestToneProcessor: when enabled and ramped up, emits signal near target amplitude", "[engine][testtone]")
 {
     engine::processors::TestToneProcessor t;
     prepare(t);
@@ -48,7 +45,8 @@ TEST_CASE("TestToneProcessor: when enabled and ramped up, emits signal near targ
 
     // Warm up past the ramp (default ~20 ms ≈ 4 blocks @ 256/48k).
     auto warm = makeTestBuffer(2, kDefaultBlockSize);
-    for (int i = 0; i < 8; ++i) renderBlocks(t, warm);
+    for (int i = 0; i < 8; ++i)
+        renderBlocks(t, warm);
 
     auto buf = makeTestBuffer(2, kDefaultBlockSize * 4);
     renderBlocks(t, buf);
@@ -60,8 +58,7 @@ TEST_CASE("TestToneProcessor: when enabled and ramped up, emits signal near targ
     REQUIRE(isFiniteEverywhere(buf));
 }
 
-TEST_CASE("TestToneProcessor: enable ramps smoothly without a click",
-          "[engine][testtone]")
+TEST_CASE("TestToneProcessor: enable ramps smoothly without a click", "[engine][testtone]")
 {
     engine::processors::TestToneProcessor t;
     prepare(t);
@@ -70,7 +67,8 @@ TEST_CASE("TestToneProcessor: enable ramps smoothly without a click",
 
     // Disabled, warmed up — silent.
     auto warm = makeTestBuffer(2, kDefaultBlockSize);
-    for (int i = 0; i < 4; ++i) renderBlocks(t, warm);
+    for (int i = 0; i < 4; ++i)
+        renderBlocks(t, warm);
 
     t.setEnabled(true);
 
@@ -80,15 +78,14 @@ TEST_CASE("TestToneProcessor: enable ramps smoothly without a click",
     renderBlocks(t, buf);
 
     const float first = std::abs(buf.getReadPointer(0)[0]);
-    const float last  = std::abs(buf.getReadPointer(0)[kDefaultBlockSize - 1]);
+    const float last = std::abs(buf.getReadPointer(0)[kDefaultBlockSize - 1]);
 
-    REQUIRE(first < 0.05f);            // essentially silent at the start
-    REQUIRE(last > first);             // moved toward full amplitude
+    REQUIRE(first < 0.05f); // essentially silent at the start
+    REQUIRE(last > first);  // moved toward full amplitude
     REQUIRE(isFiniteEverywhere(buf));
 }
 
-TEST_CASE("TestToneProcessor: disable ramps down without a click",
-          "[engine][testtone]")
+TEST_CASE("TestToneProcessor: disable ramps down without a click", "[engine][testtone]")
 {
     engine::processors::TestToneProcessor t;
     prepare(t);
@@ -97,7 +94,8 @@ TEST_CASE("TestToneProcessor: disable ramps down without a click",
     t.setEnabled(true);
 
     auto warm = makeTestBuffer(2, kDefaultBlockSize);
-    for (int i = 0; i < 8; ++i) renderBlocks(t, warm);
+    for (int i = 0; i < 8; ++i)
+        renderBlocks(t, warm);
 
     t.setEnabled(false);
 

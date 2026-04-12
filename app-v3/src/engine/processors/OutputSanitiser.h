@@ -41,7 +41,7 @@ public:
 
     void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) override;
 
-    bool acceptsMidi()  const override { return false; }
+    bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 0.0; }
@@ -65,7 +65,7 @@ public:
     bool consumeBadSampleFlag() noexcept;
 
 private:
-    std::atomic<bool> badSampleFlag_ { false };
+    std::atomic<bool> badSampleFlag_{false};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OutputSanitiser)
 };

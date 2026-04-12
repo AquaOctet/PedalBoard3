@@ -17,9 +17,11 @@ class TestGainProcessor : public juce::AudioProcessor
 public:
     explicit TestGainProcessor(float g = 2.0f)
         : juce::AudioProcessor(BusesProperties()
-                                   .withInput("In",  juce::AudioChannelSet::stereo(), true)
+                                   .withInput("In", juce::AudioChannelSet::stereo(), true)
                                    .withOutput("Out", juce::AudioChannelSet::stereo(), true)),
-          gain(g) {}
+          gain(g)
+    {
+    }
 
     const juce::String getName() const override { return "TestGain"; }
 
@@ -28,8 +30,8 @@ public:
 
     bool isBusesLayoutSupported(const BusesLayout& layouts) const override
     {
-        return layouts.getMainInputChannelSet() == layouts.getMainOutputChannelSet()
-            && !layouts.getMainInputChannelSet().isDisabled();
+        return layouts.getMainInputChannelSet() == layouts.getMainOutputChannelSet() &&
+               !layouts.getMainInputChannelSet().isDisabled();
     }
 
     void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) override
@@ -42,7 +44,7 @@ public:
                 buffer.getWritePointer(ch)[n] *= gain;
     }
 
-    bool acceptsMidi()  const override { return true; }
+    bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 0.0; }
@@ -60,8 +62,8 @@ public:
     void setStateInformation(const void*, int) override {}
 
     float gain;
-    std::atomic<int> processBlockCallCount { 0 };
-    std::atomic<int> lastMidiEventCount    { 0 };
+    std::atomic<int> processBlockCallCount{0};
+    std::atomic<int> lastMidiEventCount{0};
 };
 
 } // namespace pedalboard3::testing
