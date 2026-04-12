@@ -1,0 +1,65 @@
+# Pedalboard 3 Linux CI image.
+# Base: Ubuntu 22.04 LTS for glibc back-compat (users on older distros can run
+# the resulting AppImage without surprise). Clang 18 via the official LLVM apt
+# repo. CMake + Ninja pinned. Catch2 and Pluginval are fetched via CPM at
+# configure time; this image only needs the base toolchain + JUCE Linux deps.
+#
+# Build + publish:
+#   docker build -t registry.gitlab.com/void-realm-solutions/pedalboard-3/ci-linux:latest \
+#                -f ci/docker/Dockerfile.linux .
+#   docker push   registry.gitlab.com/void-realm-solutions/pedalboard-3/ci-linux:latest
+
+FROM ubuntu:22.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG CMAKE_VERSION=3.28.6
+ARG NINJA_VERSION=1.12.1
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# -- base + JUCE 8 Linux deps + packaging tooling -----------------------------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates curl wget gnupg git unzip xz-utils file just \
+      build-essential pkg-config \
+      python3 python3-pip \
+      libasound2-dev libjack-jackd2-dev \
+      libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev \
+      libxext-dev libxcomposite-dev libxrender-dev \
+      libfreetype-dev libfontconfig1-dev \
+      libgl-dev libglu1-mesa-dev mesa-common-dev \
+      libcurl4-openssl-dev \
+      libwebkit2gtk-4.1-dev \
+      dpkg-dev dpkg-sig fakeroot rpm \
+      gpg gpg-agent \
+      ccache jq \
+   && rm -rf /var/lib/apt/lists/*
+
+# -- Clang 18 via llvm.org apt repo -------------------------------------------
+RUN wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key \
+      | gpg --dearmor -o /usr/share/keyrings/llvm.gpg \
+ && echo "deb [signed-by=/usr/share/keyrings/llvm.gpg] http://apt.llvm.org/jammy/ llvm-toolchain-jammy-18 main" \
+      > /etc/apt/sources.list.d/llvm-18.list \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends \
+      clang-18 clang-tools-18 clang-format-18 clang-tidy-18 lld-18 llvm-18 \
+ && update-alternatives --install /usr/bin/clang        clang        /usr/bin/clang-18        100 \
+ && update-alternatives --install /usr/bin/clang++      clang++      /usr/bin/clang++-18      100 \
+ && update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-18 100 \
+ && update-alternatives --install /usr/bin/clang-tidy   clang-tidy   /usr/bin/clang-tidy-18   100 \
+ && rm -rf /var/lib/apt/lists/*
+
+# -- CMake (pinned, official upstream tarball) --------------------------------
+RUN curl -fsSL "https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz" \
+     | tar -xz -C /opt \
+ && ln -sf "/opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/cmake" /usr/local/bin/cmake \
+ && ln -sf "/opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/ctest" /usr/local/bin/ctest \
+ && ln -sf "/opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/cpack" /usr/local/bin/cpack
+
+# -- Ninja --------------------------------------------------------------------
+RUN curl -fsSL "https://github.com/ninja-build/ninja/releases/download/v${NINJA_VERSION}/ninja-linux.zip" \
+        -o /tmp/ninja.zip \
+ && unzip -q /tmp/ninja.zip -d /usr/local/bin \
+ && rm /tmp/ninja.zip
+
+ENV PATH="/usr/local/bin:${PATH}"
+WORKDIR /workspace

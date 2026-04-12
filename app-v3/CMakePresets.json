@@ -1,0 +1,121 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 28, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "linux-dev",
+      "displayName": "Linux Debug (dev inner loop)",
+      "description": "Debug build on Linux with sanitizers off — the default dev preset.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/../build/linux-dev",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "PB3_BUILD_TESTS": "ON",
+        "PB3_ENABLE_CLAP": "OFF",
+        "PB3_ENABLE_VST2": "OFF",
+        "PB3_ENABLE_RTSAN": "OFF"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    },
+    {
+      "name": "linux-release",
+      "displayName": "Linux Release",
+      "description": "Optimized release build on Linux. Used for CI release artifacts.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/../build/linux-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "PB3_BUILD_TESTS": "ON",
+        "PB3_ENABLE_CLAP": "OFF"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    },
+    {
+      "name": "linux-rtsan",
+      "displayName": "Linux Debug + RealtimeSanitizer",
+      "description": "Debug build with Clang -fsanitize=realtime. Requires clang-18+.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/../build/linux-rtsan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "PB3_BUILD_TESTS": "ON",
+        "PB3_ENABLE_RTSAN": "ON"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    },
+    {
+      "name": "lint-only",
+      "displayName": "Lint-only configure",
+      "description": "Fast configure that skips heavy dependencies (JUCE/CLAP/Catch2). Used by the lint CI stage.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/../build/lint",
+      "cacheVariables": {
+        "PB3_LINT_ONLY": "ON"
+      }
+    },
+    {
+      "name": "windows-ci",
+      "displayName": "Windows MSVC (CI)",
+      "description": "Release build on Windows using MSVC. Runs on self-hosted QA runner (Phase 6).",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/../build/windows-ci",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "PB3_BUILD_TESTS": "ON",
+        "PB3_ENABLE_CLAP": "ON"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "macos-universal",
+      "displayName": "macOS Universal (x86_64 + arm64)",
+      "description": "Release build on macOS, universal binary. Runs on self-hosted Mac mini (Phase 6).",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/../build/macos-universal",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_OSX_ARCHITECTURES": "x86_64;arm64",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "11.0",
+        "PB3_BUILD_TESTS": "ON",
+        "PB3_ENABLE_CLAP": "ON"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "linux-dev",       "configurePreset": "linux-dev" },
+    { "name": "linux-release",   "configurePreset": "linux-release" },
+    { "name": "linux-rtsan",     "configurePreset": "linux-rtsan" },
+    { "name": "windows-ci",      "configurePreset": "windows-ci" },
+    { "name": "macos-universal", "configurePreset": "macos-universal" }
+  ],
+  "testPresets": [
+    { "name": "linux-dev",     "configurePreset": "linux-dev",     "output": {"outputOnFailure": true} },
+    { "name": "linux-release", "configurePreset": "linux-release", "output": {"outputOnFailure": true} },
+    { "name": "linux-rtsan",   "configurePreset": "linux-rtsan",   "output": {"outputOnFailure": true} },
+    { "name": "windows-ci",    "configurePreset": "windows-ci",    "output": {"outputOnFailure": true} },
+    { "name": "macos-universal","configurePreset": "macos-universal","output": {"outputOnFailure": true} }
+  ]
+}
