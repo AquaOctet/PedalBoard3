@@ -17,6 +17,8 @@ target_sources(Pedalboard3 PRIVATE
     AudioGraphRuntime.h
     BypassableInstance.cpp
     BypassableInstance.h
+    PluginHost.cpp
+    PluginHost.h
     processors/OutputSanitiser.cpp
     processors/OutputSanitiser.h
     processors/TestToneProcessor.cpp
