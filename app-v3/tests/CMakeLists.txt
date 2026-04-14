@@ -10,6 +10,7 @@ set(PB3_TEST_SOURCES
     smoke_test.cpp
     unit/engine/OutputSanitiser_test.cpp
     unit/engine/BypassableInstance_test.cpp
+    unit/engine/BypassableInstance_watchdog_test.cpp
     unit/engine/AudioGraphRuntime_test.cpp
     unit/engine/TestToneProcessor_test.cpp
     unit/engine/AudioEngine_test.cpp
