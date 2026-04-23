@@ -102,6 +102,26 @@
         "lhs": "${hostSystemName}",
         "rhs": "Darwin"
       }
+    },
+    {
+      "name": "macos-dev",
+      "displayName": "macOS Debug (dev inner loop)",
+      "description": "Debug build on macOS targeting the host architecture. Fast iteration for local QA on a Mac dev box.",
+      "generator": "Ninja",
+      "binaryDir": "${fileDir}/../build/macos-dev",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "11.0",
+        "PB3_BUILD_TESTS": "ON",
+        "PB3_ENABLE_CLAP": "OFF",
+        "PB3_ENABLE_VST2": "OFF",
+        "PB3_ENABLE_RTSAN": "OFF"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      }
     }
   ],
   "buildPresets": [
@@ -109,13 +129,15 @@
     { "name": "linux-release",   "configurePreset": "linux-release" },
     { "name": "linux-rtsan",     "configurePreset": "linux-rtsan" },
     { "name": "windows-ci",      "configurePreset": "windows-ci" },
+    { "name": "macos-dev",       "configurePreset": "macos-dev" },
     { "name": "macos-universal", "configurePreset": "macos-universal" }
   ],
   "testPresets": [
-    { "name": "linux-dev",     "configurePreset": "linux-dev",     "output": {"outputOnFailure": true} },
-    { "name": "linux-release", "configurePreset": "linux-release", "output": {"outputOnFailure": true} },
-    { "name": "linux-rtsan",   "configurePreset": "linux-rtsan",   "output": {"outputOnFailure": true} },
-    { "name": "windows-ci",    "configurePreset": "windows-ci",    "output": {"outputOnFailure": true} },
+    { "name": "linux-dev",      "configurePreset": "linux-dev",      "output": {"outputOnFailure": true} },
+    { "name": "linux-release",  "configurePreset": "linux-release",  "output": {"outputOnFailure": true} },
+    { "name": "linux-rtsan",    "configurePreset": "linux-rtsan",    "output": {"outputOnFailure": true} },
+    { "name": "windows-ci",     "configurePreset": "windows-ci",     "output": {"outputOnFailure": true} },
+    { "name": "macos-dev",      "configurePreset": "macos-dev",      "output": {"outputOnFailure": true} },
     { "name": "macos-universal","configurePreset": "macos-universal","output": {"outputOnFailure": true} }
   ]
 }

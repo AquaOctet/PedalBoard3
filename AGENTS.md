@@ -25,27 +25,38 @@ and `.pdl` format only; do not edit.
 
 ## Build
 
-```bash
-# Linux dev build (debug, sanitizers off)
-cmake --preset linux-dev
-cmake --build --preset linux-dev
-
-# Linux release
-cmake --preset linux-release
-cmake --build --preset linux-release
-
-# Tests
-ctest --preset linux-dev --output-on-failure
-```
-
-Shortcuts via `just`:
+Host-OS-aware via `just` — the default recipes pick `linux-dev` on Linux and
+`macos-dev` on macOS:
 
 ```bash
-just build       # cmake --build --preset linux-dev
-just test        # ctest on the dev preset
-just format      # clang-format -i on app-v3/src
-just run         # launch the built hello-world app
+just build       # configure + build host dev preset
+just test        # ctest against the host dev build
+just run         # launch the hello-world app (execs binary on Linux, `open`s .app on macOS)
+just format      # clang-format -i on app-v3/src + tests
+just release     # RelWithDebInfo on Linux, Universal RelWithDebInfo on macOS
 ```
+
+Explicit preset-picking when you need to override:
+
+```bash
+# Linux Debug (headless / CI-style)
+cmake --preset linux-dev -S app-v3
+cmake --build build/linux-dev
+ctest --test-dir build/linux-dev --output-on-failure
+
+# macOS Debug (host arch; fast iteration)
+cmake --preset macos-dev -S app-v3
+cmake --build build/macos-dev
+ctest --test-dir build/macos-dev --output-on-failure
+open "build/macos-dev/src/Pedalboard 3_artefacts/Debug/Pedalboard 3.app"
+
+# macOS Release (universal x86_64 + arm64)
+cmake --preset macos-universal -S app-v3
+cmake --build build/macos-universal
+```
+
+Windows and Linux CI both build through `cmake --preset` as well; see
+`ci/docker/Dockerfile.linux` and `.gitlab-ci.yml`.
 
 ## What an agent may run without confirmation
 
@@ -65,17 +76,23 @@ just run         # launch the built hello-world app
 
 ## Agent-native verification matrix
 
-What an agent on this Linux dev server can verify vs. what requires the
-Windows QA desktop (not yet provisioned):
+What an agent on this Linux dev server can verify, plus what a human can do
+on a local Mac, vs. what still needs the Windows QA desktop:
 
-| Verifiable on Linux dev | Requires Windows QA |
-|---|---|
-| CMake configure + build (Linux) | WASAPI / ASIO round-trip latency |
-| Unit tests (Catch2) | Commercial VST compatibility |
-| Offline render regression (golden WAV diff) | Real MIDI controller input |
-| pluginval against Surge XT / Dexed / Dragonfly on Linux | Driver-specific audio bugs |
-| Code style (clang-format) | Code signing / installer smoke test |
-| Architecture linting (`grep`-based RT-safety checks) | WebView2 editor embedding |
+| Verifiable on Linux dev (CI + agent) | Verifiable on macOS (local dev Mac) | Requires Windows QA |
+|---|---|---|
+| CMake configure + build | Everything in Linux col + AU/VST3 plugin scan, audible CoreAudio test tone | WASAPI / ASIO round-trip latency |
+| Unit tests (Catch2) | Same ctest suite | Commercial VST compatibility |
+| Offline render regression (golden WAV diff) | Same, plus live-device render | Real MIDI controller input from physical hardware |
+| pluginval on Linux-native plugins (Surge XT / Dexed / Dragonfly) | pluginval on macOS-native AU + VST3 | Driver-specific audio bugs |
+| Code style (clang-format) | — | Code signing / MSI installer smoke test |
+| Architecture linting (grep-based RT-safety) | — | WebView2 editor embedding |
+| `just build` + `just test` end-to-end | `just build` + `just test` + `just run` end-to-end | — |
+
+**macOS is a first-class dev-QA target.** CoreAudio, AudioUnit, and VST3 all
+auto-register via `juce::AudioPluginFormatManager::addDefaultFormats()`. A
+local Mac can exercise the full Pedalboard 3 stack short of Windows-specific
+audio drivers and the Phase 1.B.2 SEH code path.
 
 ## Conventions
 
