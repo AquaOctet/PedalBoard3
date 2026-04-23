@@ -16,6 +16,7 @@ target_sources(Pedalboard3 PRIVATE
     main.cpp
     App.cpp
     App.h
+    AppContext.h
     ui/MainWindow.cpp
     ui/MainWindow.h
 )

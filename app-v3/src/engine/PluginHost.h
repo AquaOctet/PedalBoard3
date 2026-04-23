@@ -78,6 +78,21 @@ public:
     // JUCE's own PluginListComponent in a future settings dialog).
     juce::AudioPluginFormatManager& getFormatManager() noexcept { return formats_; }
 
+    // Mutable reference to the underlying KnownPluginList. Intended for
+    // JUCE's built-in PluginListComponent, which mutates the list as the
+    // user adds/removes plugins through the UI. Message-thread-only —
+    // the ReadWriteLock used by scanDirectory/getKnownPlugins is NOT
+    // held for UI edits. Phase 1.D revisits this when the patch-switch
+    // worker thread also needs to read the list.
+    juce::KnownPluginList& getKnownPluginList() noexcept { return knownList_; }
+
+    // Path to the "dead man's pedal" file JUCE uses to remember which
+    // plugin binary is mid-scan if the scanner crashes. Lives under
+    // UserDataDir/crashed_plugins.xml; parent directory is created
+    // lazily on first access. Caller is responsible for passing this to
+    // PluginDirectoryScanner / PluginListComponent.
+    juce::File getCrashedPluginsFile() const;
+
 private:
     juce::AudioPluginFormatManager formats_;
     juce::KnownPluginList knownList_;

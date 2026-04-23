@@ -103,4 +103,11 @@ std::unique_ptr<juce::AudioPluginInstance> PluginHost::createInstance(const juce
     return formats_.createPluginInstance(desc, sampleRate, blockSize, errorOut);
 }
 
+juce::File PluginHost::getCrashedPluginsFile() const
+{
+    auto appDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("Pedalboard3");
+    appDir.createDirectory();
+    return appDir.getChildFile("crashed_plugins.xml");
+}
+
 } // namespace pedalboard3::engine

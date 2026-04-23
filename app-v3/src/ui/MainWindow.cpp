@@ -1,7 +1,9 @@
 #include "MainWindow.h"
 
+#include "AppContext.h"
 #include "engine/AudioEngine.h"
 #include "engine/AudioGraphRuntime.h"
+#include "engine/PluginHost.h"
 #include "engine/processors/TestToneProcessor.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
@@ -56,13 +58,14 @@ std::unique_ptr<juce::AudioProcessorGraph> buildTestToneGraph(juce::AudioDeviceM
     return graph;
 }
 
-// Root component — hosts the hello-world text plus the two diagnostic
-// buttons. Holds a reference to the AudioEngine so button handlers can
-// drive the runtime and open the device-selector dialog.
+// Root component — hosts the hello-world text plus the three diagnostic
+// buttons. Holds a reference to the AppContext so button handlers can
+// drive the runtime, open the device-selector dialog, and open the
+// plugin-list dialog.
 class RootComponent : public juce::Component
 {
 public:
-    explicit RootComponent(engine::AudioEngine& engineRef) : engine_(engineRef)
+    explicit RootComponent(AppContext& ctxRef) : ctx_(ctxRef)
     {
         settingsButton_.setButtonText("Audio Settings...");
         settingsButton_.onClick = [this] { openAudioSettings(); };
@@ -73,7 +76,11 @@ public:
         toneButton_.onClick = [this] { onTestToneToggled(); };
         addAndMakeVisible(toneButton_);
 
-        setSize(640, 360);
+        pluginListButton_.setButtonText("Plugin List...");
+        pluginListButton_.onClick = [this] { openPluginList(); };
+        addAndMakeVisible(pluginListButton_);
+
+        setSize(720, 360);
     }
 
     void paint(juce::Graphics& g) override
@@ -92,23 +99,27 @@ public:
 
         g.setColour(juce::Colours::grey);
         g.setFont(juce::FontOptions(14.0f, juce::Font::plain));
-        g.drawFittedText("Phase 1.C.1 — AudioEngine + TestTone wiring.", bodyArea, juce::Justification::centred, 1);
+        g.drawFittedText("Phase 1.C.6 — Plugin List dialog wired up.", bodyArea, juce::Justification::centred, 1);
     }
 
     void resized() override
     {
-        // Simple horizontal button strip near the bottom of the window.
+        // Horizontal three-button strip near the bottom of the window.
         const int buttonHeight = 32;
         const int buttonGap = 12;
+        const int numButtons = 3;
+
         auto area = getLocalBounds().reduced(16).removeFromBottom(buttonHeight + 16);
         area.removeFromBottom(16);
-        const int totalWidth = juce::jmin(area.getWidth(), 420);
-        const int eachWidth = (totalWidth - buttonGap) / 2;
+        const int totalWidth = juce::jmin(area.getWidth(), 660);
+        const int eachWidth = (totalWidth - buttonGap * (numButtons - 1)) / numButtons;
         auto strip = area.withSizeKeepingCentre(totalWidth, buttonHeight);
 
         settingsButton_.setBounds(strip.removeFromLeft(eachWidth));
         strip.removeFromLeft(buttonGap);
         toneButton_.setBounds(strip.removeFromLeft(eachWidth));
+        strip.removeFromLeft(buttonGap);
+        pluginListButton_.setBounds(strip.removeFromLeft(eachWidth));
     }
 
 private:
@@ -116,7 +127,7 @@ private:
     {
         // Standard JUCE device selector. 2-channel stereo in / 2-channel
         // stereo out keeps parity with AudioEngine::initialise.
-        auto selector = std::make_unique<juce::AudioDeviceSelectorComponent>(*engine_.getDeviceManager(),
+        auto selector = std::make_unique<juce::AudioDeviceSelectorComponent>(*ctx_.audioEngine.getDeviceManager(),
                                                                              0,
                                                                              2, // min/max input channels
                                                                              0,
@@ -141,30 +152,54 @@ private:
     {
         if (toneButton_.getToggleState())
         {
-            auto graph = buildTestToneGraph(*engine_.getDeviceManager());
-            engine_.loadGraph(std::move(graph));
+            auto graph = buildTestToneGraph(*ctx_.audioEngine.getDeviceManager());
+            ctx_.audioEngine.loadGraph(std::move(graph));
         }
         else
         {
-            engine_.loadGraph(nullptr);
+            ctx_.audioEngine.loadGraph(nullptr);
         }
     }
 
-    engine::AudioEngine& engine_;
+    void openPluginList()
+    {
+        // JUCE's standard plugin-list UI. Handles scanning (including
+        // out-of-process where supported), per-format scan buttons, and
+        // remove/enable per row. We don't pass a PropertiesFile for
+        // persistence yet — that arrives in Phase 1.C.2 via Preferences.
+        auto listComponent = std::make_unique<juce::PluginListComponent>(ctx_.pluginHost.getFormatManager(),
+                                                                         ctx_.pluginHost.getKnownPluginList(),
+                                                                         ctx_.pluginHost.getCrashedPluginsFile(),
+                                                                         /*propertiesFile*/ nullptr,
+                                                                         /*allowAsyncScanning*/ false);
+        listComponent->setSize(720, 520);
+
+        juce::DialogWindow::LaunchOptions options;
+        options.content.setOwned(listComponent.release());
+        options.dialogTitle = "Plugin List";
+        options.dialogBackgroundColour = juce::Colour::fromRGB(0x2A, 0x2A, 0x2A);
+        options.escapeKeyTriggersCloseButton = true;
+        options.useNativeTitleBar = true;
+        options.resizable = true;
+        options.launchAsync();
+    }
+
+    AppContext& ctx_;
     juce::TextButton settingsButton_;
     juce::TextButton toneButton_;
+    juce::TextButton pluginListButton_;
 };
 
 } // namespace
 
-MainWindow::MainWindow(const juce::String& name, engine::AudioEngine& audioEngine)
+MainWindow::MainWindow(const juce::String& name, AppContext& context)
     : juce::DocumentWindow(
           name,
           juce::Desktop::getInstance().getDefaultLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId),
           juce::DocumentWindow::allButtons)
 {
     setUsingNativeTitleBar(true);
-    setContentOwned(new RootComponent(audioEngine), true);
+    setContentOwned(new RootComponent(context), true);
     setResizable(true, true);
     centreWithSize(getWidth(), getHeight());
     setVisible(true);

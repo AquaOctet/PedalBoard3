@@ -15,7 +15,10 @@ void App::initialise(const juce::String& /*commandLine*/)
         juce::Logger::writeToLog("Pedalboard 3: audio init warning — " + result.getErrorMessage());
     }
 
-    mainWindow = std::make_unique<ui::MainWindow>(getApplicationName(), *engine);
+    pluginHost = std::make_unique<engine::PluginHost>();
+
+    context.emplace(AppContext{*engine, *pluginHost});
+    mainWindow = std::make_unique<ui::MainWindow>(getApplicationName(), *context);
 }
 
 void App::shutdown()
@@ -23,6 +26,8 @@ void App::shutdown()
     // Close the window first so no UI callback can try to touch the engine
     // during its teardown.
     mainWindow.reset();
+    context.reset();
+    pluginHost.reset();
     engine.reset();
 }
 
