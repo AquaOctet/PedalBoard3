@@ -28,7 +28,7 @@ namespace pedalboard3
 struct AppContext
 {
     engine::AudioEngine& audioEngine;
-    engine::PluginHost&  pluginHost;
+    engine::PluginHost& pluginHost;
 };
 
 } // namespace pedalboard3

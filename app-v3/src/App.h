@@ -36,9 +36,9 @@ public:
 
 private:
     std::unique_ptr<engine::AudioEngine> engine;
-    std::unique_ptr<engine::PluginHost>  pluginHost;
-    std::optional<AppContext>            context;
-    std::unique_ptr<ui::MainWindow>      mainWindow;
+    std::unique_ptr<engine::PluginHost> pluginHost;
+    std::optional<AppContext> context;
+    std::unique_ptr<ui::MainWindow> mainWindow;
 };
 
 } // namespace pedalboard3
