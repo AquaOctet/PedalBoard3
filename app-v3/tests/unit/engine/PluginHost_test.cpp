@@ -137,8 +137,7 @@ TEST_CASE("PluginHost: getDefaultSearchPathForFormat returns empty for an unknow
     REQUIRE(path.getNumPaths() == 0);
 }
 
-TEST_CASE("PluginHost: scanDefaultPaths runs without crashing on a bare runner",
-          "[engine][plugin-host][paths]")
+TEST_CASE("PluginHost: scanDefaultPaths runs without crashing on a bare runner", "[engine][plugin-host][paths]")
 {
     engine::PluginHost host;
 
