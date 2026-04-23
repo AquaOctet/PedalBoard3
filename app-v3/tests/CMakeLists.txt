@@ -5,6 +5,10 @@
 # tests). Every new test file goes here in the GLOB-free `PB3_TEST_SOURCES`
 # list so link errors surface at configure time, not mysterious runtime
 # skips.
+#
+# We link pb3_engine_core rather than re-listing engine .cpp files, so there
+# is one source-of-truth for what "the engine" is. Tests stay headless — they
+# never pull in juce_gui_extra or pb3_app_core.
 
 set(PB3_TEST_SOURCES
     smoke_test.cpp
@@ -19,32 +23,16 @@ set(PB3_TEST_SOURCES
 
 add_executable(pb3_smoke_tests ${PB3_TEST_SOURCES})
 
-# Tests link against the engine sources directly (rather than the full
-# Pedalboard3 GUI target) so they can run headless without a display server.
-# Add source files here as they become testable. Keep this minimal — a unit
-# test for Foo should only pull Foo's .cpp + its direct deps.
-target_sources(pb3_smoke_tests PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/engine/AudioEngine.cpp
-    ${CMAKE_SOURCE_DIR}/src/engine/AudioGraphRuntime.cpp
-    ${CMAKE_SOURCE_DIR}/src/engine/BypassableInstance.cpp
-    ${CMAKE_SOURCE_DIR}/src/engine/PluginHost.cpp
-    ${CMAKE_SOURCE_DIR}/src/engine/processors/OutputSanitiser.cpp
-    ${CMAKE_SOURCE_DIR}/src/engine/processors/TestToneProcessor.cpp
-)
-
 target_include_directories(pb3_smoke_tests PRIVATE
-    ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}           # for "support/OfflineRender.h"
 )
 
 target_link_libraries(pb3_smoke_tests PRIVATE
     Catch2::Catch2WithMain
-    juce::juce_audio_basics
-    juce::juce_audio_processors
-    juce::juce_audio_devices
-    juce::juce_audio_utils
-    juce::juce_recommended_config_flags
+    pb3_engine_core
     pb3_warnings
+    pb3_rtsafety
+    juce::juce_recommended_config_flags
 )
 
 target_compile_definitions(pb3_smoke_tests PRIVATE
