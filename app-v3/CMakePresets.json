@@ -95,7 +95,7 @@
         "CMAKE_OSX_ARCHITECTURES": "x86_64;arm64",
         "CMAKE_OSX_DEPLOYMENT_TARGET": "11.0",
         "PB3_BUILD_TESTS": "ON",
-        "PB3_ENABLE_CLAP": "ON"
+        "PB3_ENABLE_CLAP": "OFF"
       },
       "condition": {
         "type": "equals",

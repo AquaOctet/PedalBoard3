@@ -4,9 +4,9 @@
 // call into.
 //
 // Phase 1.C.3 scope: registration, empty-list, synchronous directory scan,
-// instance creation error path. Sandboxed out-of-process scanning with a
-// crash list arrives in Phase 1.C.4; MIDI-port-style auto-enumeration of
-// default OS plugin paths is Phase 1.C.5.
+// instance creation error path. Phase 1.C.5 adds format introspection
+// (getFormatNames) and OS-default plugin-path enumeration + scan helpers.
+// Sandboxed out-of-process scanning with a crash list arrives in Phase 1.C.4.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -94,4 +94,57 @@ TEST_CASE("PluginHost: createInstance with a bogus description returns nullptr +
 
     REQUIRE(instance == nullptr);
     REQUIRE(errorOut.isNotEmpty());
+}
+
+// -----------------------------------------------------------------------
+// Phase 1.C.5 — format introspection + default-path enumeration
+// -----------------------------------------------------------------------
+
+TEST_CASE("PluginHost: getFormatNames reports at least as many entries as getNumFormats",
+          "[engine][plugin-host][paths]")
+{
+    engine::PluginHost host;
+    const auto names = host.getFormatNames();
+    REQUIRE(names.size() == host.getNumFormats());
+    REQUIRE(names.size() > 0);
+
+    // Every reported name must be non-empty — a blank format name would
+    // mean a UI list couldn't distinguish registered formats from each other.
+    for (const auto& n : names)
+        REQUIRE(n.isNotEmpty());
+}
+
+TEST_CASE("PluginHost: getDefaultSearchPathForFormat returns a non-empty path for a real format",
+          "[engine][plugin-host][paths]")
+{
+    engine::PluginHost host;
+    const auto names = host.getFormatNames();
+    REQUIRE(names.size() > 0);
+
+    // Pick the first registered format (VST3 on every supported platform).
+    // We don't assert a specific directory because JUCE picks per-OS defaults
+    // that we can't hard-code for CI. Just prove the path has at least one
+    // directory entry.
+    const auto path = host.getDefaultSearchPathForFormat(names[0]);
+    REQUIRE(path.getNumPaths() > 0);
+}
+
+TEST_CASE("PluginHost: getDefaultSearchPathForFormat returns empty for an unknown format name",
+          "[engine][plugin-host][paths]")
+{
+    engine::PluginHost host;
+    const auto path = host.getDefaultSearchPathForFormat("FakeFormatThatDoesNotExist");
+    REQUIRE(path.getNumPaths() == 0);
+}
+
+TEST_CASE("PluginHost: scanDefaultPaths runs without crashing on a bare runner", "[engine][plugin-host][paths]")
+{
+    engine::PluginHost host;
+
+    // CI runners rarely have production plugins installed, so this may
+    // return 0. The assertion is simply that it doesn't throw, doesn't
+    // deadlock on the rwlock, and leaves the host in a sane state.
+    const int added = host.scanDefaultPaths();
+    REQUIRE(added >= 0);
+    REQUIRE(host.getKnownPlugins().size() == added);
 }

@@ -36,11 +36,27 @@ public:
     // After construction this is always > 0 on every supported platform.
     int getNumFormats() const noexcept;
 
+    // Names of every registered format ("VST3", "AudioUnit", "LV2", …).
+    // UI uses this to present a per-format pick list next to a default-path
+    // editor. Size always equals getNumFormats().
+    juce::StringArray getFormatNames() const;
+
+    // Platform-appropriate default directories that `formatName` searches
+    // by default (e.g. "~/Library/Audio/Plug-Ins/VST3" on macOS). Returns
+    // an empty FileSearchPath if the format isn't registered. Mirrors
+    // juce::AudioPluginFormat::getDefaultLocationsToSearch() semantics.
+    juce::FileSearchPath getDefaultSearchPathForFormat(const juce::String& formatName) const;
+
     // Synchronously scan `path` with every registered format. Returns the
     // number of NEWLY discovered plugins (not counting ones already in the
     // known list). Non-existent or unreadable paths return 0 and do not
     // throw.
     int scanDirectory(const juce::FileSearchPath& path);
+
+    // Convenience: walk every registered format's default OS paths and scan
+    // them. Returns the total number of newly-discovered plugins across all
+    // formats. Suitable for a "first-run scan" button.
+    int scanDefaultPaths();
 
     // Remove every entry from the known plugin list.
     void clearKnownPlugins();

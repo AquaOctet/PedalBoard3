@@ -15,6 +15,46 @@ int PluginHost::getNumFormats() const noexcept
     return formats_.getNumFormats();
 }
 
+juce::StringArray PluginHost::getFormatNames() const
+{
+    juce::StringArray names;
+    for (int f = 0; f < formats_.getNumFormats(); ++f)
+    {
+        if (auto* format = formats_.getFormat(f))
+            names.add(format->getName());
+    }
+    return names;
+}
+
+juce::FileSearchPath PluginHost::getDefaultSearchPathForFormat(const juce::String& formatName) const
+{
+    for (int f = 0; f < formats_.getNumFormats(); ++f)
+    {
+        auto* format = formats_.getFormat(f);
+        if (format != nullptr && format->getName() == formatName)
+            return format->getDefaultLocationsToSearch();
+    }
+    return {};
+}
+
+int PluginHost::scanDefaultPaths()
+{
+    int totalAdded = 0;
+    for (int f = 0; f < formats_.getNumFormats(); ++f)
+    {
+        auto* format = formats_.getFormat(f);
+        if (format == nullptr || !format->canScanForPlugins())
+            continue;
+
+        const auto path = format->getDefaultLocationsToSearch();
+        if (path.getNumPaths() == 0)
+            continue;
+
+        totalAdded += scanDirectory(path);
+    }
+    return totalAdded;
+}
+
 int PluginHost::scanDirectory(const juce::FileSearchPath& path)
 {
     const juce::ScopedWriteLock sl(listLock_);
