@@ -131,6 +131,26 @@ if(PB3_ENABLE_RTSAN)
 endif()
 
 # -----------------------------------------------------------------------------
+# Plugin-host format selection.
+#
+# juce::AudioPluginFormatManager::addDefaultFormats() registers formats only
+# when JUCE_PLUGINHOST_* macros are defined to 1 at the compilation of
+# juce_AudioPluginFormatManager.cpp. JUCE modules are INTERFACE libraries
+# whose sources are re-compiled per consumer target, so these macros must be
+# visible to EVERY target that links juce::juce_audio_processors — otherwise
+# different translation units see different formats and addDefaultFormats()
+# silently registers zero of them. Wire this INTERFACE target into the first
+# target in the chain (pb3_engine_core) with PUBLIC linkage; transitive
+# propagation reaches pb3_app_core, Pedalboard3, and pb3_smoke_tests.
+add_library(pb3_plugin_formats INTERFACE)
+target_compile_definitions(pb3_plugin_formats INTERFACE
+    JUCE_PLUGINHOST_VST3=1
+    $<$<PLATFORM_ID:Linux>:JUCE_PLUGINHOST_LV2=1>
+    $<$<PLATFORM_ID:Darwin>:JUCE_PLUGINHOST_AU=1>
+    $<$<PLATFORM_ID:Darwin>:JUCE_PLUGINHOST_LV2=1>
+)
+
+# -----------------------------------------------------------------------------
 # Subdirectories
 # -----------------------------------------------------------------------------
 if(NOT PB3_LINT_ONLY)
