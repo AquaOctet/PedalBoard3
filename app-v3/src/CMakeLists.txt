@@ -14,8 +14,9 @@
 # -----------------------------------------------------------------------------
 # Subsystems (static libs that carry pb3_warnings on their own sources)
 # -----------------------------------------------------------------------------
-add_subdirectory(session)
+# engine first; session PUBLIC-links pb3_engine_core for PluginSlot.
 add_subdirectory(engine)
+add_subdirectory(session)
 
 add_library(pb3_app_core STATIC
     App.cpp

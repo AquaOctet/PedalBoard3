@@ -47,13 +47,6 @@ target_link_libraries(pb3_engine_core
         # reach every downstream consumer that re-compiles JUCE INTERFACE
         # sources (pb3_app_core, Pedalboard3, pb3_smoke_tests).
         pb3_juce_config
-        # AudioEngine accepts a saved-state XmlElement on initialise(); the
-        # caller is App which gets it from session::Preferences. We don't
-        # actually depend on Preferences from inside engine — only on
-        # juce::XmlElement, which lives in juce_core (already PUBLIC above).
-        # Keep pb3_session_core PUBLIC so consumers of pb3_engine_core (tests,
-        # pb3_app_core) can include session/Preferences.h transitively.
-        pb3_session_core
     PRIVATE
         pb3_rtsafety
         juce::juce_recommended_config_flags

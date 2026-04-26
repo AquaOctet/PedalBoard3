@@ -5,6 +5,7 @@
 #include "engine/AudioGraphRuntime.h"
 #include "engine/PluginHost.h"
 #include "engine/processors/TestToneProcessor.h"
+#include "session/PluginSlot.h"
 #include "session/Preferences.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
@@ -59,11 +60,11 @@ std::unique_ptr<juce::AudioProcessorGraph> buildTestToneGraph(juce::AudioDeviceM
     return graph;
 }
 
-// Root component — hosts the hello-world text plus the three diagnostic
-// buttons. Holds a reference to the AppContext so button handlers can
-// drive the runtime, open the device-selector dialog, and open the
-// plugin-list dialog.
-class RootComponent : public juce::Component
+// Root component — hosts the title plus the diagnostic + plugin-slot
+// controls. Holds a reference to the AppContext so button handlers can
+// drive the runtime, open the device-selector dialog, populate plugin
+// lists, and load/unload plugins.
+class RootComponent : public juce::Component, public juce::ChangeListener
 {
 public:
     explicit RootComponent(AppContext& ctxRef) : ctx_(ctxRef)
@@ -81,7 +82,53 @@ public:
         pluginListButton_.onClick = [this] { openPluginList(); };
         addAndMakeVisible(pluginListButton_);
 
-        setSize(720, 360);
+        pluginCombo_.setTextWhenNothingSelected("(no plugins scanned — click Plugin List)");
+        pluginCombo_.setTextWhenNoChoicesAvailable("(no plugins scanned — click Plugin List)");
+        addAndMakeVisible(pluginCombo_);
+
+        loadButton_.setButtonText("Load");
+        loadButton_.onClick = [this] { onLoadClicked(); };
+        addAndMakeVisible(loadButton_);
+
+        clearButton_.setButtonText("Clear");
+        clearButton_.onClick = [this] { onClearClicked(); };
+        addAndMakeVisible(clearButton_);
+
+        bypassButton_.setButtonText("Bypass");
+        bypassButton_.setClickingTogglesState(true);
+        bypassButton_.onClick = [this] { ctx_.pluginSlot.setBypassed(bypassButton_.getToggleState()); };
+        addAndMakeVisible(bypassButton_);
+
+        editButton_.setButtonText("Edit");
+        editButton_.onClick = [this] { onEditClicked(); };
+        addAndMakeVisible(editButton_);
+
+        statusLabel_.setJustificationType(juce::Justification::centredLeft);
+        statusLabel_.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+        addAndMakeVisible(statusLabel_);
+
+        ctx_.pluginHost.getKnownPluginList().addChangeListener(this);
+        ctx_.pluginSlot.addChangeListener(this);
+
+        rebuildPluginCombo();
+        refreshSlotControls();
+
+        setSize(720, 420);
+    }
+
+    ~RootComponent() override
+    {
+        ctx_.pluginHost.getKnownPluginList().removeChangeListener(this);
+        ctx_.pluginSlot.removeChangeListener(this);
+        editorWindow_.reset();
+    }
+
+    void changeListenerCallback(juce::ChangeBroadcaster* source) override
+    {
+        if (source == &ctx_.pluginHost.getKnownPluginList())
+            rebuildPluginCombo();
+        else if (source == &ctx_.pluginSlot)
+            refreshSlotControls();
     }
 
     void paint(juce::Graphics& g) override
@@ -100,30 +147,140 @@ public:
 
         g.setColour(juce::Colours::grey);
         g.setFont(juce::FontOptions(14.0f, juce::Font::plain));
-        g.drawFittedText("Phase 1.C.6 — Plugin List dialog wired up.", bodyArea, juce::Justification::centred, 1);
+        g.drawFittedText("Phase 1.D.1 — load a plugin into the audio graph.", bodyArea, juce::Justification::centred, 1);
     }
 
     void resized() override
     {
-        // Horizontal three-button strip near the bottom of the window.
-        const int buttonHeight = 32;
-        const int buttonGap = 12;
-        const int numButtons = 3;
+        const int rowHeight = 32;
+        const int gap = 12;
 
-        auto area = getLocalBounds().reduced(16).removeFromBottom(buttonHeight + 16);
-        area.removeFromBottom(16);
-        const int totalWidth = juce::jmin(area.getWidth(), 660);
-        const int eachWidth = (totalWidth - buttonGap * (numButtons - 1)) / numButtons;
-        auto strip = area.withSizeKeepingCentre(totalWidth, buttonHeight);
+        auto area = getLocalBounds().reduced(16);
+        // Top region (paint draws title/body; reserve their space).
+        area.removeFromTop(60 + 40 + 8);
+
+        // Plugin slot row: ComboBox | Load | Clear | Bypass | Edit
+        auto slotRow = area.removeFromTop(rowHeight);
+        const int btnW = 80;
+        editButton_.setBounds(slotRow.removeFromRight(btnW));
+        slotRow.removeFromRight(gap);
+        bypassButton_.setBounds(slotRow.removeFromRight(btnW));
+        slotRow.removeFromRight(gap);
+        clearButton_.setBounds(slotRow.removeFromRight(btnW));
+        slotRow.removeFromRight(gap);
+        loadButton_.setBounds(slotRow.removeFromRight(btnW));
+        slotRow.removeFromRight(gap);
+        pluginCombo_.setBounds(slotRow);
+
+        area.removeFromTop(gap);
+
+        // Status row.
+        auto statusRow = area.removeFromTop(28);
+        statusLabel_.setBounds(statusRow);
+
+        // Bottom strip with the original three diagnostic buttons.
+        auto bottom = getLocalBounds().reduced(16).removeFromBottom(rowHeight + 16);
+        bottom.removeFromBottom(16);
+        const int totalWidth = juce::jmin(bottom.getWidth(), 660);
+        const int eachWidth = (totalWidth - gap * 2) / 3;
+        auto strip = bottom.withSizeKeepingCentre(totalWidth, rowHeight);
 
         settingsButton_.setBounds(strip.removeFromLeft(eachWidth));
-        strip.removeFromLeft(buttonGap);
+        strip.removeFromLeft(gap);
         toneButton_.setBounds(strip.removeFromLeft(eachWidth));
-        strip.removeFromLeft(buttonGap);
+        strip.removeFromLeft(gap);
         pluginListButton_.setBounds(strip.removeFromLeft(eachWidth));
     }
 
 private:
+    void rebuildPluginCombo()
+    {
+        pluginCombo_.clear(juce::dontSendNotification);
+        comboItemDescriptions_.clearQuick();
+
+        const auto plugins = ctx_.pluginHost.getKnownPlugins();
+        int id = 1;
+        for (const auto& desc : plugins)
+        {
+            pluginCombo_.addItem(desc.name + "  [" + desc.pluginFormatName + "]", id++);
+            comboItemDescriptions_.add(desc);
+        }
+    }
+
+    void refreshSlotControls()
+    {
+        const bool loaded = ctx_.pluginSlot.isLoaded();
+        clearButton_.setEnabled(loaded);
+        bypassButton_.setEnabled(loaded);
+        editButton_.setEnabled(loaded && ctx_.pluginSlot.getHostedPlugin() != nullptr
+                               && ctx_.pluginSlot.getHostedPlugin()->hasEditor());
+        bypassButton_.setToggleState(ctx_.pluginSlot.isBypassed(), juce::dontSendNotification);
+
+        if (loaded)
+            statusLabel_.setText("Loaded: " + ctx_.pluginSlot.getLoadedName(), juce::dontSendNotification);
+        else
+            statusLabel_.setText("No plugin loaded", juce::dontSendNotification);
+
+        // Close any editor window for a no-longer-loaded plugin.
+        if (!loaded)
+            editorWindow_.reset();
+    }
+
+    void onLoadClicked()
+    {
+        const int selected = pluginCombo_.getSelectedId(); // 1-based
+        if (selected < 1 || selected > comboItemDescriptions_.size())
+        {
+            juce::AlertWindow::showAsync(
+                juce::MessageBoxOptions{}.withIconType(juce::MessageBoxIconType::WarningIcon).withTitle("Load plugin").withMessage("Pick a plugin from the list first.").withButton("OK"),
+                nullptr);
+            return;
+        }
+
+        const auto& desc = comboItemDescriptions_.getReference(selected - 1);
+
+        // Close any open editor for the previous plugin before swap.
+        editorWindow_.reset();
+
+        juce::String error;
+        if (!ctx_.pluginSlot.load(desc, error))
+        {
+            juce::AlertWindow::showAsync(
+                juce::MessageBoxOptions{}.withIconType(juce::MessageBoxIconType::WarningIcon).withTitle("Load failed").withMessage("Could not load \"" + desc.name + "\":\n" + error).withButton("OK"),
+                nullptr);
+        }
+    }
+
+    void onClearClicked()
+    {
+        editorWindow_.reset();
+        ctx_.pluginSlot.unload();
+    }
+
+    void onEditClicked()
+    {
+        auto* plugin = ctx_.pluginSlot.getHostedPlugin();
+        if (plugin == nullptr || !plugin->hasEditor())
+            return;
+
+        // If an editor window is already open, just bring it to front.
+        if (editorWindow_ != nullptr)
+        {
+            editorWindow_->toFront(true);
+            return;
+        }
+
+        auto* editor = plugin->createEditorIfNeeded();
+        if (editor == nullptr)
+            return;
+
+        editorWindow_ = std::make_unique<EditorWindow>(ctx_.pluginSlot.getLoadedName(), editor, [this] {
+            // Drop the editor when its window closes — JUCE expects the
+            // host to delete the editor before the plugin instance dies.
+            editorWindow_.reset();
+        });
+    }
+
     void openAudioSettings()
     {
         // Standard JUCE device selector. 2-channel stereo in / 2-channel
@@ -153,6 +310,9 @@ private:
     {
         if (toneButton_.getToggleState())
         {
+            // Test tone replaces any plugin in the slot — drop slot state
+            // first so the UI shows "no plugin loaded".
+            ctx_.pluginSlot.unload();
             auto graph = buildTestToneGraph(*ctx_.audioEngine.getDeviceManager());
             ctx_.audioEngine.loadGraph(std::move(graph));
         }
@@ -186,7 +346,48 @@ private:
         options.launchAsync();
     }
 
+    // Holds the plugin's AudioProcessorEditor in a DocumentWindow and
+    // calls a callback on close so the host can drop its handle.
+    class EditorWindow : public juce::DocumentWindow
+    {
+    public:
+        EditorWindow(const juce::String& title, juce::AudioProcessorEditor* editor, std::function<void()> onClose)
+            : juce::DocumentWindow(title,
+                                   juce::Desktop::getInstance().getDefaultLookAndFeel().findColour(
+                                       juce::ResizableWindow::backgroundColourId),
+                                   juce::DocumentWindow::closeButton),
+              onClose_(std::move(onClose))
+        {
+            setUsingNativeTitleBar(true);
+            setResizable(editor->isResizable(), false);
+            setContentOwned(editor, true);
+            centreWithSize(getWidth(), getHeight());
+            setVisible(true);
+        }
+
+        void closeButtonPressed() override
+        {
+            if (onClose_)
+                onClose_();
+        }
+
+    private:
+        std::function<void()> onClose_;
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(EditorWindow)
+    };
+
     AppContext& ctx_;
+
+    juce::ComboBox pluginCombo_;
+    juce::Array<juce::PluginDescription> comboItemDescriptions_;
+    juce::TextButton loadButton_;
+    juce::TextButton clearButton_;
+    juce::TextButton bypassButton_;
+    juce::TextButton editButton_;
+    juce::Label statusLabel_;
+
+    std::unique_ptr<EditorWindow> editorWindow_;
+
     juce::TextButton settingsButton_;
     juce::TextButton toneButton_;
     juce::TextButton pluginListButton_;
