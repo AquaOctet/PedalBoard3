@@ -19,6 +19,7 @@ set(PB3_TEST_SOURCES
     unit/engine/TestToneProcessor_test.cpp
     unit/engine/AudioEngine_test.cpp
     unit/engine/PluginHost_test.cpp
+    unit/session/Preferences_test.cpp
 )
 
 add_executable(pb3_smoke_tests ${PB3_TEST_SOURCES})
@@ -30,6 +31,7 @@ target_include_directories(pb3_smoke_tests PRIVATE
 target_link_libraries(pb3_smoke_tests PRIVATE
     Catch2::Catch2WithMain
     pb3_engine_core
+    pb3_session_core
     pb3_rtsafety
     juce::juce_recommended_config_flags
 )

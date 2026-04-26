@@ -66,6 +66,17 @@ public:
     // discovered plugins. Suitable for a "first-run scan" button.
     int scanDefaultPaths();
 
+    // Replace the entire known list (and blacklist) from a previously-saved
+    // XmlElement produced by createKnownListXml(). Used by App at startup
+    // so a fresh launch doesn't have to rescan. Acquires the write lock for
+    // the swap. Safe to call before any scan; safe to call repeatedly.
+    void loadKnownList(const juce::XmlElement& xml);
+
+    // Snapshot the known list (including the JUCE plugin blacklist) as
+    // XML, suitable for storing via session::Preferences. Returns nullptr
+    // if JUCE produces an empty list.
+    std::unique_ptr<juce::XmlElement> createKnownListXml() const;
+
     // Remove every entry from the known plugin list.
     void clearKnownPlugins();
 

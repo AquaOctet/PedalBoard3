@@ -14,6 +14,7 @@
 # -----------------------------------------------------------------------------
 # Subsystems (static libs that carry pb3_warnings on their own sources)
 # -----------------------------------------------------------------------------
+add_subdirectory(session)
 add_subdirectory(engine)
 
 add_library(pb3_app_core STATIC
@@ -39,6 +40,7 @@ target_compile_definitions(pb3_app_core PUBLIC
 target_link_libraries(pb3_app_core
     PUBLIC
         pb3_engine_core
+        pb3_session_core
         juce::juce_gui_extra
         juce::juce_audio_utils
         juce::juce_audio_processors

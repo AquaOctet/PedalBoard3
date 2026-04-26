@@ -3,8 +3,10 @@
 #include "AppContext.h"
 #include "engine/AudioEngine.h"
 #include "engine/PluginHost.h"
+#include "session/Preferences.h"
 #include "ui/MainWindow.h"
 
+#include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_core/juce_core.h>
 #include <juce_events/juce_events.h>
 
@@ -17,9 +19,9 @@ namespace pedalboard3
 // Top-level JUCE application object. Owns every subsystem by unique_ptr
 // and exposes them to UI via an AppContext reference bundle (see
 // AppContext.h). Phase 1 growth: later subsystems (Session, MidiRouter,
-// OscServer, Preferences, Diagnostics::EventLog) will slot into the
-// AppContext without widening MainWindow's constructor.
-class App : public juce::JUCEApplication
+// OscServer, Diagnostics::EventLog) will slot into the AppContext
+// without widening MainWindow's constructor.
+class App : public juce::JUCEApplication, private juce::ChangeListener
 {
 public:
     App() = default;
@@ -35,6 +37,11 @@ public:
     void anotherInstanceStarted(const juce::String&) override {}
 
 private:
+    // Persists AudioDeviceManager XML and KnownPluginList XML to
+    // session::Preferences whenever JUCE notifies us of a change.
+    void changeListenerCallback(juce::ChangeBroadcaster* source) override;
+
+    std::unique_ptr<session::Preferences> preferences;
     std::unique_ptr<engine::AudioEngine> engine;
     std::unique_ptr<engine::PluginHost> pluginHost;
     std::optional<AppContext> context;

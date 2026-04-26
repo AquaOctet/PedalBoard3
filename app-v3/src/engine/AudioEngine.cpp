@@ -10,7 +10,7 @@ AudioEngine::~AudioEngine()
     shutdown();
 }
 
-AudioEngine::Result AudioEngine::initialise()
+AudioEngine::Result AudioEngine::initialise(const juce::XmlElement* savedState)
 {
     if (initialised_)
         return Result::ok();
@@ -18,9 +18,12 @@ AudioEngine::Result AudioEngine::initialise()
     // 2 inputs + 2 outputs = the Phase 1 canonical stereo pipeline. Users
     // whose hardware can't provide both will see the result's error message.
     // On headless Linux CI the device manager returns a descriptive string
-    // without throwing.
-    const auto err = deviceManager_.initialiseWithDefaultDevices(/*numInputs*/ 2,
-                                                                 /*numOutputs*/ 2);
+    // without throwing. With savedState non-null, JUCE tries the persisted
+    // device first and falls back to defaults on failure (last arg = true).
+    const auto err = deviceManager_.initialise(/*numInputs*/ 2,
+                                               /*numOutputs*/ 2,
+                                               savedState,
+                                               /*selectDefaultDeviceOnFailure*/ true);
 
     player_.setProcessor(runtime_.get());
     deviceManager_.addAudioCallback(&player_);

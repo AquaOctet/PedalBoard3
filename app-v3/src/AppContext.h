@@ -6,6 +6,11 @@ class AudioEngine;
 class PluginHost;
 } // namespace pedalboard3::engine
 
+namespace pedalboard3::session
+{
+class Preferences;
+} // namespace pedalboard3::session
+
 namespace pedalboard3
 {
 
@@ -14,12 +19,12 @@ namespace pedalboard3
 // subsystem by unique_ptr and passes references through here.
 //
 // Phase 1.C.6 members: AudioEngine + PluginHost.
+// Phase 1.C.2 added: session::Preferences (per-user persistence).
 //
 // Upcoming additions (one field per subsystem as each phase lands):
 //   - session::Session           (Phase 1.D — current patch + state machine)
 //   - control::MidiRouter        (Phase 4 — MIDI ingest / dispatch)
 //   - control::OscServer         (Phase 4 — OSC ingest / dispatch)
-//   - session::Preferences       (Phase 1.C.2 — persisted audio device choice)
 //   - diagnostics::EventLog      (Phase 1.B+ — RT-safe observability)
 //
 // Keep the struct trivially copyable — it's a reference bundle, not a
@@ -29,6 +34,7 @@ struct AppContext
 {
     engine::AudioEngine& audioEngine;
     engine::PluginHost& pluginHost;
+    session::Preferences& preferences;
 };
 
 } // namespace pedalboard3

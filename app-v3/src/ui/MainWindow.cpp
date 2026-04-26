@@ -5,6 +5,7 @@
 #include "engine/AudioGraphRuntime.h"
 #include "engine/PluginHost.h"
 #include "engine/processors/TestToneProcessor.h"
+#include "session/Preferences.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -165,12 +166,13 @@ private:
     {
         // JUCE's standard plugin-list UI. Handles scanning (including
         // out-of-process where supported), per-format scan buttons, and
-        // remove/enable per row. We don't pass a PropertiesFile for
-        // persistence yet — that arrives in Phase 1.C.2 via Preferences.
+        // remove/enable per row. The PropertiesFile pointer lets JUCE
+        // auto-save user edits (enable/disable, blacklist) to our
+        // session::Preferences store.
         auto listComponent = std::make_unique<juce::PluginListComponent>(ctx_.pluginHost.getFormatManager(),
                                                                          ctx_.pluginHost.getKnownPluginList(),
                                                                          ctx_.pluginHost.getCrashedPluginsFile(),
-                                                                         /*propertiesFile*/ nullptr,
+                                                                         ctx_.preferences.getStore(),
                                                                          /*allowAsyncScanning*/ false);
         listComponent->setSize(720, 520);
 
