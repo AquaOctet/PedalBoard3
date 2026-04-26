@@ -1,12 +1,16 @@
 # Pedalboard 3 — GitLab CI pipeline.
 #
 # Linux:
-#   - lint:format runs on saas-linux (a one-line clang-format check).
-#   - build:linux + test:linux:unit run on the self-hosted weeb-cluster
-#     k8s runner — bigger pods, faster nodes, and PVC-backed caches
-#     (Phase-2 follow-up). Tag the runner `weeb-cluster` in the GitLab
-#     UI so these jobs can target it.
-#   All three run on every MR push and on default branch.
+#   - lint:format runs on saas-linux (a one-line clang-format check; cheap
+#     enough to keep on the shared runner so it doesn't block on cluster
+#     state).
+#   - build:image:linux (pre-build stage) builds ci/docker/Dockerfile.linux
+#     via kaniko on weeb-cluster and pushes to the project Container
+#     Registry. Runs only when Dockerfile or .gitlab-ci.yml changes;
+#     manual fallback otherwise.
+#   - build:linux + test:linux:unit run on weeb-cluster using the
+#     prebuilt ci-linux:latest image. No apt-install at job time —
+#     toolchain comes baked into the image.
 # macOS: build + unit tests on GitLab.com's saas-macos-large-m2pro
 # (Apple Silicon, brew preinstalled). Auto on default branch, manual on
 # MRs because saas-macos queue waits are long. `allow_failure: true`
@@ -19,6 +23,7 @@
 
 stages:
   - lint
+  - pre-build
   - build
   - test
 
@@ -30,6 +35,7 @@ variables:
   CCACHE_DIR: "${CI_PROJECT_DIR}/.ccache"
   CCACHE_MAXSIZE: "2G"
   DEBIAN_FRONTEND: "noninteractive"
+  CI_LINUX_IMAGE: "${CI_REGISTRY_IMAGE}/ci-linux:latest"
 
 default:
   interruptible: true
@@ -56,6 +62,23 @@ default:
   - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     when: manual
 
+# Image build only when the recipe (Dockerfile) or pipeline that consumes
+# it changes. `when: manual` fallback so a user can force a rebuild from
+# the UI any time. allow_failure on the manual fallback keeps the rest of
+# the pipeline running even when the user doesn't click — build:linux
+# downstream will pull whatever :latest is already in the registry.
+.rules-ci-image: &rules-ci-image
+  - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    changes:
+      - ci/docker/Dockerfile.linux
+      - .gitlab-ci.yml
+  - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    changes:
+      - ci/docker/Dockerfile.linux
+      - .gitlab-ci.yml
+  - when: manual
+    allow_failure: true
+
 .cache-linux: &cache-linux
   cache:
     - key: "cpm-${CI_PROJECT_PATH_SLUG}"
@@ -66,31 +89,12 @@ default:
       policy: pull-push
 
 # Lint-only setup: clang-format + just. Skips the heavy build toolchain
-# (build-essential / cmake / libwebkit2gtk-4.1-dev / X11 / freetype / GL)
-# that .ubuntu-setup pulls. libwebkit2gtk alone cascades into 200+ GTK
-# packages and dominates apt-install time. Dropping it here cuts the
-# lint job before_script from ~60s to <10s.
+# that ci-linux:latest carries. Lint runs on saas-linux on a stock
+# ubuntu:24.04 image to avoid blocking on cluster state for a check
+# that takes <30 s.
 .lint-setup: &lint-setup
   - apt-get update -qq
   - apt-get install -y --no-install-recommends clang-format-18 just
-  - ln -sf /usr/bin/clang-format-18 /usr/local/bin/clang-format
-
-# Full build toolchain on top of ubuntu:24.04, used by build:linux and
-# test:linux:unit. Replaced by the custom Dockerfile image in Phase 6.
-.ubuntu-setup: &ubuntu-setup
-  - apt-get update -qq
-  - >
-    apt-get install -y --no-install-recommends
-    ca-certificates curl git
-    build-essential cmake ninja-build pkg-config
-    clang-18 clang-format-18
-    libasound2-dev libjack-jackd2-dev
-    libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev
-    libxext-dev libxcomposite-dev libxrender-dev
-    libfreetype-dev libfontconfig1-dev
-    libgl-dev libglu1-mesa-dev
-    libcurl4-openssl-dev libwebkit2gtk-4.1-dev
-    ccache just
   - ln -sf /usr/bin/clang-format-18 /usr/local/bin/clang-format
 
 # saas-macos-large-m2pro ships Xcode + Homebrew preinstalled but minimal
@@ -115,18 +119,51 @@ lint:format:
     - just format-check
 
 # ===========================================================================
+# PRE-BUILD — build the Linux CI image once per Dockerfile change
+# ===========================================================================
+build:image:linux:
+  stage: pre-build
+  tags: [ weeb-cluster ]
+  rules: *rules-ci-image
+  image:
+    name: gcr.io/kaniko-project/executor:v1.23.2-debug
+    entrypoint: [""]
+  variables:
+    GIT_SUBMODULE_STRATEGY: "none"
+  script:
+    # Auth to the project's Container Registry via CI_JOB_TOKEN. Kaniko
+    # reads /kaniko/.docker/config.json on startup.
+    - mkdir -p /kaniko/.docker
+    - >
+      printf '{"auths":{"%s":{"auth":"%s"}}}'
+      "${CI_REGISTRY}"
+      "$(printf '%s:%s' "${CI_REGISTRY_USER}" "${CI_REGISTRY_PASSWORD}" | base64 -w0)"
+      > /kaniko/.docker/config.json
+    - >
+      /kaniko/executor
+      --context "${CI_PROJECT_DIR}"
+      --dockerfile "${CI_PROJECT_DIR}/ci/docker/Dockerfile.linux"
+      --destination "${CI_REGISTRY_IMAGE}/ci-linux:latest"
+      --destination "${CI_REGISTRY_IMAGE}/ci-linux:${CI_COMMIT_SHORT_SHA}"
+      --cache=true
+      --cache-repo "${CI_REGISTRY_IMAGE}/ci-linux/cache"
+      --snapshot-mode=redo
+
+# ===========================================================================
 # BUILD
 # ===========================================================================
 build:linux:
   stage: build
-  image: ubuntu:24.04
+  image: "${CI_LINUX_IMAGE}"
   tags: [ weeb-cluster ]
   rules: *rules-default
+  needs:
+    - job: build:image:linux
+      optional: true
   <<: *cache-linux
   variables:
     CMAKE_C_COMPILER_LAUNCHER: ccache
     CMAKE_CXX_COMPILER_LAUNCHER: ccache
-  before_script: *ubuntu-setup
   script:
     - ccache --zero-stats || true
     - cmake --preset linux-dev -S app-v3
@@ -173,12 +210,11 @@ build:macos:
 # ===========================================================================
 test:linux:unit:
   stage: test
-  image: ubuntu:24.04
+  image: "${CI_LINUX_IMAGE}"
   tags: [ weeb-cluster ]
   rules: *rules-default
   needs: [ build:linux ]
   <<: *cache-linux
-  before_script: *ubuntu-setup
   script:
     - ctest --preset linux-dev
 
