@@ -147,10 +147,8 @@ public:
 
         g.setColour(juce::Colours::grey);
         g.setFont(juce::FontOptions(14.0f, juce::Font::plain));
-        g.drawFittedText("Phase 1.D.1 — load a plugin into the audio graph.",
-                         bodyArea,
-                         juce::Justification::centred,
-                         1);
+        const auto subtitle = juce::String("Phase 1.D.1 — load a plugin into the audio graph.");
+        g.drawFittedText(subtitle, bodyArea, juce::Justification::centred, 1);
     }
 
     void resized() override
