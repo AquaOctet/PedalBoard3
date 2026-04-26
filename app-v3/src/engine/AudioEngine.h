@@ -54,7 +54,13 @@ public:
     // out) and start pumping the runtime. Safe to call even when no audio
     // hardware is present — returns a failure Result and leaves the runtime
     // reachable but silent. Idempotent.
-    Result initialise();
+    //
+    // When `savedState` is non-null, the AudioDeviceManager is initialised
+    // with that XML (produced by AudioDeviceManager::createStateXml()), so
+    // a previously-chosen device + sample rate + buffer size are restored
+    // across launches. Pass nullptr for "use OS defaults" — that's the
+    // first-run case and the path the unit tests take.
+    Result initialise(const juce::XmlElement* savedState = nullptr);
 
     // Stop the audio callback and close the device. Idempotent.
     void shutdown();

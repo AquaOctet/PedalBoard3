@@ -89,6 +89,18 @@ int PluginHost::scanDirectory(const juce::FileSearchPath& path, const juce::Stri
     return knownList_.getNumTypes() - beforeCount;
 }
 
+void PluginHost::loadKnownList(const juce::XmlElement& xml)
+{
+    const juce::ScopedWriteLock sl(listLock_);
+    knownList_.recreateFromXml(xml);
+}
+
+std::unique_ptr<juce::XmlElement> PluginHost::createKnownListXml() const
+{
+    const juce::ScopedReadLock sl(listLock_);
+    return knownList_.createXml();
+}
+
 void PluginHost::clearKnownPlugins()
 {
     const juce::ScopedWriteLock sl(listLock_);
