@@ -1,16 +1,19 @@
 # Pedalboard 3 — GitLab CI pipeline.
 #
 # Linux:
-#   - lint:format runs on saas-linux (a one-line clang-format check; cheap
-#     enough to keep on the shared runner so it doesn't block on cluster
-#     state).
+#   - lint:format runs on saas-linux (a one-line clang-format check;
+#     stock ubuntu:24.04 + a 2-package apt install).
 #   - build:image:linux (pre-build stage) builds ci/docker/Dockerfile.linux
-#     via kaniko on weeb-cluster and pushes to the project Container
+#     via kaniko on saas-linux and pushes to the project Container
 #     Registry. Runs only when Dockerfile or .gitlab-ci.yml changes;
 #     manual fallback otherwise.
-#   - build:linux + test:linux:unit run on weeb-cluster using the
-#     prebuilt ci-linux:latest image. No apt-install at job time —
-#     toolchain comes baked into the image.
+#   - build:linux + test:linux:unit run on saas-linux using the prebuilt
+#     ci-linux:latest image (so no apt-install at job time — toolchain
+#     comes baked into the image).
+# The self-hosted weeb-cluster runner is parked while its k8s infra
+# settles; once the cluster is stable, flip these tags back to
+# weeb-cluster to win on the ninja compile step. (See AGENTS.md notes
+# on Phase-6 self-hosting.)
 # macOS: build + unit tests on GitLab.com's saas-macos-large-m2pro
 # (Apple Silicon, brew preinstalled). Auto on default branch, manual on
 # MRs because saas-macos queue waits are long. `allow_failure: true`
@@ -159,7 +162,6 @@ build:image:linux:
 build:linux:
   stage: build
   image: "${CI_LINUX_IMAGE}"
-  tags: [ weeb-cluster ]
   rules: *rules-default
   needs:
     - job: build:image:linux
@@ -215,7 +217,6 @@ build:macos:
 test:linux:unit:
   stage: test
   image: "${CI_LINUX_IMAGE}"
-  tags: [ weeb-cluster ]
   rules: *rules-default
   needs: [ build:linux ]
   <<: *cache-linux
