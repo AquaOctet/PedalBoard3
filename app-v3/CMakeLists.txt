@@ -55,6 +55,33 @@ if(NOT PB3_LINT_ONLY)
             "JUCE_BUILD_EXTRAS OFF"
             "JUCE_BUILD_EXAMPLES OFF"
     )
+
+    # Mark every JUCE module's INTERFACE_INCLUDE_DIRECTORIES as SYSTEM so
+    # GCC/Clang treat JUCE headers as system headers (-isystem) and don't
+    # emit warnings from them. This is the second half of the warning-
+    # scoping fix:
+    #   - pb3_apply_strict_warnings (per-source) handles the case where
+    #     JUCE's own .cpp files compile inside our static libs as
+    #     INTERFACE_SOURCES — they don't get -Wold-style-cast etc.
+    #   - This block handles the case where our own .cpp files include
+    #     a JUCE header that itself contains old-style casts (e.g.
+    #     juce_Memory.h, juce_AudioSampleBuffer.h) — without SYSTEM,
+    #     GCC still flags those.
+    # Hardcoded list = the JUCE modules we actually link. Add new modules
+    # here if/when our targets pick them up.
+    foreach(_juce_mod IN ITEMS
+            juce_core juce_events juce_data_structures juce_graphics
+            juce_gui_basics juce_gui_extra juce_audio_basics juce_audio_devices
+            juce_audio_formats juce_audio_processors juce_audio_utils
+            juce_osc)
+        if(TARGET ${_juce_mod})
+            get_target_property(_juce_includes ${_juce_mod} INTERFACE_INCLUDE_DIRECTORIES)
+            if(_juce_includes)
+                set_target_properties(${_juce_mod} PROPERTIES
+                    INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_juce_includes}")
+            endif()
+        endif()
+    endforeach()
 endif()
 
 # CLAP SDK + helpers + hosting module — Phase 1+. Fetched only when enabled
