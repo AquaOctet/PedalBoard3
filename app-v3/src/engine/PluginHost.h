@@ -59,8 +59,7 @@ public:
     // knows about, so passing AU through alongside a VST3-only path will
     // walk every installed AU plugin too. Phase 1.C.4 (sandboxed scanning)
     // will be the proper isolation; until then, scope by format.
-    int scanDirectory(const juce::FileSearchPath& path,
-                      const juce::StringArray& formatNames = {});
+    int scanDirectory(const juce::FileSearchPath& path, const juce::StringArray& formatNames = {});
 
     // Convenience: scan every format's default OS paths, one format at a
     // time, only with that format. Returns the total number of newly-

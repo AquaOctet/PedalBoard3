@@ -165,11 +165,11 @@ TEST_CASE("PluginHost: scanDefaultPaths runs without crashing on a bare runner",
         const auto path = host.getDefaultSearchPathForFormat(name);
         for (int i = 0; i < path.getNumPaths(); ++i)
         {
-            if (path[i].isDirectory() && ! path[i].findChildFiles(juce::File::findFilesAndDirectories,
-                                                                   /*recursive*/ false).isEmpty())
-            {
+            if (!path[i].isDirectory())
+                continue;
+            const auto children = path[i].findChildFiles(juce::File::findFilesAndDirectories, /*recursive*/ false);
+            if (!children.isEmpty())
                 SKIP("default plugin path is populated; defer to Phase 1.C.4 sandbox scan");
-            }
         }
     }
 

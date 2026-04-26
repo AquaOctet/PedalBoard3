@@ -70,7 +70,7 @@ int PluginHost::scanDirectory(const juce::FileSearchPath& path, const juce::Stri
         if (format == nullptr || !format->canScanForPlugins())
             continue;
 
-        if (! formatNames.isEmpty() && ! formatNames.contains(format->getName()))
+        if (!formatNames.isEmpty() && !formatNames.contains(format->getName()))
             continue;
 
         juce::PluginDirectoryScanner scanner(knownList_,
