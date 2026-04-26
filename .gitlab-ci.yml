@@ -1,10 +1,12 @@
 # Pedalboard 3 — GitLab CI pipeline.
 #
 # Linux: lint + build + unit tests on a stock ubuntu:24.04 image with
-# inline apt installs (custom Dockerfile is Phase 6 work).
+# inline apt installs (custom Dockerfile is Phase 6 work). Runs on every
+# MR push and on default branch.
 # macOS: build + unit tests on GitLab.com's saas-macos-large-m2pro
-# (Apple Silicon, brew preinstalled). `allow_failure: true` while the
-# job stabilises — flip to mandatory once it's green twice in a row.
+# (Apple Silicon, brew preinstalled). Auto on default branch, manual on
+# MRs because saas-macos queue waits are long. `allow_failure: true`
+# while it stabilises — flip to mandatory once it's green twice in a row.
 # Windows: still a manual stub awaiting signing-cert provisioning
 # (Phase 6).
 #
@@ -38,6 +40,17 @@ default:
   - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
   - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
   - if: '$CI_COMMIT_BRANCH == "v3-rewrite"'   # initial dev branch
+
+# macOS jobs: saas-macos-large-m2pro queue waits + cold-VM boot are slow
+# (often 5-30 min before a runner picks up the job). Don't auto-run on
+# every MR push — that turns every "git push" into a long wait on the
+# critical path. Auto on default branch / v3-rewrite, manual on MRs;
+# Linux still gates merges fast on every push.
+.rules-macos: &rules-macos
+  - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+  - if: '$CI_COMMIT_BRANCH == "v3-rewrite"'
+  - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    when: manual
 
 .cache-linux: &cache-linux
   cache:
@@ -123,11 +136,12 @@ build:windows:
 
 # macOS Debug build on GitLab.com's saas-macos-large-m2pro (Apple Silicon).
 # `allow_failure: true` while the job stabilises — flip to mandatory once
-# it's green twice in a row. Same rules as Linux jobs (run on MR + main).
+# it's green twice in a row. Auto on default branch, manual on MRs (see
+# .rules-macos for why).
 build:macos:
   stage: build
   tags: [ saas-macos-large-m2pro ]
-  rules: *rules-default
+  rules: *rules-macos
   allow_failure: true
   before_script: *macos-setup
   script:
@@ -155,7 +169,7 @@ test:linux:unit:
 test:macos:unit:
   stage: test
   tags: [ saas-macos-large-m2pro ]
-  rules: *rules-default
+  rules: *rules-macos
   needs: [ build:macos ]
   allow_failure: true
   before_script: *macos-setup
