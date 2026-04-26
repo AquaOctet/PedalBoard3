@@ -109,11 +109,17 @@ endif()
 # -----------------------------------------------------------------------------
 # Warnings / sanitizers
 # -----------------------------------------------------------------------------
-add_library(pb3_warnings INTERFACE)
+# Strict warnings get applied per-source-file via pb3_apply_strict_warnings(),
+# NOT via INTERFACE library. JUCE 8 modules declare INTERFACE_SOURCES
+# (JUCEModuleSupport.cmake:100), so any consumer that links a JUCE module
+# pulls JUCE .cpp files into its own compile unit list — and a target-level
+# INTERFACE warning library would flood the build with ~24k -Wold-style-cast
+# warnings from JUCE's vendored Harfbuzz / juce_core. Per-source COMPILE_OPTIONS
+# attach to specific TUs only, leaving JUCE's INTERFACE_SOURCES untouched.
 if(MSVC)
-    target_compile_options(pb3_warnings INTERFACE /W4 /permissive-)
+    set(PB3_STRICT_WARNING_FLAGS /W4 /permissive-)
 else()
-    target_compile_options(pb3_warnings INTERFACE
+    set(PB3_STRICT_WARNING_FLAGS
         -Wall -Wextra -Wpedantic
         -Wshadow -Wnon-virtual-dtor
         -Wold-style-cast -Wcast-align -Wunused
@@ -123,12 +129,51 @@ else()
     )
 endif()
 
+function(pb3_apply_strict_warnings target)
+    foreach(src IN LISTS ARGN)
+        set_source_files_properties("${src}"
+            TARGET_DIRECTORY "${target}"
+            PROPERTIES COMPILE_OPTIONS "${PB3_STRICT_WARNING_FLAGS}"
+        )
+    endforeach()
+endfunction()
+
 add_library(pb3_rtsafety INTERFACE)
 if(PB3_ENABLE_RTSAN)
     target_compile_options(pb3_rtsafety INTERFACE -fsanitize=realtime)
     target_link_options(pb3_rtsafety INTERFACE   -fsanitize=realtime)
     message(STATUS "Pedalboard3: RealtimeSanitizer ENABLED")
 endif()
+
+# -----------------------------------------------------------------------------
+# JUCE module configuration shared across every consumer.
+#
+# JUCE modules are INTERFACE libraries (JUCEModuleSupport.cmake:100) whose
+# .cpp files get re-compiled per consumer target. Any preprocessor flag that
+# the JUCE module sources read (JUCE_PLUGINHOST_*, JUCE_WEB_BROWSER,
+# JUCE_USE_CURL, ...) must therefore be visible to EVERY target that links a
+# JUCE module — otherwise translation units silently disagree (formats fail
+# to register, gtk/gtk.h gets demanded by a JUCE_WEB_BROWSER=0 consumer that
+# transitively pulled juce_audio_utils → juce_gui_extra, etc.).
+#
+# Wire this INTERFACE target PUBLIC into the first target in the chain
+# (pb3_engine_core); transitive propagation reaches pb3_app_core,
+# Pedalboard3, and pb3_smoke_tests.
+add_library(pb3_juce_config INTERFACE)
+target_compile_definitions(pb3_juce_config INTERFACE
+    # Plugin-host format selection — drives juce::AudioPluginFormatManager::addDefaultFormats().
+    JUCE_PLUGINHOST_VST3=1
+    $<$<PLATFORM_ID:Linux>:JUCE_PLUGINHOST_LV2=1>
+    $<$<PLATFORM_ID:Darwin>:JUCE_PLUGINHOST_AU=1>
+    $<$<PLATFORM_ID:Darwin>:JUCE_PLUGINHOST_LV2=1>
+    # Disable optional JUCE features uniformly. juce_gui_extra's webview path
+    # and juce_core's curl path both get gated on these; without them on
+    # every JUCE-compiling target, juce_gui_extra.cpp tries to include
+    # <gtk/gtk.h> and the build fails on runners without GTK include paths.
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+    JUCE_VST3_CAN_REPLACE_VST2=0
+)
 
 # -----------------------------------------------------------------------------
 # Subdirectories

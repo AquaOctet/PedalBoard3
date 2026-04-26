@@ -50,12 +50,15 @@ int PluginHost::scanDefaultPaths()
         if (path.getNumPaths() == 0)
             continue;
 
-        totalAdded += scanDirectory(path);
+        // Scan only this format with its own paths — never AU on a VST3
+        // path or vice versa. AU's scanner ignores the FileSearchPath, so
+        // including it implicitly would walk every installed AU plugin.
+        totalAdded += scanDirectory(path, juce::StringArray{format->getName()});
     }
     return totalAdded;
 }
 
-int PluginHost::scanDirectory(const juce::FileSearchPath& path)
+int PluginHost::scanDirectory(const juce::FileSearchPath& path, const juce::StringArray& formatNames)
 {
     const juce::ScopedWriteLock sl(listLock_);
     const int beforeCount = knownList_.getNumTypes();
@@ -65,6 +68,9 @@ int PluginHost::scanDirectory(const juce::FileSearchPath& path)
     {
         auto* format = formats_.getFormat(f);
         if (format == nullptr || !format->canScanForPlugins())
+            continue;
+
+        if (!formatNames.isEmpty() && !formatNames.contains(format->getName()))
             continue;
 
         juce::PluginDirectoryScanner scanner(knownList_,
@@ -101,6 +107,13 @@ std::unique_ptr<juce::AudioPluginInstance> PluginHost::createInstance(const juce
                                                                       juce::String& errorOut)
 {
     return formats_.createPluginInstance(desc, sampleRate, blockSize, errorOut);
+}
+
+juce::File PluginHost::getCrashedPluginsFile() const
+{
+    auto appDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("Pedalboard3");
+    appDir.createDirectory();
+    return appDir.getChildFile("crashed_plugins.xml");
 }
 
 } // namespace pedalboard3::engine

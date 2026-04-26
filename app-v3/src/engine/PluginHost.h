@@ -47,15 +47,23 @@ public:
     // juce::AudioPluginFormat::getDefaultLocationsToSearch() semantics.
     juce::FileSearchPath getDefaultSearchPathForFormat(const juce::String& formatName) const;
 
-    // Synchronously scan `path` with every registered format. Returns the
-    // number of NEWLY discovered plugins (not counting ones already in the
-    // known list). Non-existent or unreadable paths return 0 and do not
-    // throw.
-    int scanDirectory(const juce::FileSearchPath& path);
+    // Synchronously scan `path` with every registered format whose name is
+    // listed in `formatNames`, or with EVERY registered format when
+    // `formatNames` is empty. Returns the number of NEWLY discovered plugins
+    // (not counting ones already in the known list). Non-existent or
+    // unreadable paths return 0 and do not throw.
+    //
+    // Tip: use the per-format form for any caller that has chosen specific
+    // paths. juce::AudioUnitPluginFormat::searchPathsForPlugins() ignores the
+    // FileSearchPath argument and enumerates EVERY AudioComponent the OS
+    // knows about, so passing AU through alongside a VST3-only path will
+    // walk every installed AU plugin too. Phase 1.C.4 (sandboxed scanning)
+    // will be the proper isolation; until then, scope by format.
+    int scanDirectory(const juce::FileSearchPath& path, const juce::StringArray& formatNames = {});
 
-    // Convenience: walk every registered format's default OS paths and scan
-    // them. Returns the total number of newly-discovered plugins across all
-    // formats. Suitable for a "first-run scan" button.
+    // Convenience: scan every format's default OS paths, one format at a
+    // time, only with that format. Returns the total number of newly-
+    // discovered plugins. Suitable for a "first-run scan" button.
     int scanDefaultPaths();
 
     // Remove every entry from the known plugin list.
@@ -77,6 +85,21 @@ public:
     // Escape hatch for code that needs the raw JUCE format manager (e.g.
     // JUCE's own PluginListComponent in a future settings dialog).
     juce::AudioPluginFormatManager& getFormatManager() noexcept { return formats_; }
+
+    // Mutable reference to the underlying KnownPluginList. Intended for
+    // JUCE's built-in PluginListComponent, which mutates the list as the
+    // user adds/removes plugins through the UI. Message-thread-only —
+    // the ReadWriteLock used by scanDirectory/getKnownPlugins is NOT
+    // held for UI edits. Phase 1.D revisits this when the patch-switch
+    // worker thread also needs to read the list.
+    juce::KnownPluginList& getKnownPluginList() noexcept { return knownList_; }
+
+    // Path to the "dead man's pedal" file JUCE uses to remember which
+    // plugin binary is mid-scan if the scanner crashes. Lives under
+    // UserDataDir/crashed_plugins.xml; parent directory is created
+    // lazily on first access. Caller is responsible for passing this to
+    // PluginDirectoryScanner / PluginListComponent.
+    juce::File getCrashedPluginsFile() const;
 
 private:
     juce::AudioPluginFormatManager formats_;
