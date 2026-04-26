@@ -1,12 +1,12 @@
 # Pedalboard 3 — GitLab CI pipeline.
 #
-# Phase 0: Linux-only lint + build + unit tests using a stock ubuntu:24.04
-# image with inline apt installs. The custom CI Dockerfile at
-# ci/docker/Dockerfile.linux will be published to the project's Container
-# Registry in Phase 6, and the `image:` lines here will switch to it.
-#
-# Windows/macOS jobs are manual stubs that exit non-zero by design — they
-# light up in Phase 6 when self-hosted runners + signing creds are provisioned.
+# Linux: lint + build + unit tests on a stock ubuntu:24.04 image with
+# inline apt installs (custom Dockerfile is Phase 6 work).
+# macOS: build + unit tests on GitLab.com's saas-macos-large-m2pro
+# (Apple Silicon, brew preinstalled). `allow_failure: true` while the
+# job stabilises — flip to mandatory once it's green twice in a row.
+# Windows: still a manual stub awaiting signing-cert provisioning
+# (Phase 6).
 #
 # Full multi-platform + signing pipeline lives in the plan at
 # docs/plans/2026-04-12-001-feat-pedalboard-3-rewrite-plan.md (Appendix C).
@@ -66,6 +66,16 @@ default:
     ccache just
   - ln -sf /usr/bin/clang-format-18 /usr/local/bin/clang-format
 
+# saas-macos-large-m2pro ships Xcode + Homebrew preinstalled but minimal
+# beyond that. Install only what CMakePresets/just need; everything else
+# (Apple Clang, AudioToolbox, CoreAudio frameworks) is already present.
+.macos-setup: &macos-setup
+  - brew update --quiet || true
+  - brew install --quiet cmake ninja just pkg-config || true
+  - cmake --version
+  - ninja --version
+  - just --version
+
 # ===========================================================================
 # LINT
 # ===========================================================================
@@ -100,8 +110,7 @@ build:linux:
     expire_in: 1 day
     when: on_success
 
-# Phase 6 stubs. `when: manual` ensures these never auto-run until we have
-# the runners. allow_failure keeps MR merges unblocked.
+# Windows is still a manual stub: signing-cert provisioning is Phase 6 work.
 build:windows:
   stage: build
   tags: [ saas-windows-medium-amd64 ]
@@ -112,15 +121,23 @@ build:windows:
     - echo "Phase 6 stub — waiting on self-hosted Windows runner + signing creds."
     - exit 1
 
+# macOS Debug build on GitLab.com's saas-macos-large-m2pro (Apple Silicon).
+# `allow_failure: true` while the job stabilises — flip to mandatory once
+# it's green twice in a row. Same rules as Linux jobs (run on MR + main).
 build:macos:
   stage: build
   tags: [ saas-macos-large-m2pro ]
-  rules:
-    - when: manual
+  rules: *rules-default
   allow_failure: true
+  before_script: *macos-setup
   script:
-    - echo "Phase 6 stub — waiting on self-hosted macOS runner + Developer ID."
-    - exit 1
+    - cmake --preset macos-dev -S app-v3
+    - cmake --build --preset macos-dev -- -j$(sysctl -n hw.ncpu)
+  artifacts:
+    paths:
+      - build/macos-dev/
+    expire_in: 1 day
+    when: on_success
 
 # ===========================================================================
 # TEST
@@ -134,3 +151,13 @@ test:linux:unit:
   before_script: *ubuntu-setup
   script:
     - ctest --preset linux-dev
+
+test:macos:unit:
+  stage: test
+  tags: [ saas-macos-large-m2pro ]
+  rules: *rules-default
+  needs: [ build:macos ]
+  allow_failure: true
+  before_script: *macos-setup
+  script:
+    - ctest --preset macos-dev
