@@ -61,8 +61,18 @@ default:
       paths: [ .ccache/ ]
       policy: pull-push
 
-# Install the bare-minimum toolchain on top of ubuntu:24.04. Replaced by the
-# custom Dockerfile image in Phase 6.
+# Lint-only setup: clang-format + just. Skips the heavy build toolchain
+# (build-essential / cmake / libwebkit2gtk-4.1-dev / X11 / freetype / GL)
+# that .ubuntu-setup pulls. libwebkit2gtk alone cascades into 200+ GTK
+# packages and dominates apt-install time. Dropping it here cuts the
+# lint job before_script from ~60s to <10s.
+.lint-setup: &lint-setup
+  - apt-get update -qq
+  - apt-get install -y --no-install-recommends clang-format-18 just
+  - ln -sf /usr/bin/clang-format-18 /usr/local/bin/clang-format
+
+# Full build toolchain on top of ubuntu:24.04, used by build:linux and
+# test:linux:unit. Replaced by the custom Dockerfile image in Phase 6.
 .ubuntu-setup: &ubuntu-setup
   - apt-get update -qq
   - >
@@ -96,7 +106,7 @@ lint:format:
   stage: lint
   image: ubuntu:24.04
   rules: *rules-default
-  before_script: *ubuntu-setup
+  before_script: *lint-setup
   script:
     - just format-check
 
