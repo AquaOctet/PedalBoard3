@@ -47,15 +47,24 @@ public:
     // juce::AudioPluginFormat::getDefaultLocationsToSearch() semantics.
     juce::FileSearchPath getDefaultSearchPathForFormat(const juce::String& formatName) const;
 
-    // Synchronously scan `path` with every registered format. Returns the
-    // number of NEWLY discovered plugins (not counting ones already in the
-    // known list). Non-existent or unreadable paths return 0 and do not
-    // throw.
-    int scanDirectory(const juce::FileSearchPath& path);
+    // Synchronously scan `path` with every registered format whose name is
+    // listed in `formatNames`, or with EVERY registered format when
+    // `formatNames` is empty. Returns the number of NEWLY discovered plugins
+    // (not counting ones already in the known list). Non-existent or
+    // unreadable paths return 0 and do not throw.
+    //
+    // Tip: use the per-format form for any caller that has chosen specific
+    // paths. juce::AudioUnitPluginFormat::searchPathsForPlugins() ignores the
+    // FileSearchPath argument and enumerates EVERY AudioComponent the OS
+    // knows about, so passing AU through alongside a VST3-only path will
+    // walk every installed AU plugin too. Phase 1.C.4 (sandboxed scanning)
+    // will be the proper isolation; until then, scope by format.
+    int scanDirectory(const juce::FileSearchPath& path,
+                      const juce::StringArray& formatNames = {});
 
-    // Convenience: walk every registered format's default OS paths and scan
-    // them. Returns the total number of newly-discovered plugins across all
-    // formats. Suitable for a "first-run scan" button.
+    // Convenience: scan every format's default OS paths, one format at a
+    // time, only with that format. Returns the total number of newly-
+    // discovered plugins. Suitable for a "first-run scan" button.
     int scanDefaultPaths();
 
     // Remove every entry from the known plugin list.

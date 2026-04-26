@@ -38,7 +38,10 @@ TEST_CASE("PluginHost: scanning a non-existent directory adds nothing and does n
 
     juce::FileSearchPath path;
     path.add(juce::File("/tmp/pedalboard3-nonexistent-dir-for-test-42"));
-    const int added = host.scanDirectory(path);
+    // Scope to VST3 only. AU's scanner ignores the FileSearchPath and would
+    // enumerate every installed AudioComponent on the runner — fine on a
+    // bare CI runner, fatal on a dev Mac with a buggy AU plugin installed.
+    const int added = host.scanDirectory(path, juce::StringArray{"VST3"});
 
     REQUIRE(added == 0);
     REQUIRE(host.getKnownPlugins().isEmpty());
@@ -55,7 +58,7 @@ TEST_CASE("PluginHost: scanning an empty directory adds nothing", "[engine][plug
 
     juce::FileSearchPath path;
     path.add(tempDir);
-    const int added = host.scanDirectory(path);
+    const int added = host.scanDirectory(path, juce::StringArray{"VST3"});
 
     REQUIRE(added == 0);
 
@@ -121,12 +124,21 @@ TEST_CASE("PluginHost: getDefaultSearchPathForFormat returns a non-empty path fo
     const auto names = host.getFormatNames();
     REQUIRE(names.size() > 0);
 
-    // Pick the first registered format (VST3 on every supported platform).
-    // We don't assert a specific directory because JUCE picks per-OS defaults
-    // that we can't hard-code for CI. Just prove the path has at least one
-    // directory entry.
-    const auto path = host.getDefaultSearchPathForFormat(names[0]);
-    REQUIRE(path.getNumPaths() > 0);
+    // At least one registered format must expose default search paths so a
+    // first-run "scan everywhere" UI has something to walk. JUCE 8's default
+    // format order on macOS puts AudioUnit first (juce_AudioPluginFormatManager.cpp),
+    // and AU's getDefaultLocationsToSearch() returns {} because AU plugins
+    // are registry-based. So we iterate, not assume names[0].
+    bool sawNonEmpty = false;
+    for (const auto& name : names)
+    {
+        if (host.getDefaultSearchPathForFormat(name).getNumPaths() > 0)
+        {
+            sawNonEmpty = true;
+            break;
+        }
+    }
+    REQUIRE(sawNonEmpty);
 }
 
 TEST_CASE("PluginHost: getDefaultSearchPathForFormat returns empty for an unknown format name",
@@ -141,9 +153,26 @@ TEST_CASE("PluginHost: scanDefaultPaths runs without crashing on a bare runner",
 {
     engine::PluginHost host;
 
-    // CI runners rarely have production plugins installed, so this may
-    // return 0. The assertion is simply that it doesn't throw, doesn't
-    // deadlock on the rwlock, and leaves the host in a sane state.
+    // We can only verify non-crash + sane-state semantics when the
+    // filesystem actually IS bare. On a developer machine with installed
+    // VST3 / LV2 plugins, JUCE's PluginDirectoryScanner instantiates each
+    // plugin to introspect its metadata — and a single buggy plugin in
+    // that set will SIGABRT the test process. The proper fix is Phase 1.C.4
+    // (out-of-process sandbox scanning); until then, skip when any default
+    // path contains a plugin candidate.
+    for (const auto& name : host.getFormatNames())
+    {
+        const auto path = host.getDefaultSearchPathForFormat(name);
+        for (int i = 0; i < path.getNumPaths(); ++i)
+        {
+            if (path[i].isDirectory() && ! path[i].findChildFiles(juce::File::findFilesAndDirectories,
+                                                                   /*recursive*/ false).isEmpty())
+            {
+                SKIP("default plugin path is populated; defer to Phase 1.C.4 sandbox scan");
+            }
+        }
+    }
+
     const int added = host.scanDefaultPaths();
     REQUIRE(added >= 0);
     REQUIRE(host.getKnownPlugins().size() == added);
