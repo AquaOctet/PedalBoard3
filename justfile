@@ -90,7 +90,7 @@ run:
     #!/usr/bin/env bash
     set -euo pipefail
     if [ "$(uname)" = "Darwin" ]; then
-        APP="build/macos-dev/src/Pedalboard 3_artefacts/Debug/Pedalboard 3.app"
+        APP="build/macos-dev/src/Pedalboard3_artefacts/Debug/Pedalboard 3.app"
         [ -d "$APP" ] || { echo "Not built yet: $APP" >&2; exit 1; }
         open "$APP"
     else
