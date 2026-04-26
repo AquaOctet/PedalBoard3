@@ -198,7 +198,7 @@ build:windows:
 # .rules-macos for why).
 build:macos:
   stage: build
-  tags: [ saas-macos-large-m2pro ]
+  tags: [ saas-macos-medium-m1 ]
   rules: *rules-macos
   allow_failure: true
   before_script: *macos-setup
@@ -225,7 +225,7 @@ test:linux:unit:
 
 test:macos:unit:
   stage: test
-  tags: [ saas-macos-large-m2pro ]
+  tags: [ saas-macos-medium-m1 ]
   rules: *rules-macos
   needs: [ build:macos ]
   allow_failure: true
