@@ -1,18 +1,32 @@
 # Pedalboard 3 — GitLab CI pipeline.
 #
-# Phase 0: Linux-only lint + build + unit tests using a stock ubuntu:24.04
-# image with inline apt installs. The custom CI Dockerfile at
-# ci/docker/Dockerfile.linux will be published to the project's Container
-# Registry in Phase 6, and the `image:` lines here will switch to it.
-#
-# Windows/macOS jobs are manual stubs that exit non-zero by design — they
-# light up in Phase 6 when self-hosted runners + signing creds are provisioned.
+# Linux:
+#   - lint:format runs on saas-linux (a one-line clang-format check;
+#     stock ubuntu:24.04 + a 2-package apt install).
+#   - build:image:linux (pre-build stage) builds ci/docker/Dockerfile.linux
+#     via kaniko on saas-linux and pushes to the project Container
+#     Registry. Runs only when Dockerfile or .gitlab-ci.yml changes;
+#     manual fallback otherwise.
+#   - build:linux + test:linux:unit run on saas-linux using the prebuilt
+#     ci-linux:latest image (so no apt-install at job time — toolchain
+#     comes baked into the image).
+# The self-hosted weeb-cluster runner is parked while its k8s infra
+# settles; once the cluster is stable, flip these tags back to
+# weeb-cluster to win on the ninja compile step. (See AGENTS.md notes
+# on Phase-6 self-hosting.)
+# macOS: build + unit tests on GitLab.com's saas-macos-large-m2pro
+# (Apple Silicon, brew preinstalled). Auto on default branch, manual on
+# MRs because saas-macos queue waits are long. `allow_failure: true`
+# while it stabilises — flip to mandatory once it's green twice in a row.
+# Windows: still a manual stub awaiting signing-cert provisioning
+# (Phase 6).
 #
 # Full multi-platform + signing pipeline lives in the plan at
 # docs/plans/2026-04-12-001-feat-pedalboard-3-rewrite-plan.md (Appendix C).
 
 stages:
   - lint
+  - pre-build
   - build
   - test
 
@@ -24,6 +38,7 @@ variables:
   CCACHE_DIR: "${CI_PROJECT_DIR}/.ccache"
   CCACHE_MAXSIZE: "2G"
   DEBIAN_FRONTEND: "noninteractive"
+  CI_LINUX_IMAGE: "${CI_REGISTRY_IMAGE}/ci-linux:latest"
 
 default:
   interruptible: true
@@ -39,6 +54,34 @@ default:
   - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
   - if: '$CI_COMMIT_BRANCH == "v3-rewrite"'   # initial dev branch
 
+# macOS jobs: saas-macos-large-m2pro queue waits + cold-VM boot are slow
+# (often 5-30 min before a runner picks up the job). Don't auto-run on
+# every MR push — that turns every "git push" into a long wait on the
+# critical path. Auto on default branch / v3-rewrite, manual on MRs;
+# Linux still gates merges fast on every push.
+.rules-macos: &rules-macos
+  - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+  - if: '$CI_COMMIT_BRANCH == "v3-rewrite"'
+  - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    when: manual
+
+# Image build only when the recipe (Dockerfile) or pipeline that consumes
+# it changes. `when: manual` fallback so a user can force a rebuild from
+# the UI any time. allow_failure on the manual fallback keeps the rest of
+# the pipeline running even when the user doesn't click — build:linux
+# downstream will pull whatever :latest is already in the registry.
+.rules-ci-image: &rules-ci-image
+  - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    changes:
+      - ci/docker/Dockerfile.linux
+      - .gitlab-ci.yml
+  - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    changes:
+      - ci/docker/Dockerfile.linux
+      - .gitlab-ci.yml
+  - when: manual
+    allow_failure: true
+
 .cache-linux: &cache-linux
   cache:
     - key: "cpm-${CI_PROJECT_PATH_SLUG}"
@@ -48,23 +91,24 @@ default:
       paths: [ .ccache/ ]
       policy: pull-push
 
-# Install the bare-minimum toolchain on top of ubuntu:24.04. Replaced by the
-# custom Dockerfile image in Phase 6.
-.ubuntu-setup: &ubuntu-setup
+# Lint-only setup: clang-format + just. Skips the heavy build toolchain
+# that ci-linux:latest carries. Lint runs on saas-linux on a stock
+# ubuntu:24.04 image to avoid blocking on cluster state for a check
+# that takes <30 s.
+.lint-setup: &lint-setup
   - apt-get update -qq
-  - >
-    apt-get install -y --no-install-recommends
-    ca-certificates curl git
-    build-essential cmake ninja-build pkg-config
-    clang-18 clang-format-18
-    libasound2-dev libjack-jackd2-dev
-    libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev
-    libxext-dev libxcomposite-dev libxrender-dev
-    libfreetype-dev libfontconfig1-dev
-    libgl-dev libglu1-mesa-dev
-    libcurl4-openssl-dev libwebkit2gtk-4.1-dev
-    ccache just
+  - apt-get install -y --no-install-recommends clang-format-18 just
   - ln -sf /usr/bin/clang-format-18 /usr/local/bin/clang-format
+
+# saas-macos-large-m2pro ships Xcode + Homebrew preinstalled but minimal
+# beyond that. Install only what CMakePresets/just need; everything else
+# (Apple Clang, AudioToolbox, CoreAudio frameworks) is already present.
+.macos-setup: &macos-setup
+  - brew update --quiet || true
+  - brew install --quiet cmake ninja just pkg-config || true
+  - cmake --version
+  - ninja --version
+  - just --version
 
 # ===========================================================================
 # LINT
@@ -73,22 +117,59 @@ lint:format:
   stage: lint
   image: ubuntu:24.04
   rules: *rules-default
-  before_script: *ubuntu-setup
+  before_script: *lint-setup
   script:
     - just format-check
+
+# ===========================================================================
+# PRE-BUILD — build the Linux CI image once per Dockerfile change
+# ===========================================================================
+# Runs on saas-linux (no tag), not weeb-cluster: image build is I/O-bound
+# (apt downloads, cmake/ninja tarballs from GitHub, layer push to the
+# Container Registry). saas-linux is on GitLab's backbone, so push is
+# faster than from home-cluster egress. weeb-cluster's 4 vCPU advantage
+# only matters for ninja compiles (build:linux), not Dockerfile builds.
+build:image:linux:
+  stage: pre-build
+  rules: *rules-ci-image
+  image:
+    name: gcr.io/kaniko-project/executor:v1.23.2-debug
+    entrypoint: [""]
+  variables:
+    GIT_SUBMODULE_STRATEGY: "none"
+  script:
+    # Auth to the project's Container Registry via CI_JOB_TOKEN. Kaniko
+    # reads /kaniko/.docker/config.json on startup.
+    - mkdir -p /kaniko/.docker
+    - >
+      printf '{"auths":{"%s":{"auth":"%s"}}}'
+      "${CI_REGISTRY}"
+      "$(printf '%s:%s' "${CI_REGISTRY_USER}" "${CI_REGISTRY_PASSWORD}" | base64 -w0)"
+      > /kaniko/.docker/config.json
+    - >
+      /kaniko/executor
+      --context "${CI_PROJECT_DIR}"
+      --dockerfile "${CI_PROJECT_DIR}/ci/docker/Dockerfile.linux"
+      --destination "${CI_REGISTRY_IMAGE}/ci-linux:latest"
+      --destination "${CI_REGISTRY_IMAGE}/ci-linux:${CI_COMMIT_SHORT_SHA}"
+      --cache=true
+      --cache-repo "${CI_REGISTRY_IMAGE}/ci-linux/cache"
+      --snapshot-mode=redo
 
 # ===========================================================================
 # BUILD
 # ===========================================================================
 build:linux:
   stage: build
-  image: ubuntu:24.04
+  image: "${CI_LINUX_IMAGE}"
   rules: *rules-default
+  needs:
+    - job: build:image:linux
+      optional: true
   <<: *cache-linux
   variables:
     CMAKE_C_COMPILER_LAUNCHER: ccache
     CMAKE_CXX_COMPILER_LAUNCHER: ccache
-  before_script: *ubuntu-setup
   script:
     - ccache --zero-stats || true
     - cmake --preset linux-dev -S app-v3
@@ -100,8 +181,7 @@ build:linux:
     expire_in: 1 day
     when: on_success
 
-# Phase 6 stubs. `when: manual` ensures these never auto-run until we have
-# the runners. allow_failure keeps MR merges unblocked.
+# Windows is still a manual stub: signing-cert provisioning is Phase 6 work.
 build:windows:
   stage: build
   tags: [ saas-windows-medium-amd64 ]
@@ -112,25 +192,43 @@ build:windows:
     - echo "Phase 6 stub — waiting on self-hosted Windows runner + signing creds."
     - exit 1
 
+# macOS Debug build on GitLab.com's saas-macos-large-m2pro (Apple Silicon).
+# `allow_failure: true` while the job stabilises — flip to mandatory once
+# it's green twice in a row. Auto on default branch, manual on MRs (see
+# .rules-macos for why).
 build:macos:
   stage: build
-  tags: [ saas-macos-large-m2pro ]
-  rules:
-    - when: manual
+  tags: [ saas-macos-medium-m1 ]
+  rules: *rules-macos
   allow_failure: true
+  before_script: *macos-setup
   script:
-    - echo "Phase 6 stub — waiting on self-hosted macOS runner + Developer ID."
-    - exit 1
+    - cmake --preset macos-dev -S app-v3
+    - cmake --build --preset macos-dev -- -j$(sysctl -n hw.ncpu)
+  artifacts:
+    paths:
+      - build/macos-dev/
+    expire_in: 1 day
+    when: on_success
 
 # ===========================================================================
 # TEST
 # ===========================================================================
 test:linux:unit:
   stage: test
-  image: ubuntu:24.04
+  image: "${CI_LINUX_IMAGE}"
   rules: *rules-default
   needs: [ build:linux ]
   <<: *cache-linux
-  before_script: *ubuntu-setup
   script:
     - ctest --preset linux-dev
+
+test:macos:unit:
+  stage: test
+  tags: [ saas-macos-medium-m1 ]
+  rules: *rules-macos
+  needs: [ build:macos ]
+  allow_failure: true
+  before_script: *macos-setup
+  script:
+    - ctest --preset macos-dev
