@@ -1,8 +1,12 @@
 # Pedalboard 3 — GitLab CI pipeline.
 #
-# Linux: lint + build + unit tests on a stock ubuntu:24.04 image with
-# inline apt installs (custom Dockerfile is Phase 6 work). Runs on every
-# MR push and on default branch.
+# Linux:
+#   - lint:format runs on saas-linux (a one-line clang-format check).
+#   - build:linux + test:linux:unit run on the self-hosted weeb-cluster
+#     k8s runner — bigger pods, faster nodes, and PVC-backed caches
+#     (Phase-2 follow-up). Tag the runner `weeb-cluster` in the GitLab
+#     UI so these jobs can target it.
+#   All three run on every MR push and on default branch.
 # macOS: build + unit tests on GitLab.com's saas-macos-large-m2pro
 # (Apple Silicon, brew preinstalled). Auto on default branch, manual on
 # MRs because saas-macos queue waits are long. `allow_failure: true`
@@ -116,6 +120,7 @@ lint:format:
 build:linux:
   stage: build
   image: ubuntu:24.04
+  tags: [ weeb-cluster ]
   rules: *rules-default
   <<: *cache-linux
   variables:
@@ -169,6 +174,7 @@ build:macos:
 test:linux:unit:
   stage: test
   image: ubuntu:24.04
+  tags: [ weeb-cluster ]
   rules: *rules-default
   needs: [ build:linux ]
   <<: *cache-linux
