@@ -121,9 +121,13 @@ lint:format:
 # ===========================================================================
 # PRE-BUILD — build the Linux CI image once per Dockerfile change
 # ===========================================================================
+# Runs on saas-linux (no tag), not weeb-cluster: image build is I/O-bound
+# (apt downloads, cmake/ninja tarballs from GitHub, layer push to the
+# Container Registry). saas-linux is on GitLab's backbone, so push is
+# faster than from home-cluster egress. weeb-cluster's 4 vCPU advantage
+# only matters for ninja compiles (build:linux), not Dockerfile builds.
 build:image:linux:
   stage: pre-build
-  tags: [ weeb-cluster ]
   rules: *rules-ci-image
   image:
     name: gcr.io/kaniko-project/executor:v1.23.2-debug
