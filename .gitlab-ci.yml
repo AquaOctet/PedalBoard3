@@ -104,7 +104,7 @@ build:linux:
 # the runners. allow_failure keeps MR merges unblocked.
 build:windows:
   stage: build
-  tags: [ self-hosted-windows ]
+  tags: [ saas-windows-medium-amd64 ]
   rules:
     - when: manual
   allow_failure: true
@@ -114,7 +114,7 @@ build:windows:
 
 build:macos:
   stage: build
-  tags: [ self-hosted-macos ]
+  tags: [ saas-macos-large-m2pro ]
   rules:
     - when: manual
   allow_failure: true
