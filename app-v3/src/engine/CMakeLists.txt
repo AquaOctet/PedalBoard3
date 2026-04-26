@@ -43,10 +43,10 @@ target_link_libraries(pb3_engine_core
         juce::juce_audio_utils
         juce::juce_core
         juce::juce_events
-        # PUBLIC so JUCE_PLUGINHOST_* reaches every downstream consumer that
-        # re-compiles juce_AudioPluginFormatManager.cpp via JUCE's INTERFACE
+        # PUBLIC so JUCE_PLUGINHOST_* / JUCE_WEB_BROWSER / JUCE_USE_CURL
+        # reach every downstream consumer that re-compiles JUCE INTERFACE
         # sources (pb3_app_core, Pedalboard3, pb3_smoke_tests).
-        pb3_plugin_formats
+        pb3_juce_config
     PRIVATE
         pb3_rtsafety
         juce::juce_recommended_config_flags

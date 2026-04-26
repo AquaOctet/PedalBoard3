@@ -72,13 +72,9 @@ target_sources(Pedalboard3 PRIVATE main.cpp)
 
 pb3_apply_strict_warnings(Pedalboard3 main.cpp)
 
-# These definitions must be on Pedalboard3 itself, because JUCE module sources
-# (which live in INTERFACE_SOURCES of juce::*) compile as part of this target.
-target_compile_definitions(Pedalboard3 PRIVATE
-    JUCE_WEB_BROWSER=0
-    JUCE_USE_CURL=0
-    JUCE_VST3_CAN_REPLACE_VST2=0
-)
+# Module-level JUCE flags (JUCE_WEB_BROWSER=0, JUCE_USE_CURL=0,
+# JUCE_PLUGINHOST_*) flow in via pb3_juce_config, propagated through
+# pb3_engine_core → pb3_app_core → here.
 
 # Intentionally no pb3_warnings here — see file header. juce_recommended_*
 # flags are safe because JUCE authored them for their own code.

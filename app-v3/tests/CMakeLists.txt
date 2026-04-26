@@ -36,10 +36,10 @@ target_link_libraries(pb3_smoke_tests PRIVATE
 
 pb3_apply_strict_warnings(pb3_smoke_tests ${PB3_TEST_SOURCES})
 
+# JUCE_USE_CURL=0 / JUCE_WEB_BROWSER=0 propagate via pb3_juce_config (linked
+# PUBLIC into pb3_engine_core). JUCE_STANDALONE_APPLICATION is test-specific.
 target_compile_definitions(pb3_smoke_tests PRIVATE
     JUCE_STANDALONE_APPLICATION=1
-    JUCE_USE_CURL=0
-    JUCE_WEB_BROWSER=0
 )
 
 catch_discover_tests(pb3_smoke_tests)

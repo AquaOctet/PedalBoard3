@@ -146,23 +146,33 @@ if(PB3_ENABLE_RTSAN)
 endif()
 
 # -----------------------------------------------------------------------------
-# Plugin-host format selection.
+# JUCE module configuration shared across every consumer.
 #
-# juce::AudioPluginFormatManager::addDefaultFormats() registers formats only
-# when JUCE_PLUGINHOST_* macros are defined to 1 at the compilation of
-# juce_AudioPluginFormatManager.cpp. JUCE modules are INTERFACE libraries
-# whose sources are re-compiled per consumer target, so these macros must be
-# visible to EVERY target that links juce::juce_audio_processors — otherwise
-# different translation units see different formats and addDefaultFormats()
-# silently registers zero of them. Wire this INTERFACE target into the first
-# target in the chain (pb3_engine_core) with PUBLIC linkage; transitive
-# propagation reaches pb3_app_core, Pedalboard3, and pb3_smoke_tests.
-add_library(pb3_plugin_formats INTERFACE)
-target_compile_definitions(pb3_plugin_formats INTERFACE
+# JUCE modules are INTERFACE libraries (JUCEModuleSupport.cmake:100) whose
+# .cpp files get re-compiled per consumer target. Any preprocessor flag that
+# the JUCE module sources read (JUCE_PLUGINHOST_*, JUCE_WEB_BROWSER,
+# JUCE_USE_CURL, ...) must therefore be visible to EVERY target that links a
+# JUCE module — otherwise translation units silently disagree (formats fail
+# to register, gtk/gtk.h gets demanded by a JUCE_WEB_BROWSER=0 consumer that
+# transitively pulled juce_audio_utils → juce_gui_extra, etc.).
+#
+# Wire this INTERFACE target PUBLIC into the first target in the chain
+# (pb3_engine_core); transitive propagation reaches pb3_app_core,
+# Pedalboard3, and pb3_smoke_tests.
+add_library(pb3_juce_config INTERFACE)
+target_compile_definitions(pb3_juce_config INTERFACE
+    # Plugin-host format selection — drives juce::AudioPluginFormatManager::addDefaultFormats().
     JUCE_PLUGINHOST_VST3=1
     $<$<PLATFORM_ID:Linux>:JUCE_PLUGINHOST_LV2=1>
     $<$<PLATFORM_ID:Darwin>:JUCE_PLUGINHOST_AU=1>
     $<$<PLATFORM_ID:Darwin>:JUCE_PLUGINHOST_LV2=1>
+    # Disable optional JUCE features uniformly. juce_gui_extra's webview path
+    # and juce_core's curl path both get gated on these; without them on
+    # every JUCE-compiling target, juce_gui_extra.cpp tries to include
+    # <gtk/gtk.h> and the build fails on runners without GTK include paths.
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+    JUCE_VST3_CAN_REPLACE_VST2=0
 )
 
 # -----------------------------------------------------------------------------
