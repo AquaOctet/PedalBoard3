@@ -97,7 +97,7 @@ bool PluginSlot::load(const juce::PluginDescription& desc, juce::String& errorOu
     // it (it carries any prior plugin instance, whose dtor will run on
     // this message thread when the local goes out of scope below).
     auto previous = engine_.loadGraph(std::move(graph));
-    (void) previous;
+    (void)previous;
 
     bypassed_ = wrapPtr;
     hostedPlugin_ = hostedPtr;
@@ -116,7 +116,7 @@ void PluginSlot::unload()
     // graph (the one with our plugin), which falls off scope here and
     // destroys the BypassableInstance + the plugin on the message thread.
     auto previous = engine_.loadGraph(nullptr);
-    (void) previous;
+    (void)previous;
 
     bypassed_ = nullptr;
     hostedPlugin_ = nullptr;

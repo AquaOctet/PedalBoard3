@@ -30,8 +30,7 @@ TEST_CASE("PluginSlot: construction does not load a plugin", "[session][plugin-s
     REQUIRE(slot.getHostedPlugin() == nullptr);
 }
 
-TEST_CASE("PluginSlot: load() with a bogus description returns false + error message",
-          "[session][plugin-slot]")
+TEST_CASE("PluginSlot: load() with a bogus description returns false + error message", "[session][plugin-slot]")
 {
     engine::AudioEngine eng;
     eng.initialise();

@@ -147,7 +147,10 @@ public:
 
         g.setColour(juce::Colours::grey);
         g.setFont(juce::FontOptions(14.0f, juce::Font::plain));
-        g.drawFittedText("Phase 1.D.1 — load a plugin into the audio graph.", bodyArea, juce::Justification::centred, 1);
+        g.drawFittedText("Phase 1.D.1 — load a plugin into the audio graph.",
+                         bodyArea,
+                         juce::Justification::centred,
+                         1);
     }
 
     void resized() override
@@ -210,10 +213,10 @@ private:
     void refreshSlotControls()
     {
         const bool loaded = ctx_.pluginSlot.isLoaded();
+        auto* hostedPlugin = ctx_.pluginSlot.getHostedPlugin();
         clearButton_.setEnabled(loaded);
         bypassButton_.setEnabled(loaded);
-        editButton_.setEnabled(loaded && ctx_.pluginSlot.getHostedPlugin() != nullptr
-                               && ctx_.pluginSlot.getHostedPlugin()->hasEditor());
+        editButton_.setEnabled(loaded && hostedPlugin != nullptr && hostedPlugin->hasEditor());
         bypassButton_.setToggleState(ctx_.pluginSlot.isBypassed(), juce::dontSendNotification);
 
         if (loaded)
@@ -231,9 +234,12 @@ private:
         const int selected = pluginCombo_.getSelectedId(); // 1-based
         if (selected < 1 || selected > comboItemDescriptions_.size())
         {
-            juce::AlertWindow::showAsync(
-                juce::MessageBoxOptions{}.withIconType(juce::MessageBoxIconType::WarningIcon).withTitle("Load plugin").withMessage("Pick a plugin from the list first.").withButton("OK"),
-                nullptr);
+            const auto opts = juce::MessageBoxOptions{}
+                                  .withIconType(juce::MessageBoxIconType::WarningIcon)
+                                  .withTitle("Load plugin")
+                                  .withMessage("Pick a plugin from the list first.")
+                                  .withButton("OK");
+            juce::AlertWindow::showAsync(opts, nullptr);
             return;
         }
 
@@ -245,9 +251,12 @@ private:
         juce::String error;
         if (!ctx_.pluginSlot.load(desc, error))
         {
-            juce::AlertWindow::showAsync(
-                juce::MessageBoxOptions{}.withIconType(juce::MessageBoxIconType::WarningIcon).withTitle("Load failed").withMessage("Could not load \"" + desc.name + "\":\n" + error).withButton("OK"),
-                nullptr);
+            const auto opts = juce::MessageBoxOptions{}
+                                  .withIconType(juce::MessageBoxIconType::WarningIcon)
+                                  .withTitle("Load failed")
+                                  .withMessage("Could not load \"" + desc.name + "\":\n" + error)
+                                  .withButton("OK");
+            juce::AlertWindow::showAsync(opts, nullptr);
         }
     }
 
@@ -274,11 +283,10 @@ private:
         if (editor == nullptr)
             return;
 
-        editorWindow_ = std::make_unique<EditorWindow>(ctx_.pluginSlot.getLoadedName(), editor, [this] {
-            // Drop the editor when its window closes — JUCE expects the
-            // host to delete the editor before the plugin instance dies.
-            editorWindow_.reset();
-        });
+        // Drop the editor when its window closes — JUCE expects the host
+        // to delete the editor before the plugin instance dies.
+        auto onClose = [this] { editorWindow_.reset(); };
+        editorWindow_ = std::make_unique<EditorWindow>(ctx_.pluginSlot.getLoadedName(), editor, std::move(onClose));
     }
 
     void openAudioSettings()
