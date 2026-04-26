@@ -36,7 +36,7 @@ public:
     // AudioProcessor ---------------------------------------------------------
     const juce::String getName() const override { return "Pedalboard 3 Graph Runtime"; }
 
-    void prepareToPlay(double sampleRate, int blockSize) override;
+    void prepareToPlay(double sampleRate, int samplesPerBlock) override;
     void releaseResources() override;
 
     bool isBusesLayoutSupported(const BusesLayout& layouts) const override;

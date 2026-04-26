@@ -23,16 +23,19 @@ AudioGraphRuntime::~AudioGraphRuntime()
         delete g;
 }
 
-void AudioGraphRuntime::prepareToPlay(double sampleRate, int blockSize)
+void AudioGraphRuntime::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
     currentSampleRate_ = sampleRate;
-    currentBlockSize_ = blockSize;
+    currentBlockSize_ = samplesPerBlock;
 
-    sanitiser_.setPlayConfigDetails(getTotalNumInputChannels(), getTotalNumOutputChannels(), sampleRate, blockSize);
-    sanitiser_.prepareToPlay(sampleRate, blockSize);
+    sanitiser_.setPlayConfigDetails(getTotalNumInputChannels(),
+                                    getTotalNumOutputChannels(),
+                                    sampleRate,
+                                    samplesPerBlock);
+    sanitiser_.prepareToPlay(sampleRate, samplesPerBlock);
 
     if (auto* g = live_.load(std::memory_order_acquire))
-        g->prepareToPlay(sampleRate, blockSize);
+        g->prepareToPlay(sampleRate, samplesPerBlock);
 }
 
 void AudioGraphRuntime::releaseResources()
