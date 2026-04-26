@@ -20,7 +20,7 @@ bool BypassableInstance::isBusesLayoutSupported(const BusesLayout& layouts) cons
            !layouts.getMainInputChannelSet().isDisabled();
 }
 
-void BypassableInstance::prepareToPlay(double sampleRate, int blockSize)
+void BypassableInstance::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
     dryRamp_.reset(sampleRate, kRampSeconds);
     dryRamp_.setCurrentAndTargetValue(wantBypass_.load(std::memory_order_relaxed) ? 1.0f : 0.0f);
@@ -28,23 +28,23 @@ void BypassableInstance::prepareToPlay(double sampleRate, int blockSize)
     // Scratch for the pre-plugin (dry) snapshot. 2x buffer gives a little
     // headroom for host block-size variation without reallocating mid-stream.
     const int scratchChannels = juce::jmax(getTotalNumInputChannels(), 2);
-    const int scratchFrames = juce::jmax(blockSize * 2, 256);
+    const int scratchFrames = juce::jmax(samplesPerBlock * 2, 256);
     dryScratch_.setSize(scratchChannels, scratchFrames, false, false, true);
 
     // Default watchdog budget: 75% of a block's wall-clock duration. The
     // plugin is allowed to use most of the block, but not all of it — a
     // plugin that eats every sample of headroom is already hurting the
     // round-trip latency and hasn't left anything for JUCE or the OS.
-    if (sampleRate > 0.0 && blockSize > 0)
+    if (sampleRate > 0.0 && samplesPerBlock > 0)
     {
-        const double blockSeconds = static_cast<double>(blockSize) / sampleRate;
+        const double blockSeconds = static_cast<double>(samplesPerBlock) / sampleRate;
         const auto budgetNs = static_cast<std::uint64_t>(blockSeconds * 0.75 * 1e9);
         blockBudgetNanos_.store(budgetNs, std::memory_order_relaxed);
     }
     consecutiveOverruns_.store(0, std::memory_order_relaxed);
 
-    inner_->setRateAndBufferSizeDetails(sampleRate, blockSize);
-    inner_->prepareToPlay(sampleRate, blockSize);
+    inner_->setRateAndBufferSizeDetails(sampleRate, samplesPerBlock);
+    inner_->prepareToPlay(sampleRate, samplesPerBlock);
 }
 
 void BypassableInstance::setBlockBudgetNanos(std::uint64_t ns) noexcept

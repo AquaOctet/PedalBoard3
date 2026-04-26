@@ -22,6 +22,8 @@ void App::initialise(const juce::String& /*commandLine*/)
     if (auto savedList = preferences->getKnownPluginList())
         pluginHost->loadKnownList(*savedList);
 
+    pluginSlot = std::make_unique<session::PluginSlot>(*engine, *pluginHost);
+
     // Listener-driven incremental save: every device change or plugin-list
     // edit fires changeListenerCallback on the message thread, which writes
     // a fresh XML snapshot to preferences. ApplicationProperties batches
@@ -30,7 +32,7 @@ void App::initialise(const juce::String& /*commandLine*/)
         dm->addChangeListener(this);
     pluginHost->getKnownPluginList().addChangeListener(this);
 
-    context.emplace(AppContext{*engine, *pluginHost, *preferences});
+    context.emplace(AppContext{*engine, *pluginHost, *preferences, *pluginSlot});
     mainWindow = std::make_unique<ui::MainWindow>(getApplicationName(), *context);
 }
 
@@ -52,6 +54,9 @@ void App::shutdown()
     // during its teardown.
     mainWindow.reset();
     context.reset();
+    // pluginSlot owns the live audio graph (via the engine); drop it
+    // BEFORE the engine + pluginHost go away.
+    pluginSlot.reset();
     pluginHost.reset();
     engine.reset();
     preferences.reset();

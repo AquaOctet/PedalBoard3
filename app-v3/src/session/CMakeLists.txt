@@ -10,6 +10,8 @@
 add_library(pb3_session_core STATIC
     Preferences.cpp
     Preferences.h
+    PluginSlot.cpp
+    PluginSlot.h
 )
 
 target_include_directories(pb3_session_core PUBLIC
@@ -18,8 +20,15 @@ target_include_directories(pb3_session_core PUBLIC
 
 target_link_libraries(pb3_session_core
     PUBLIC
+        # PluginSlot.h forward-declares engine types; PluginSlot.cpp
+        # uses them directly. PUBLIC because consumers of session
+        # (App, tests) typically use both.
+        pb3_engine_core
         juce::juce_data_structures
         juce::juce_core
+        juce::juce_audio_processors
+        juce::juce_audio_devices
+        juce::juce_events
         # JUCE_WEB_BROWSER=0 / JUCE_USE_CURL=0 / JUCE_PLUGINHOST_* must
         # also reach JUCE module sources compiled into this lib (juce_core
         # links juce_audio_processors transitively in some configs).
@@ -33,4 +42,5 @@ target_link_libraries(pb3_session_core
 
 pb3_apply_strict_warnings(pb3_session_core
     Preferences.cpp
+    PluginSlot.cpp
 )

@@ -20,6 +20,7 @@ set(PB3_TEST_SOURCES
     unit/engine/AudioEngine_test.cpp
     unit/engine/PluginHost_test.cpp
     unit/session/Preferences_test.cpp
+    unit/session/PluginSlot_test.cpp
 )
 
 add_executable(pb3_smoke_tests ${PB3_TEST_SOURCES})

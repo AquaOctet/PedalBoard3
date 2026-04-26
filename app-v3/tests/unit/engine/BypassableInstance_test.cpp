@@ -107,8 +107,8 @@ TEST_CASE("BypassableInstance: MIDI channel filter — 0 passes everything", "[e
 
     auto buf = makeTestBuffer(2, kDefaultBlockSize);
     juce::MidiBuffer midi;
-    midi.addEvent(juce::MidiMessage::noteOn(3, 60, (juce::uint8)100), 0);
-    midi.addEvent(juce::MidiMessage::noteOn(11, 60, (juce::uint8)100), 0);
+    midi.addEvent(juce::MidiMessage::noteOn(3, 60, static_cast<juce::uint8>(100)), 0);
+    midi.addEvent(juce::MidiMessage::noteOn(11, 60, static_cast<juce::uint8>(100)), 0);
 
     renderBlocks(*wrapper, buf, midi);
 
@@ -124,8 +124,8 @@ TEST_CASE("BypassableInstance: MIDI channel filter — non-zero drops off-channe
 
     auto buf = makeTestBuffer(2, kDefaultBlockSize);
     juce::MidiBuffer midi;
-    midi.addEvent(juce::MidiMessage::noteOn(3, 60, (juce::uint8)100), 0);  // kept
-    midi.addEvent(juce::MidiMessage::noteOn(11, 60, (juce::uint8)100), 0); // dropped
+    midi.addEvent(juce::MidiMessage::noteOn(3, 60, static_cast<juce::uint8>(100)), 0);  // kept
+    midi.addEvent(juce::MidiMessage::noteOn(11, 60, static_cast<juce::uint8>(100)), 0); // dropped
 
     renderBlocks(*wrapper, buf, midi);
 

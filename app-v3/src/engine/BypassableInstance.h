@@ -38,7 +38,7 @@ public:
     // AudioProcessor ---------------------------------------------------------
     const juce::String getName() const override { return inner_->getName(); }
 
-    void prepareToPlay(double sampleRate, int blockSize) override;
+    void prepareToPlay(double sampleRate, int samplesPerBlock) override;
     void releaseResources() override { inner_->releaseResources(); }
 
     bool isBusesLayoutSupported(const BusesLayout& layouts) const override;

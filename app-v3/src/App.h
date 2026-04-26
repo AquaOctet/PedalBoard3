@@ -3,6 +3,7 @@
 #include "AppContext.h"
 #include "engine/AudioEngine.h"
 #include "engine/PluginHost.h"
+#include "session/PluginSlot.h"
 #include "session/Preferences.h"
 #include "ui/MainWindow.h"
 
@@ -44,6 +45,7 @@ private:
     std::unique_ptr<session::Preferences> preferences;
     std::unique_ptr<engine::AudioEngine> engine;
     std::unique_ptr<engine::PluginHost> pluginHost;
+    std::unique_ptr<session::PluginSlot> pluginSlot;
     std::optional<AppContext> context;
     std::unique_ptr<ui::MainWindow> mainWindow;
 };
