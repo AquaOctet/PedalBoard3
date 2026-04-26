@@ -28,10 +28,9 @@ void AudioGraphRuntime::prepareToPlay(double sampleRate, int samplesPerBlock)
     currentSampleRate_ = sampleRate;
     currentBlockSize_ = samplesPerBlock;
 
-    sanitiser_.setPlayConfigDetails(getTotalNumInputChannels(),
-                                    getTotalNumOutputChannels(),
-                                    sampleRate,
-                                    samplesPerBlock);
+    const int numIn = getTotalNumInputChannels();
+    const int numOut = getTotalNumOutputChannels();
+    sanitiser_.setPlayConfigDetails(numIn, numOut, sampleRate, samplesPerBlock);
     sanitiser_.prepareToPlay(sampleRate, samplesPerBlock);
 
     if (auto* g = live_.load(std::memory_order_acquire))
