@@ -30,10 +30,11 @@ target_include_directories(pb3_smoke_tests PRIVATE
 target_link_libraries(pb3_smoke_tests PRIVATE
     Catch2::Catch2WithMain
     pb3_engine_core
-    pb3_warnings
     pb3_rtsafety
     juce::juce_recommended_config_flags
 )
+
+pb3_apply_strict_warnings(pb3_smoke_tests ${PB3_TEST_SOURCES})
 
 target_compile_definitions(pb3_smoke_tests PRIVATE
     JUCE_STANDALONE_APPLICATION=1

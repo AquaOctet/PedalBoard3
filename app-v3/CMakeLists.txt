@@ -109,11 +109,17 @@ endif()
 # -----------------------------------------------------------------------------
 # Warnings / sanitizers
 # -----------------------------------------------------------------------------
-add_library(pb3_warnings INTERFACE)
+# Strict warnings get applied per-source-file via pb3_apply_strict_warnings(),
+# NOT via INTERFACE library. JUCE 8 modules declare INTERFACE_SOURCES
+# (JUCEModuleSupport.cmake:100), so any consumer that links a JUCE module
+# pulls JUCE .cpp files into its own compile unit list — and a target-level
+# INTERFACE warning library would flood the build with ~24k -Wold-style-cast
+# warnings from JUCE's vendored Harfbuzz / juce_core. Per-source COMPILE_OPTIONS
+# attach to specific TUs only, leaving JUCE's INTERFACE_SOURCES untouched.
 if(MSVC)
-    target_compile_options(pb3_warnings INTERFACE /W4 /permissive-)
+    set(PB3_STRICT_WARNING_FLAGS /W4 /permissive-)
 else()
-    target_compile_options(pb3_warnings INTERFACE
+    set(PB3_STRICT_WARNING_FLAGS
         -Wall -Wextra -Wpedantic
         -Wshadow -Wnon-virtual-dtor
         -Wold-style-cast -Wcast-align -Wunused
@@ -122,6 +128,15 @@ else()
         -Wformat=2
     )
 endif()
+
+function(pb3_apply_strict_warnings target)
+    foreach(src IN LISTS ARGN)
+        set_source_files_properties("${src}"
+            TARGET_DIRECTORY "${target}"
+            PROPERTIES COMPILE_OPTIONS "${PB3_STRICT_WARNING_FLAGS}"
+        )
+    endforeach()
+endfunction()
 
 add_library(pb3_rtsafety INTERFACE)
 if(PB3_ENABLE_RTSAN)

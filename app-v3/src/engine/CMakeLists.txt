@@ -48,9 +48,17 @@ target_link_libraries(pb3_engine_core
         # sources (pb3_app_core, Pedalboard3, pb3_smoke_tests).
         pb3_plugin_formats
     PRIVATE
-        pb3_warnings
         pb3_rtsafety
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags
         juce::juce_recommended_lto_flags
+)
+
+pb3_apply_strict_warnings(pb3_engine_core
+    AudioEngine.cpp
+    AudioGraphRuntime.cpp
+    BypassableInstance.cpp
+    PluginHost.cpp
+    processors/OutputSanitiser.cpp
+    processors/TestToneProcessor.cpp
 )

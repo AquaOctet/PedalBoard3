@@ -45,11 +45,15 @@ target_link_libraries(pb3_app_core
         juce::juce_audio_devices
         juce::juce_osc
     PRIVATE
-        pb3_warnings
         pb3_rtsafety
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags
         juce::juce_recommended_lto_flags
+)
+
+pb3_apply_strict_warnings(pb3_app_core
+    App.cpp
+    ui/MainWindow.cpp
 )
 
 # -----------------------------------------------------------------------------
@@ -65,6 +69,8 @@ juce_add_gui_app(Pedalboard3
 )
 
 target_sources(Pedalboard3 PRIVATE main.cpp)
+
+pb3_apply_strict_warnings(Pedalboard3 main.cpp)
 
 # These definitions must be on Pedalboard3 itself, because JUCE module sources
 # (which live in INTERFACE_SOURCES of juce::*) compile as part of this target.
