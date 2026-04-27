@@ -74,8 +74,7 @@ void App::restoreActivePluginIfAny()
     bool foundInKnown = false;
     for (const auto& k : known)
     {
-        if (k.pluginFormatName == savedDesc->pluginFormatName
-            && k.fileOrIdentifier == savedDesc->fileOrIdentifier)
+        if (k.pluginFormatName == savedDesc->pluginFormatName && k.fileOrIdentifier == savedDesc->fileOrIdentifier)
         {
             foundInKnown = true;
             break;
@@ -97,9 +96,8 @@ void App::restoreActivePluginIfAny()
         preferences->clearActivePluginDescription();
         session::clearRestoreInFlightMarker(*preferences);
         preferences->flush();
-        juce::Logger::writeToLog(
-            "Pedalboard 3: refusing to restore '" + savedDesc->name +
-            "' — previous launch crashed during instantiation. Active plugin cleared.");
+        juce::Logger::writeToLog("Pedalboard 3: refusing to restore '" + savedDesc->name +
+                                 "' — previous launch crashed during instantiation. Active plugin cleared.");
         return;
     }
 

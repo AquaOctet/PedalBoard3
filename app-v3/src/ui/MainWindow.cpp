@@ -232,24 +232,24 @@ private:
 
         switch (state)
         {
-            case session::Session::State::Building:
-                statusLabel_.setText("Loading...", juce::dontSendNotification);
-                break;
-            case session::Session::State::Swapping:
-                statusLabel_.setText("Swapping...", juce::dontSendNotification);
-                break;
-            case session::Session::State::Idle:
-            default:
-            {
-                const auto err = ctx_.session.getLastError();
-                if (err.isNotEmpty() && !loaded)
-                    statusLabel_.setText("Load failed: " + err, juce::dontSendNotification);
-                else if (loaded)
-                    statusLabel_.setText("Loaded: " + ctx_.pluginSlot.getLoadedName(), juce::dontSendNotification);
-                else
-                    statusLabel_.setText("No plugin loaded", juce::dontSendNotification);
-                break;
-            }
+        case session::Session::State::Building:
+            statusLabel_.setText("Loading...", juce::dontSendNotification);
+            break;
+        case session::Session::State::Swapping:
+            statusLabel_.setText("Swapping...", juce::dontSendNotification);
+            break;
+        case session::Session::State::Idle:
+        default:
+        {
+            const auto err = ctx_.session.getLastError();
+            if (err.isNotEmpty() && !loaded)
+                statusLabel_.setText("Load failed: " + err, juce::dontSendNotification);
+            else if (loaded)
+                statusLabel_.setText("Loaded: " + ctx_.pluginSlot.getLoadedName(), juce::dontSendNotification);
+            else
+                statusLabel_.setText("No plugin loaded", juce::dontSendNotification);
+            break;
+        }
         }
 
         // Close any editor window for a no-longer-loaded plugin.

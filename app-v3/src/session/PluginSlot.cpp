@@ -1,9 +1,9 @@
 #include "PluginSlot.h"
 
-#include "PreparedGraph.h"
 #include "engine/AudioEngine.h"
 #include "engine/BypassableInstance.h"
 #include "engine/PluginHost.h"
+#include "PreparedGraph.h"
 
 namespace pedalboard3::session
 {

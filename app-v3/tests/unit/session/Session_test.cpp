@@ -34,8 +34,11 @@ public:
 
     session::Session::BuildFn fn(int delayMs = 0, bool failOnEmpty = false)
     {
-        return [this, delayMs, failOnEmpty](const juce::PluginDescription& desc, double sr, int bs,
-                                            juce::String& errorOut) -> session::PreparedGraph {
+        return [this, delayMs, failOnEmpty](const juce::PluginDescription& desc,
+                                            double sr,
+                                            int bs,
+                                            juce::String& errorOut) -> session::PreparedGraph
+        {
             calls_.fetch_add(1, std::memory_order_release);
             {
                 std::lock_guard<std::mutex> lk(callsMutex_);
@@ -255,7 +258,7 @@ TEST_CASE("Session: state version is monotonic across transitions", "[session][s
     bogus.pluginFormatName = "VST3";
     s.queueLoad(bogus);
 
-    REQUIRE(waitForVersion(s, v0 + 1));      // → Building
+    REQUIRE(waitForVersion(s, v0 + 1)); // → Building
     pumpUntilIdle(s);
     REQUIRE(s.getStateVersion() >= v0 + 2u); // → Idle (with error)
 }

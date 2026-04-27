@@ -77,10 +77,8 @@ public:
     // The seam Unit 3 calls out: the function the worker thread invokes
     // to build a PreparedGraph. Production wraps session::buildPreparedGraph
     // bound to a PluginHost; tests inject fast fakes.
-    using BuildFn = std::function<PreparedGraph(const juce::PluginDescription&,
-                                                double sampleRate,
-                                                int blockSize,
-                                                juce::String& errorOut)>;
+    using BuildFn = std::function<PreparedGraph(
+        const juce::PluginDescription&, double sampleRate, int blockSize, juce::String& errorOut)>;
 
     // Production constructor — builds a BuildFn that calls
     // session::buildPreparedGraph against `host`.

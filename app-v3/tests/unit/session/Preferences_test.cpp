@@ -228,9 +228,8 @@ TEST_CASE("Preferences: ActivePluginDescription is XXE-safe (AC-1.D.2-K)", "[ses
     // &x; into the contents of /etc/passwd. juce::parseXML(const String&)
     // does not install an inputSource, so SYSTEM-entity expansion silently
     // fails and the parsed file attribute stays empty (or unchanged).
-    const juce::String malicious =
-        "<!DOCTYPE foo [<!ENTITY x SYSTEM \"file:///etc/passwd\">]>"
-        "<PLUGIN name=\"Evil\" format=\"VST3\" file=\"&x;\"/>";
+    const juce::String malicious = "<!DOCTYPE foo [<!ENTITY x SYSTEM \"file:///etc/passwd\">]>"
+                                   "<PLUGIN name=\"Evil\" format=\"VST3\" file=\"&x;\"/>";
 
     prefs.getStore()->setValue("activePluginDescription", malicious);
     prefs.flush();

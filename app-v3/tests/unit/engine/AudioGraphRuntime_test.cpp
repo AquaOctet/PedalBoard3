@@ -155,13 +155,15 @@ TEST_CASE("AudioGraphRuntime: swap with no live graph performs no flush, no cras
     std::atomic<bool> stop{false};
     auto buf = makeTestBuffer(2, kDefaultBlockSize);
     juce::MidiBuffer midi;
-    std::thread pump([&] {
-        while (!stop.load(std::memory_order_acquire))
+    std::thread pump(
+        [&]
         {
-            rt.processBlock(buf, midi);
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        }
-    });
+            while (!stop.load(std::memory_order_acquire))
+            {
+                rt.processBlock(buf, midi);
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+        });
 
     auto prev = rt.swapPreparedGraph(std::move(next.graph));
     REQUIRE(prev == nullptr);
@@ -171,8 +173,7 @@ TEST_CASE("AudioGraphRuntime: swap with no live graph performs no flush, no cras
     pump.join();
 }
 
-TEST_CASE("AudioGraphRuntime: swap flushes all-notes-off on outgoing MIDI receiver",
-          "[engine][runtime][midi]")
+TEST_CASE("AudioGraphRuntime: swap flushes all-notes-off on outgoing MIDI receiver", "[engine][runtime][midi]")
 {
     engine::AudioGraphRuntime rt;
     rt.setPlayConfigDetails(2, 2, kDefaultSampleRate, kDefaultBlockSize);
@@ -183,8 +184,8 @@ TEST_CASE("AudioGraphRuntime: swap flushes all-notes-off on outgoing MIDI receiv
     // we can inspect its last-seen MIDI count after the swap.
     auto outgoing = buildGainGraph(1.0f);
     outgoing.graph->prepareToPlay(kDefaultSampleRate, kDefaultBlockSize);
-    auto* outgoingProc = dynamic_cast<TestGainProcessor*>(
-        outgoing.graph->getNodeForId(outgoing.gainNodeId)->getProcessor());
+    auto* outgoingProc =
+        dynamic_cast<TestGainProcessor*>(outgoing.graph->getNodeForId(outgoing.gainNodeId)->getProcessor());
     REQUIRE(outgoingProc != nullptr);
 
     // First swap-in goes via the synchronous fallback (audio not pumping yet).
@@ -204,15 +205,17 @@ TEST_CASE("AudioGraphRuntime: swap flushes all-notes-off on outgoing MIDI receiv
     incoming.graph->prepareToPlay(kDefaultSampleRate, kDefaultBlockSize);
 
     std::atomic<bool> stop{false};
-    std::thread pump([&] {
-        auto pumpBuf = makeTestBuffer(2, kDefaultBlockSize);
-        juce::MidiBuffer pumpMidi;
-        while (!stop.load(std::memory_order_acquire))
+    std::thread pump(
+        [&]
         {
-            rt.processBlock(pumpBuf, pumpMidi);
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        }
-    });
+            auto pumpBuf = makeTestBuffer(2, kDefaultBlockSize);
+            juce::MidiBuffer pumpMidi;
+            while (!stop.load(std::memory_order_acquire))
+            {
+                rt.processBlock(pumpBuf, pumpMidi);
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+        });
 
     // Swap. The pump thread will consume pending_, run flushMidiReceivers
     // on outgoing (which sets lastMidiEventCount on outgoingProc), then

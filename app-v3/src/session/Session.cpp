@@ -1,9 +1,9 @@
 #include "Session.h"
 
-#include "PluginSlot.h"
 #include "engine/AudioEngine.h"
 #include "engine/AudioGraphRuntime.h"
 #include "engine/PluginHost.h"
+#include "PluginSlot.h"
 
 #include <utility>
 
@@ -114,9 +114,8 @@ private:
 Session::Session(PluginSlot& slot, engine::AudioEngine& engine, engine::PluginHost& host)
     : Session(slot,
               engine,
-              [&host](const juce::PluginDescription& d, double sr, int bs, juce::String& err) {
-                  return buildPreparedGraph(host, d, sr, bs, err);
-              })
+              [&host](const juce::PluginDescription& d, double sr, int bs, juce::String& err)
+              { return buildPreparedGraph(host, d, sr, bs, err); })
 {
 }
 
@@ -309,8 +308,7 @@ void Session::onBuildResult()
         // restore state when a missing plugin fails to load on launch.
         {
             std::lock_guard<std::mutex> lk(statusMutex_);
-            lastError_ = result->errorOut.isNotEmpty() ? result->errorOut
-                                                       : juce::String("Plugin load failed");
+            lastError_ = result->errorOut.isNotEmpty() ? result->errorOut : juce::String("Plugin load failed");
         }
         publishStateChange(State::Idle);
     }

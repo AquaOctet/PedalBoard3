@@ -30,10 +30,7 @@ class Session;
 class PreferencesPersister : private juce::ChangeListener
 {
 public:
-    PreferencesPersister(Preferences& prefs,
-                         engine::AudioEngine& engine,
-                         engine::PluginHost& host,
-                         Session& session);
+    PreferencesPersister(Preferences& prefs, engine::AudioEngine& engine, engine::PluginHost& host, Session& session);
     ~PreferencesPersister() override;
 
 private:

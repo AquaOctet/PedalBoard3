@@ -8,8 +8,8 @@ namespace pedalboard3::engine
 
 namespace
 {
-constexpr int kMaxAckWaitMs = 2000;     // hard ceiling per AC-1.D.2-R
-constexpr int kFlushChannelsMin = 2;    // stereo at minimum for the silence scratch
+constexpr int kMaxAckWaitMs = 2000;  // hard ceiling per AC-1.D.2-R
+constexpr int kFlushChannelsMin = 2; // stereo at minimum for the silence scratch
 constexpr int kSilenceScratchMinFrames = 4096;
 constexpr int kFlushBytesPerEvent = 12; // conservative per-event byte budget for ensureSize
 constexpr int kFlushEventsPerChannel = 3;
@@ -107,8 +107,8 @@ void AudioGraphRuntime::flushMidiReceivers(juce::AudioProcessorGraph* outgoing) 
     // negotiated block + the graph's output channel count. juce::AudioBuffer
     // can wrap an existing float** without copying.
     const int frames = juce::jmin(silenceScratch_.getNumSamples(), juce::jmax(currentBlockSize_, 1));
-    const int channels = juce::jmin(silenceScratch_.getNumChannels(),
-                                    juce::jmax(outgoing->getTotalNumOutputChannels(), 1));
+    const int channels =
+        juce::jmin(silenceScratch_.getNumChannels(), juce::jmax(outgoing->getTotalNumOutputChannels(), 1));
     juce::AudioBuffer<float> view(silenceScratch_.getArrayOfWritePointers(), channels, frames);
 
     outgoing->processBlock(view, flushMidiScratch_);

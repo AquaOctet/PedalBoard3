@@ -1,9 +1,9 @@
 #include "PreferencesPersister.h"
 
-#include "Preferences.h"
-#include "Session.h"
 #include "engine/AudioEngine.h"
 #include "engine/PluginHost.h"
+#include "Preferences.h"
+#include "Session.h"
 
 namespace pedalboard3::session
 {
@@ -22,9 +22,8 @@ juce::File restoreInFlightFile(Preferences& prefs)
 
 bool sameDescription(const juce::PluginDescription& a, const juce::PluginDescription& b) noexcept
 {
-    return a.pluginFormatName == b.pluginFormatName
-        && a.fileOrIdentifier == b.fileOrIdentifier
-        && a.deprecatedUid == b.deprecatedUid;
+    return a.pluginFormatName == b.pluginFormatName && a.fileOrIdentifier == b.fileOrIdentifier &&
+           a.deprecatedUid == b.deprecatedUid;
 }
 
 } // namespace
