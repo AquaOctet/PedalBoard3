@@ -11,8 +11,11 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include <atomic>
+#include <chrono>
 #include <limits>
 #include <memory>
+#include <thread>
 
 using namespace pedalboard3;
 using namespace pedalboard3::testing;
@@ -132,6 +135,101 @@ TEST_CASE("AudioGraphRuntime: generation counter advances with each processed bl
     renderBlocks(rt, buf);
 
     REQUIRE(rt.getGenerationAckedByAudio() - startGen == 3u);
+}
+
+TEST_CASE("AudioGraphRuntime: swap with no live graph performs no flush, no crash", "[engine][runtime][midi]")
+{
+    engine::AudioGraphRuntime rt;
+    rt.setPlayConfigDetails(2, 2, kDefaultSampleRate, kDefaultBlockSize);
+    rt.prepareToPlay(kDefaultSampleRate, kDefaultBlockSize);
+
+    REQUIRE(rt.getLiveGraph() == nullptr);
+
+    auto next = buildGainGraph(1.0f);
+    next.graph->prepareToPlay(kDefaultSampleRate, kDefaultBlockSize);
+    auto* graphPtr = next.graph.get();
+
+    // Drive processBlock from a separate thread so the audio-thread-side
+    // swap path runs (no audio pump → message-thread-side fallback,
+    // which doesn't exercise the flush branch we want to validate).
+    std::atomic<bool> stop{false};
+    auto buf = makeTestBuffer(2, kDefaultBlockSize);
+    juce::MidiBuffer midi;
+    std::thread pump([&] {
+        while (!stop.load(std::memory_order_acquire))
+        {
+            rt.processBlock(buf, midi);
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    });
+
+    auto prev = rt.swapPreparedGraph(std::move(next.graph));
+    REQUIRE(prev == nullptr);
+    REQUIRE(rt.getLiveGraph() == graphPtr);
+
+    stop.store(true, std::memory_order_release);
+    pump.join();
+}
+
+TEST_CASE("AudioGraphRuntime: swap flushes all-notes-off on outgoing MIDI receiver",
+          "[engine][runtime][midi]")
+{
+    engine::AudioGraphRuntime rt;
+    rt.setPlayConfigDetails(2, 2, kDefaultSampleRate, kDefaultBlockSize);
+    rt.prepareToPlay(kDefaultSampleRate, kDefaultBlockSize);
+
+    // First graph — the one that will be swapped OUT and should receive
+    // the all-notes-off flush. Hold a pointer to its gain processor so
+    // we can inspect its last-seen MIDI count after the swap.
+    auto outgoing = buildGainGraph(1.0f);
+    outgoing.graph->prepareToPlay(kDefaultSampleRate, kDefaultBlockSize);
+    auto* outgoingProc = dynamic_cast<TestGainProcessor*>(
+        outgoing.graph->getNodeForId(outgoing.gainNodeId)->getProcessor());
+    REQUIRE(outgoingProc != nullptr);
+
+    // First swap-in goes via the synchronous fallback (audio not pumping yet).
+    rt.swapPreparedGraph(std::move(outgoing.graph));
+
+    // Baseline: render a couple of empty blocks; outgoingProc should record
+    // zero MIDI events.
+    auto buf = makeTestBuffer(2, kDefaultBlockSize);
+    juce::MidiBuffer midi;
+    rt.processBlock(buf, midi);
+    rt.processBlock(buf, midi);
+    REQUIRE(outgoingProc->lastMidiEventCount.load() == 0);
+
+    // Now build the incoming graph and start an audio pump on a separate
+    // thread so swapPreparedGraph takes the audio-thread-side path.
+    auto incoming = buildGainGraph(2.0f);
+    incoming.graph->prepareToPlay(kDefaultSampleRate, kDefaultBlockSize);
+
+    std::atomic<bool> stop{false};
+    std::thread pump([&] {
+        auto pumpBuf = makeTestBuffer(2, kDefaultBlockSize);
+        juce::MidiBuffer pumpMidi;
+        while (!stop.load(std::memory_order_acquire))
+        {
+            rt.processBlock(pumpBuf, pumpMidi);
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    });
+
+    // Swap. The pump thread will consume pending_, run flushMidiReceivers
+    // on outgoing (which sets lastMidiEventCount on outgoingProc), then
+    // commit live_.
+    auto prev = rt.swapPreparedGraph(std::move(incoming.graph));
+
+    stop.store(true, std::memory_order_release);
+    pump.join();
+
+    // The outgoing processor should have observed the full 16ch × 3-event
+    // flush in its final block. After that, live_ pointed to incoming, so
+    // outgoingProc was never called again — its count is sticky at 48.
+    REQUIRE(outgoingProc->lastMidiEventCount.load() == 16 * 3);
+
+    // prev is the graph we built into outgoing — drop it on the message
+    // thread (this thread) so plugin dtors run here.
+    prev.reset();
 }
 
 TEST_CASE("AudioGraphRuntime: sanitiser pass zeros any NaN/Inf/out-of-range the graph emits",

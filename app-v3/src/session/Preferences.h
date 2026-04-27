@@ -48,6 +48,20 @@ public:
     std::unique_ptr<juce::XmlElement> getKnownPluginList();
     void setKnownPluginList(const juce::XmlElement& xml);
 
+    // The plugin description that was active in the host slot when the
+    // app last quit cleanly. nullptr on first run, on a malformed
+    // settings entry, or after clearActivePluginDescription. Used by
+    // App::initialise to restore the user's last loaded plugin via
+    // session::Session::queueLoad.
+    //
+    // Read path is XXE-safe: PropertiesFile::getXmlValue uses the
+    // string overload of juce::parseXML, which constructs an
+    // XmlDocument with no inputSource and therefore cannot resolve
+    // SYSTEM/PUBLIC external entities.
+    std::unique_ptr<juce::PluginDescription> getActivePluginDescription();
+    void setActivePluginDescription(const juce::PluginDescription& desc);
+    void clearActivePluginDescription();
+
     // Force a synchronous write of any dirty values. Safe to call
     // multiple times. ApplicationProperties also auto-saves on
     // destruction, but App::shutdown calls this explicitly so a
