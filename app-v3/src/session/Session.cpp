@@ -38,6 +38,24 @@ DeviceConfig deriveConfig(engine::AudioEngine& eng)
 
 } // namespace
 
+// -------- Result updater ---------------------------------------------------
+//
+// Defined BEFORE Worker so Worker::run() can call triggerAsyncUpdate() on the
+// complete type without needing an out-of-line definition. (Worker -> result
+// hand-off is the only direction; the reverse pointer in handleAsyncUpdate is
+// just `session_.onBuildResult()`, which doesn't need Worker's definition.)
+
+class Session::ResultUpdater : public juce::AsyncUpdater
+{
+public:
+    explicit ResultUpdater(Session& session) : session_(session) {}
+
+    void handleAsyncUpdate() override { session_.onBuildResult(); }
+
+private:
+    Session& session_;
+};
+
 // -------- Worker thread ----------------------------------------------------
 
 class Session::Worker : public juce::Thread
@@ -91,19 +109,6 @@ public:
                 session_.resultUpdater_->triggerAsyncUpdate();
         }
     }
-
-private:
-    Session& session_;
-};
-
-// -------- Result updater ---------------------------------------------------
-
-class Session::ResultUpdater : public juce::AsyncUpdater
-{
-public:
-    explicit ResultUpdater(Session& session) : session_(session) {}
-
-    void handleAsyncUpdate() override { session_.onBuildResult(); }
 
 private:
     Session& session_;
@@ -327,7 +332,12 @@ void Session::onBuildResult()
             const int rtBlock = runtime->getBlockSize();
             const double pgSr = result->prepared.graph->getSampleRate();
             const int pgBlock = result->prepared.graph->getBlockSize();
-            if (rtSr > 0.0 && rtBlock > 0 && (rtSr != pgSr || rtBlock != pgBlock))
+            // juce::approximatelyEqual avoids the -Wfloat-equal warning while
+            // matching JUCE's own pattern for sample-rate compares; sample
+            // rates are integer-valued in practice (44100/48000/96000), so
+            // any deviation here means a real device-state change.
+            const bool srChanged = !juce::approximatelyEqual(rtSr, pgSr);
+            if (rtSr > 0.0 && rtBlock > 0 && (srChanged || rtBlock != pgBlock))
             {
                 result->prepared.graph->setPlayConfigDetails(2, 2, rtSr, rtBlock);
                 result->prepared.graph->prepareToPlay(rtSr, rtBlock);
