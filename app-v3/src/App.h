@@ -5,6 +5,8 @@
 #include "engine/PluginHost.h"
 #include "session/PluginSlot.h"
 #include "session/Preferences.h"
+#include "session/PreferencesPersister.h"
+#include "session/Session.h"
 #include "ui/MainWindow.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
@@ -19,10 +21,9 @@ namespace pedalboard3
 
 // Top-level JUCE application object. Owns every subsystem by unique_ptr
 // and exposes them to UI via an AppContext reference bundle (see
-// AppContext.h). Phase 1 growth: later subsystems (Session, MidiRouter,
-// OscServer, Diagnostics::EventLog) will slot into the AppContext
-// without widening MainWindow's constructor.
-class App : public juce::JUCEApplication, private juce::ChangeListener
+// AppContext.h). Phase 1.D.2 extracted listener fan-out into
+// session::PreferencesPersister so App is a pure composition root.
+class App : public juce::JUCEApplication
 {
 public:
     App() = default;
@@ -38,14 +39,19 @@ public:
     void anotherInstanceStarted(const juce::String&) override {}
 
 private:
-    // Persists AudioDeviceManager XML and KnownPluginList XML to
-    // session::Preferences whenever JUCE notifies us of a change.
-    void changeListenerCallback(juce::ChangeBroadcaster* source) override;
+    // Try to restore the previously-active plugin per AC-1.D.2-F, gated
+    // by the KnownPluginList cross-check (AC-1.D.2-L) and the
+    // restore-in-flight crash-loop guard (AC-1.D.2-N).
+    void restoreActivePluginIfAny();
 
+    // Construction order (also reverse destruction order). Each member's
+    // dtor depends on the ones below it being still alive.
     std::unique_ptr<session::Preferences> preferences;
     std::unique_ptr<engine::AudioEngine> engine;
     std::unique_ptr<engine::PluginHost> pluginHost;
     std::unique_ptr<session::PluginSlot> pluginSlot;
+    std::unique_ptr<session::Session> session;
+    std::unique_ptr<session::PreferencesPersister> persister;
     std::optional<AppContext> context;
     std::unique_ptr<ui::MainWindow> mainWindow;
 };

@@ -23,63 +23,90 @@ void App::initialise(const juce::String& /*commandLine*/)
         pluginHost->loadKnownList(*savedList);
 
     pluginSlot = std::make_unique<session::PluginSlot>(*engine, *pluginHost);
+    session = std::make_unique<session::Session>(*pluginSlot, *engine, *pluginHost);
 
-    // Listener-driven incremental save: every device change or plugin-list
-    // edit fires changeListenerCallback on the message thread, which writes
-    // a fresh XML snapshot to preferences. ApplicationProperties batches
-    // disk writes, so this is cheap.
-    if (auto* dm = engine->getDeviceManager())
-        dm->addChangeListener(this);
-    pluginHost->getKnownPluginList().addChangeListener(this);
+    // PreferencesPersister registers the three change-listeners. Construct
+    // it AFTER session so it can subscribe; destroy it BEFORE session.
+    persister = std::make_unique<session::PreferencesPersister>(*preferences, *engine, *pluginHost, *session);
 
-    context.emplace(AppContext{*engine, *pluginHost, *preferences, *pluginSlot});
+    context.emplace(AppContext{*engine, *pluginHost, *preferences, *pluginSlot, *session});
     mainWindow = std::make_unique<ui::MainWindow>(getApplicationName(), *context);
+
+    // Restore-on-launch is dispatched AFTER MainWindow exists, so any
+    // change-message Session fires during the build is observed by the
+    // window's listener (which Unit 7 will register).
+    restoreActivePluginIfAny();
 }
 
 void App::shutdown()
 {
-    // Deregister listeners FIRST so a late device change can't fire a
-    // write into preferences while we're flushing.
-    if (engine != nullptr)
-        if (auto* dm = engine->getDeviceManager())
-            dm->removeChangeListener(this);
-    if (pluginHost != nullptr)
-        pluginHost->getKnownPluginList().removeChangeListener(this);
-
     // Force a final synchronous save before subsystems are torn down.
     if (preferences != nullptr)
         preferences->flush();
 
-    // Close the window first so no UI callback can try to touch the engine
-    // during its teardown.
+    // Reverse construction order. PreferencesPersister deregisters its
+    // listeners in its dtor, so it must drop BEFORE session/host/engine.
+    // Session's dtor cancels its AsyncUpdater + joins its worker BEFORE
+    // PluginSlot/AudioEngine teardown (lifetime invariant in Session.h).
     mainWindow.reset();
     context.reset();
-    // pluginSlot owns the live audio graph (via the engine); drop it
-    // BEFORE the engine + pluginHost go away.
+    persister.reset();
+    session.reset();
     pluginSlot.reset();
     pluginHost.reset();
     engine.reset();
     preferences.reset();
 }
 
-void App::changeListenerCallback(juce::ChangeBroadcaster* source)
+void App::restoreActivePluginIfAny()
 {
-    if (preferences == nullptr)
+    if (preferences == nullptr || pluginHost == nullptr || session == nullptr)
         return;
 
-    if (engine != nullptr && source == engine->getDeviceManager())
+    auto savedDesc = preferences->getActivePluginDescription();
+    if (savedDesc == nullptr)
+        return;
+
+    // Cross-check 1 (AC-1.D.2-L): refuse to load a description whose
+    // plugin is not in KnownPluginList. Raises the bar from "edit one
+    // settings key" to "edit two correlated settings keys".
+    const auto known = pluginHost->getKnownPlugins();
+    bool foundInKnown = false;
+    for (const auto& k : known)
     {
-        if (auto state = engine->getDeviceManager()->createStateXml())
-            preferences->setAudioDeviceState(*state);
+        if (k.pluginFormatName == savedDesc->pluginFormatName
+            && k.fileOrIdentifier == savedDesc->fileOrIdentifier)
+        {
+            foundInKnown = true;
+            break;
+        }
+    }
+    if (!foundInKnown)
+    {
+        preferences->clearActivePluginDescription();
+        preferences->flush();
         return;
     }
 
-    if (pluginHost != nullptr && source == &pluginHost->getKnownPluginList())
+    // Cross-check 2 (AC-1.D.2-N): if a previous launch set the in-flight
+    // marker to this plugin and never cleared it, that previous launch
+    // crashed inside the load. Skip + clear to break the crash loop.
+    const auto inFlight = session::readRestoreInFlightMarker(*preferences);
+    if (inFlight.isNotEmpty() && inFlight == savedDesc->fileOrIdentifier)
     {
-        if (auto xml = pluginHost->createKnownListXml())
-            preferences->setKnownPluginList(*xml);
+        preferences->clearActivePluginDescription();
+        session::clearRestoreInFlightMarker(*preferences);
+        preferences->flush();
+        juce::Logger::writeToLog(
+            "Pedalboard 3: refusing to restore '" + savedDesc->name +
+            "' — previous launch crashed during instantiation. Active plugin cleared.");
         return;
     }
+
+    // Tag in-flight, then dispatch. PreferencesPersister will clear the
+    // marker when Session transitions Idle with a successful load.
+    session::writeRestoreInFlightMarker(*preferences, savedDesc->fileOrIdentifier);
+    session->queueLoad(*savedDesc);
 }
 
 } // namespace pedalboard3
