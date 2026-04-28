@@ -9,6 +9,7 @@ namespace
 constexpr auto kAudioDeviceStateKey = "audioDeviceState";
 constexpr auto kKnownPluginListKey = "knownPluginList";
 constexpr auto kActivePluginDescriptionKey = "activePluginDescription";
+constexpr auto kActivePatchKey = "activePatch";
 
 juce::PropertiesFile::Options makeOptions()
 {
@@ -115,6 +116,134 @@ void Preferences::clearActivePluginDescription()
 {
     if (auto* store = props_.getUserSettings())
         store->removeValue(kActivePluginDescriptionKey);
+}
+
+namespace
+{
+
+juce::String channelAttr(int channel)
+{
+    return juce::String(channel);
+}
+
+std::unique_ptr<juce::XmlElement> serialisePatch(const Patch& p)
+{
+    auto root = std::make_unique<juce::XmlElement>("ACTIVE_PATCH");
+    root->setAttribute("name", p.name);
+
+    auto* nodesEl = root->createNewChildElement("NODES");
+    for (const auto& n : p.nodes)
+    {
+        auto* nodeEl = nodesEl->createNewChildElement("NODE");
+        nodeEl->setAttribute("id", n.id);
+        nodeEl->setAttribute("bypass", n.bypass);
+        nodeEl->setAttribute("customName", n.customName);
+        if (auto descXml = n.desc.createXml())
+        {
+            // Re-tag from <PLUGIN> to <IDENTITY> so the schema reads
+            // cleanly (master plan §4.5 idiom).
+            descXml->setTagName("IDENTITY");
+            nodeEl->addChildElement(descXml.release());
+        }
+    }
+
+    auto* connsEl = root->createNewChildElement("CONNECTIONS");
+    for (const auto& c : p.connections)
+    {
+        auto* connEl = connsEl->createNewChildElement("CONN");
+        connEl->setAttribute("src", c.src);
+        connEl->setAttribute("srcChan", channelAttr(c.srcChannel));
+        connEl->setAttribute("dst", c.dst);
+        connEl->setAttribute("dstChan", channelAttr(c.dstChannel));
+    }
+
+    return root;
+}
+
+std::unique_ptr<Patch> deserialisePatch(const juce::XmlElement& root)
+{
+    if (!root.hasTagName("ACTIVE_PATCH"))
+        return nullptr;
+
+    auto patch = std::make_unique<Patch>();
+    patch->name = root.getStringAttribute("name", "Untitled");
+
+    if (auto* nodesEl = root.getChildByName("NODES"))
+    {
+        for (auto* nodeEl : nodesEl->getChildIterator())
+        {
+            if (!nodeEl->hasTagName("NODE"))
+                continue;
+            PatchNode n;
+            n.id = nodeEl->getIntAttribute("id");
+            n.bypass = nodeEl->getBoolAttribute("bypass");
+            n.customName = nodeEl->getStringAttribute("customName");
+            if (auto* identityEl = nodeEl->getChildByName("IDENTITY"))
+            {
+                // Restore expects a <PLUGIN> root for loadFromXml.
+                juce::XmlElement asPlugin(*identityEl);
+                asPlugin.setTagName("PLUGIN");
+                if (!n.desc.loadFromXml(asPlugin))
+                    return nullptr;
+            }
+            patch->nodes.push_back(std::move(n));
+        }
+    }
+
+    if (auto* connsEl = root.getChildByName("CONNECTIONS"))
+    {
+        for (auto* connEl : connsEl->getChildIterator())
+        {
+            if (!connEl->hasTagName("CONN"))
+                continue;
+            PatchConnection c;
+            c.src = connEl->getIntAttribute("src");
+            c.srcChannel = connEl->getIntAttribute("srcChan");
+            c.dst = connEl->getIntAttribute("dst");
+            c.dstChannel = connEl->getIntAttribute("dstChan");
+            patch->connections.push_back(c);
+        }
+    }
+
+    return patch;
+}
+
+} // namespace
+
+std::unique_ptr<Patch> Preferences::getActivePatch()
+{
+    auto* store = props_.getUserSettings();
+    if (store == nullptr)
+        return nullptr;
+
+    auto xml = readXml(*store, kActivePatchKey);
+    if (xml == nullptr)
+        return nullptr;
+
+    auto patch = deserialisePatch(*xml);
+    if (patch == nullptr)
+        return nullptr;
+
+    if (validatePatch(*patch) != PatchValidation::Ok)
+        return nullptr;
+
+    return patch;
+}
+
+void Preferences::setActivePatch(const Patch& patch)
+{
+    auto* store = props_.getUserSettings();
+    if (store == nullptr)
+        return;
+
+    if (auto xml = serialisePatch(patch))
+        store->setValue(kActivePatchKey, xml.get());
+}
+
+void Preferences::clearActivePatch()
+{
+    if (auto* store = props_.getUserSettings())
+        store->removeValue(kActivePatchKey);
 }
 
 void Preferences::flush()

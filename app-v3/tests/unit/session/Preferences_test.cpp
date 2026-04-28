@@ -248,3 +248,141 @@ TEST_CASE("Preferences: ActivePluginDescription is XXE-safe (AC-1.D.2-K)", "[ses
     prefs.clearActivePluginDescription();
     prefs.flush();
 }
+
+// ---- Phase 1.D.3: ActivePatch round-trip ---------------------------------
+
+namespace
+{
+
+session::Patch makeFakeChain()
+{
+    session::Patch p;
+    p.name = "TestChain";
+
+    session::PatchNode a;
+    a.id = 1;
+    a.bypass = false;
+    a.customName = "Comp";
+    a.desc.name = "Compressor";
+    a.desc.pluginFormatName = "VST3";
+    a.desc.fileOrIdentifier = "/fake/Compressor.vst3";
+
+    session::PatchNode b;
+    b.id = 2;
+    b.bypass = true;
+    b.customName = "Verb";
+    b.desc.name = "Reverb";
+    b.desc.pluginFormatName = "VST3";
+    b.desc.fileOrIdentifier = "/fake/Reverb.vst3";
+
+    p.nodes.push_back(a);
+    p.nodes.push_back(b);
+
+    p.connections.push_back({session::graphIO, 0, 1, 0});
+    p.connections.push_back({session::graphIO, 1, 1, 1});
+    p.connections.push_back({1, 0, 2, 0});
+    p.connections.push_back({1, 1, 2, 1});
+    p.connections.push_back({2, 0, session::graphIO, 0});
+    p.connections.push_back({2, 1, session::graphIO, 1});
+    return p;
+}
+
+} // namespace
+
+TEST_CASE("Preferences: ActivePatch round-trips through the store", "[session][preferences][patch]")
+{
+    session::Preferences prefs;
+    prefs.clearActivePatch();
+    prefs.flush();
+    REQUIRE(prefs.getActivePatch() == nullptr);
+
+    auto p = makeFakeChain();
+    prefs.setActivePatch(p);
+    prefs.flush();
+
+    auto restored = prefs.getActivePatch();
+    REQUIRE(restored != nullptr);
+    REQUIRE(restored->name == "TestChain");
+    REQUIRE(restored->nodes.size() == 2);
+    REQUIRE(restored->nodes[0].id == 1);
+    REQUIRE(restored->nodes[0].desc.name == "Compressor");
+    REQUIRE(restored->nodes[0].customName == "Comp");
+    REQUIRE_FALSE(restored->nodes[0].bypass);
+    REQUIRE(restored->nodes[1].id == 2);
+    REQUIRE(restored->nodes[1].bypass);
+    REQUIRE(restored->connections.size() == 6);
+
+    prefs.clearActivePatch();
+    prefs.flush();
+}
+
+TEST_CASE("Preferences: ActivePatch persists across instance reconstruction", "[session][preferences][patch]")
+{
+    {
+        session::Preferences first;
+        first.setActivePatch(makeFakeChain());
+        first.flush();
+    }
+    {
+        session::Preferences second;
+        auto p = second.getActivePatch();
+        REQUIRE(p != nullptr);
+        REQUIRE(p->nodes.size() == 2);
+        REQUIRE(p->name == "TestChain");
+        second.clearActivePatch();
+        second.flush();
+    }
+}
+
+TEST_CASE("Preferences: clearActivePatch drops the value", "[session][preferences][patch]")
+{
+    session::Preferences prefs;
+    prefs.setActivePatch(makeFakeChain());
+    prefs.flush();
+    REQUIRE(prefs.getActivePatch() != nullptr);
+
+    prefs.clearActivePatch();
+    prefs.flush();
+    REQUIRE(prefs.getActivePatch() == nullptr);
+}
+
+TEST_CASE("Preferences: malformed ActivePatch XML returns nullptr", "[session][preferences][patch]")
+{
+    session::Preferences prefs;
+    juce::XmlElement bogus("NOT_AN_ACTIVE_PATCH");
+    prefs.getStore()->setValue("activePatch", &bogus);
+    prefs.flush();
+    REQUIRE(prefs.getActivePatch() == nullptr);
+
+    prefs.clearActivePatch();
+    prefs.flush();
+}
+
+TEST_CASE("Preferences: ActivePatch with structural corruption is rejected", "[session][preferences][patch][validate]")
+{
+    session::Preferences prefs;
+
+    juce::XmlElement root("ACTIVE_PATCH");
+    root.setAttribute("name", "Bad");
+    auto* nodesEl = root.createNewChildElement("NODES");
+    auto* n1 = nodesEl->createNewChildElement("NODE");
+    n1->setAttribute("id", 1);
+    auto* id1 = n1->createNewChildElement("IDENTITY");
+    id1->setAttribute("name", "A");
+    id1->setAttribute("format", "VST3");
+    id1->setAttribute("file", "/fake/A.vst3");
+    auto* n2 = nodesEl->createNewChildElement("NODE");
+    n2->setAttribute("id", 1); // dup!
+    auto* id2 = n2->createNewChildElement("IDENTITY");
+    id2->setAttribute("name", "B");
+    id2->setAttribute("format", "VST3");
+    id2->setAttribute("file", "/fake/B.vst3");
+
+    prefs.getStore()->setValue("activePatch", &root);
+    prefs.flush();
+
+    REQUIRE(prefs.getActivePatch() == nullptr);
+
+    prefs.clearActivePatch();
+    prefs.flush();
+}

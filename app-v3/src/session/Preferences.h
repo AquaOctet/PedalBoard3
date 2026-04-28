@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Patch.h"
+
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_data_structures/juce_data_structures.h>
 
@@ -62,6 +64,19 @@ public:
     std::unique_ptr<juce::PluginDescription> getActivePluginDescription();
     void setActivePluginDescription(const juce::PluginDescription& desc);
     void clearActivePluginDescription();
+
+    // The whole active patch (Phase 1.D.3 — replaces ActivePluginDescription
+    // for multi-plugin chains). XML root is <ACTIVE_PATCH>; no schemaMajor
+    // attribute (the future .pdl format owns version negotiation per master
+    // plan §4.5). Round-trip preserves node order, connections,
+    // per-node bypass, and customName.
+    //
+    // Returns nullptr on first run, malformed XML, or a structurally
+    // invalid patch (validatePatch != Ok). The caller is responsible for
+    // the further KnownPluginList cross-check + crash-loop guard.
+    std::unique_ptr<Patch> getActivePatch();
+    void setActivePatch(const Patch& patch);
+    void clearActivePatch();
 
     // Force a synchronous write of any dirty values. Safe to call
     // multiple times. ApplicationProperties also auto-saves on
