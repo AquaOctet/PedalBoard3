@@ -74,9 +74,25 @@ void PluginSlot::adoptPrepared(PreparedGraph&& prepared)
     // engine; we only update observer pointers + name. Both pointers
     // are guaranteed valid because unique_ptr::move kept their target
     // addresses stable.
-    bypassed_ = prepared.bypass;
-    hostedPlugin_ = prepared.hosted;
-    loadedName_ = std::move(prepared.name);
+    //
+    // Phase-1.D.3 transitional shape: PreparedGraph now exposes a
+    // NodeRefs map keyed by NodeId. PluginSlot is single-slot, so we
+    // pull the first (and only) entry. PluginSlot itself is retired in
+    // Unit 5; this adapter exists to keep the tree buildable through
+    // Phase A.
+    if (!prepared.nodes.empty())
+    {
+        const auto& refs = prepared.nodes.begin()->second;
+        bypassed_ = refs.bypass;
+        hostedPlugin_ = refs.hosted;
+        loadedName_ = refs.hosted != nullptr ? refs.hosted->getName() : juce::String();
+    }
+    else
+    {
+        bypassed_ = nullptr;
+        hostedPlugin_ = nullptr;
+        loadedName_.clear();
+    }
 
     sendChangeMessage();
 }

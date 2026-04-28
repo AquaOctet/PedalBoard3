@@ -34,7 +34,8 @@ TEST_CASE("PreparedGraph: empty value moves cleanly", "[session][prepared-graph]
     REQUIRE_FALSE(src.isValid());
 }
 
-TEST_CASE("buildPreparedGraph: bogus desc returns empty PreparedGraph + error", "[session][prepared-graph]")
+TEST_CASE("buildPreparedGraph: bogus desc (legacy overload) returns empty PreparedGraph + error",
+          "[session][prepared-graph]")
 {
     engine::PluginHost host;
     juce::PluginDescription bogus;
@@ -45,7 +46,41 @@ TEST_CASE("buildPreparedGraph: bogus desc returns empty PreparedGraph + error", 
     juce::String error;
     auto prepared = session::buildPreparedGraph(host, bogus, 48000.0, 256, error);
     REQUIRE_FALSE(prepared.isValid());
-    REQUIRE(prepared.bypass == nullptr);
-    REQUIRE(prepared.hosted == nullptr);
+    REQUIRE(prepared.nodes.empty());
     REQUIRE(error.isNotEmpty());
+}
+
+TEST_CASE("buildPreparedGraph: empty Patch builds a passthrough graph", "[session][prepared-graph]")
+{
+    engine::PluginHost host;
+    session::Patch empty;
+
+    juce::String error;
+    auto prepared = session::buildPreparedGraph(host, empty, 48000.0, 256, error);
+    REQUIRE(prepared.isValid());
+    REQUIRE(prepared.nodes.empty());
+    REQUIRE(error.isEmpty());
+
+    // Graph should have at least the four IO processor nodes
+    // (audioIn, audioOut, midiIn, midiOut). plus zero plugin nodes.
+    REQUIRE(prepared.graph->getNumNodes() >= 4);
+}
+
+TEST_CASE("buildPreparedGraph: multi-node patch with bogus desc returns empty + node-named error",
+          "[session][prepared-graph]")
+{
+    engine::PluginHost host;
+    session::Patch patch;
+    session::PatchNode n1;
+    n1.id = 1;
+    n1.desc.name = "First";
+    n1.desc.pluginFormatName = "VST3";
+    n1.desc.fileOrIdentifier = "/nope/First.vst3";
+    patch.nodes.push_back(n1);
+
+    juce::String error;
+    auto prepared = session::buildPreparedGraph(host, patch, 48000.0, 256, error);
+    REQUIRE_FALSE(prepared.isValid());
+    REQUIRE(prepared.nodes.empty());
+    REQUIRE(error.contains("First"));
 }

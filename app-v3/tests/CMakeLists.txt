@@ -23,6 +23,7 @@ set(PB3_TEST_SOURCES
     unit/session/PluginSlot_test.cpp
     unit/session/PreparedGraph_test.cpp
     unit/session/Session_test.cpp
+    unit/session/Patch_test.cpp
 )
 
 add_executable(pb3_smoke_tests ${PB3_TEST_SOURCES})

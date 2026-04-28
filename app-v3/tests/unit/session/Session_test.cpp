@@ -68,9 +68,12 @@ public:
                 pg.graph->addConnection({{procNode->nodeID, ch}, {outNode->nodeID, ch}});
             }
             pg.graph->prepareToPlay(sr, bs);
-            pg.bypass = nullptr;
-            pg.hosted = nullptr;
-            pg.name = desc.name.isNotEmpty() ? desc.name : juce::String("Fake");
+            // 1.D.3 PreparedGraph shape: nodes map keyed by NodeId.
+            // For the fake we leave the map empty — Session's slot
+            // adapter handles an empty map by clearing observer
+            // pointers. The existing tests only check state-machine
+            // transitions, not hosted-plugin pointer identity.
+            (void)desc;
             return pg;
         };
     }

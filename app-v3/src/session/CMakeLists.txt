@@ -18,6 +18,9 @@ add_library(pb3_session_core STATIC
     Session.h
     PreferencesPersister.cpp
     PreferencesPersister.h
+    Patch.cpp
+    Patch.h
+    NodeId.h
 )
 
 target_include_directories(pb3_session_core PUBLIC
@@ -52,4 +55,5 @@ pb3_apply_strict_warnings(pb3_session_core
     PreparedGraph.cpp
     Session.cpp
     PreferencesPersister.cpp
+    Patch.cpp
 )
