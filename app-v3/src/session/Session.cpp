@@ -193,6 +193,28 @@ Session::Session(engine::AudioEngine& engine, engine::PluginHost& host, BuildFn 
     worker_ = std::make_unique<Worker>(*this);
     worker_->startThread();
     idleEvent_.signal(); // start Idle
+
+    // Synchronous initial empty graph: builds a 4-IO-node passthrough
+    // (audioIn → audioOut, midiIn → midiOut) and swaps it into the
+    // engine BEFORE the ctor returns. Without this, the very first
+    // addPlugin() call lands in commitAddPlugin with liveGraph_ == nullptr
+    // — there's no graph to mutate. Building inline avoids an async race
+    // with the user's first Load click.
+    //
+    // The build is fast (no plugin instantiation, just 4 IO processors
+    // + 3 connections + prepareToPlay). State stays Idle, version stays
+    // 0 — this is initialisation, not a transition users observe.
+    juce::String warmupErr;
+    const auto cfg = deriveConfig(engine_);
+    auto initial = buildFn_(Patch{}, cfg.sampleRate, cfg.blockSize, warmupErr);
+    if (initial.isValid())
+    {
+        auto previous = engine_.loadGraph(std::move(initial.graph));
+        (void)previous;
+        liveGraph_ = engine_.getRuntime() != nullptr ? engine_.getRuntime()->getLiveGraph() : nullptr;
+        // activePatch_ + nodes_ stay empty — no plugin nodes in the
+        // passthrough graph.
+    }
 }
 
 Session::~Session()
