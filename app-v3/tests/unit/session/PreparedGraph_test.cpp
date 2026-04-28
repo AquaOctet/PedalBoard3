@@ -34,22 +34,6 @@ TEST_CASE("PreparedGraph: empty value moves cleanly", "[session][prepared-graph]
     REQUIRE_FALSE(src.isValid());
 }
 
-TEST_CASE("buildPreparedGraph: bogus desc (legacy overload) returns empty PreparedGraph + error",
-          "[session][prepared-graph]")
-{
-    engine::PluginHost host;
-    juce::PluginDescription bogus;
-    bogus.name = "Totally Fake Plugin";
-    bogus.fileOrIdentifier = "/nonexistent/path/to/plugin.vst3";
-    bogus.pluginFormatName = "VST3";
-
-    juce::String error;
-    auto prepared = session::buildPreparedGraph(host, bogus, 48000.0, 256, error);
-    REQUIRE_FALSE(prepared.isValid());
-    REQUIRE(prepared.nodes.empty());
-    REQUIRE(error.isNotEmpty());
-}
-
 TEST_CASE("buildPreparedGraph: empty Patch builds a passthrough graph", "[session][prepared-graph]")
 {
     engine::PluginHost host;

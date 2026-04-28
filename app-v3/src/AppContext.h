@@ -9,7 +9,6 @@ class PluginHost;
 namespace pedalboard3::session
 {
 class Preferences;
-class PluginSlot;
 class Session;
 } // namespace pedalboard3::session
 
@@ -22,8 +21,8 @@ namespace pedalboard3
 //
 // Phase 1.C.6 members: AudioEngine + PluginHost.
 // Phase 1.C.2 added: session::Preferences (per-user persistence).
-// Phase 1.D.1 added: session::PluginSlot (single-plugin host slot).
 // Phase 1.D.2 added: session::Session (queued patch-switch state machine).
+// Phase 1.D.3: Session API expanded to multi-node patch (PluginSlot retired).
 //
 // Upcoming additions (one field per subsystem as each phase lands):
 //   - control::MidiRouter        (Phase 4 — MIDI ingest / dispatch)
@@ -38,7 +37,6 @@ struct AppContext
     engine::AudioEngine& audioEngine;
     engine::PluginHost& pluginHost;
     session::Preferences& preferences;
-    session::PluginSlot& pluginSlot;
     session::Session& session;
 };
 

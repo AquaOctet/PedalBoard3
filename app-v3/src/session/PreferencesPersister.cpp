@@ -20,10 +20,24 @@ juce::File restoreInFlightFile(Preferences& prefs)
     return {};
 }
 
-bool sameDescription(const juce::PluginDescription& a, const juce::PluginDescription& b) noexcept
+bool samePatch(const Patch& a, const Patch& b) noexcept
 {
-    return a.pluginFormatName == b.pluginFormatName && a.fileOrIdentifier == b.fileOrIdentifier &&
-           a.deprecatedUid == b.deprecatedUid;
+    if (a.nodes.size() != b.nodes.size())
+        return false;
+    for (size_t i = 0; i < a.nodes.size(); ++i)
+    {
+        if (a.nodes[i].id != b.nodes[i].id)
+            return false;
+        if (a.nodes[i].desc.pluginFormatName != b.nodes[i].desc.pluginFormatName)
+            return false;
+        if (a.nodes[i].desc.fileOrIdentifier != b.nodes[i].desc.fileOrIdentifier)
+            return false;
+        if (a.nodes[i].bypass != b.nodes[i].bypass)
+            return false;
+        if (a.nodes[i].customName != b.nodes[i].customName)
+            return false;
+    }
+    return a.connections == b.connections;
 }
 
 } // namespace
@@ -94,35 +108,32 @@ void PreferencesPersister::changeListenerCallback(juce::ChangeBroadcaster* sourc
         if (session_.getState() != Session::State::Idle)
             return;
 
-        const auto active = session_.getActiveDescription();
-        if (active)
-        {
-            // Successful load. Dirty-write-only: skip the disk write if
-            // the persisted description already matches.
-            const auto current = prefs_.getActivePluginDescription();
-            const bool same = current != nullptr && sameDescription(*current, *active);
-            if (!same)
-                prefs_.setActivePluginDescription(*active);
+        const auto active = session_.getActivePatch();
+        const bool isEmpty = active.nodes.empty();
 
-            // Crash-loop guard satisfied: load completed without crash.
+        if (!isEmpty)
+        {
+            // Successful patch state. Dirty-write-only: skip the disk
+            // write if the persisted patch already matches.
+            const auto current = prefs_.getActivePatch();
+            const bool same = current != nullptr && samePatch(*current, active);
+            if (!same)
+                prefs_.setActivePatch(active);
+
             clearRestoreInFlightMarker(prefs_);
             return;
         }
 
-        if (!session_.isLoaded())
+        // Empty active patch — user explicitly cleared, OR a failed
+        // restore landed in the empty state. Distinguish via lastError:
+        // present means a failure happened, so leave the persisted
+        // patch alone (the user keeps trying next launch with the right
+        // plugins). Empty error means an explicit clearPatch.
+        const auto err = session_.getLastError();
+        if (err.isEmpty())
         {
-            // User-initiated unload — Session::onBuildResult sets
-            // activeDescription_ to nullopt only on explicit unload. A
-            // failed load also lands here with activeDescription_ unset
-            // and isLoaded() == false, but in that case we must NOT
-            // clear the persisted description (would lose the user's
-            // restore state on a missing-plugin failure).
-            const auto err = session_.getLastError();
-            if (err.isEmpty())
-            {
-                prefs_.clearActivePluginDescription();
-                clearRestoreInFlightMarker(prefs_);
-            }
+            prefs_.clearActivePatch();
+            clearRestoreInFlightMarker(prefs_);
         }
     }
 }

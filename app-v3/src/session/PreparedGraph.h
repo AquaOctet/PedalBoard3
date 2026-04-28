@@ -69,20 +69,7 @@ struct PreparedGraph
 // call from a worker thread. The graph is fully prepared (prepareToPlay
 // run) before return; the caller commits it to engine::AudioGraphRuntime
 // from the message thread via swapPreparedGraph or by direct ownership.
-PreparedGraph buildPreparedGraph(engine::PluginHost& host,
-                                 const Patch& patch,
-                                 double sampleRate,
-                                 int blockSize,
-                                 juce::String& errorOut);
-
-// Legacy single-plugin overload — wraps `desc` in a 1-node Patch and
-// calls the multi-node form. Kept while the Phase-1.D.2 callers
-// (PluginSlot, Session's pre-1.D.3 single-plugin path) are migrated;
-// retired in Unit 5 alongside PluginSlot.
-PreparedGraph buildPreparedGraph(engine::PluginHost& host,
-                                 const juce::PluginDescription& desc,
-                                 double sampleRate,
-                                 int blockSize,
-                                 juce::String& errorOut);
+PreparedGraph buildPreparedGraph(
+    engine::PluginHost& host, const Patch& patch, double sampleRate, int blockSize, juce::String& errorOut);
 
 } // namespace pedalboard3::session

@@ -10,8 +10,6 @@
 add_library(pb3_session_core STATIC
     Preferences.cpp
     Preferences.h
-    PluginSlot.cpp
-    PluginSlot.h
     PreparedGraph.cpp
     PreparedGraph.h
     Session.cpp
@@ -51,7 +49,6 @@ target_link_libraries(pb3_session_core
 
 pb3_apply_strict_warnings(pb3_session_core
     Preferences.cpp
-    PluginSlot.cpp
     PreparedGraph.cpp
     Session.cpp
     PreferencesPersister.cpp

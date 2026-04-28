@@ -5,7 +5,7 @@
 #include "engine/AudioGraphRuntime.h"
 #include "engine/PluginHost.h"
 #include "engine/processors/TestToneProcessor.h"
-#include "session/PluginSlot.h"
+#include "session/Patch.h"
 #include "session/Preferences.h"
 #include "session/Session.h"
 
@@ -97,7 +97,12 @@ public:
 
         bypassButton_.setButtonText("Bypass");
         bypassButton_.setClickingTogglesState(true);
-        bypassButton_.onClick = [this] { ctx_.pluginSlot.setBypassed(bypassButton_.getToggleState()); };
+        bypassButton_.onClick = [this]
+        {
+            const auto first = firstNodeId();
+            if (first != session::graphIO)
+                ctx_.session.setNodeBypass(first, bypassButton_.getToggleState());
+        };
         addAndMakeVisible(bypassButton_);
 
         editButton_.setButtonText("Edit");
@@ -109,13 +114,12 @@ public:
         addAndMakeVisible(statusLabel_);
 
         ctx_.pluginHost.getKnownPluginList().addChangeListener(this);
-        ctx_.pluginSlot.addChangeListener(this);
         ctx_.session.addChangeListener(this);
 
         rebuildPluginCombo();
-        // Sync once with the current Session/PluginSlot state so a fast
-        // restore-on-launch that completed before MainWindow was built
-        // still updates the UI on the next paint.
+        // Sync once with the current Session state so a fast restore-on-
+        // launch that completed before MainWindow was built still updates
+        // the UI on the next paint.
         refreshSlotControls();
 
         setSize(720, 420);
@@ -124,7 +128,6 @@ public:
     ~RootComponent() override
     {
         ctx_.pluginHost.getKnownPluginList().removeChangeListener(this);
-        ctx_.pluginSlot.removeChangeListener(this);
         ctx_.session.removeChangeListener(this);
         editorWindow_.reset();
     }
@@ -133,7 +136,7 @@ public:
     {
         if (source == &ctx_.pluginHost.getKnownPluginList())
             rebuildPluginCombo();
-        else if (source == &ctx_.pluginSlot || source == &ctx_.session)
+        else if (source == &ctx_.session)
             refreshSlotControls();
     }
 
@@ -153,7 +156,7 @@ public:
 
         g.setColour(juce::Colours::grey);
         g.setFont(juce::FontOptions(14.0f, juce::Font::plain));
-        const auto subtitle = juce::String("Phase 1.D.2 — queued patch-switch with all-notes-off swap.");
+        const auto subtitle = juce::String("Phase 1.D.3 — multi-plugin chain (transitional UI).");
         g.drawFittedText(subtitle, bodyArea, juce::Justification::centred, 1);
     }
 
@@ -214,21 +217,27 @@ private:
         }
     }
 
+    session::NodeId firstNodeId() const
+    {
+        const auto ids = ctx_.session.getNodeIdsInOrder();
+        return ids.empty() ? session::graphIO : ids.front();
+    }
+
     void refreshSlotControls()
     {
-        const bool loaded = ctx_.pluginSlot.isLoaded();
+        const auto snaps = ctx_.session.getNodeSnapshots();
+        const bool loaded = !snaps.empty();
         const auto state = ctx_.session.getState();
         const bool idle = (state == session::Session::State::Idle);
-        auto* hostedPlugin = ctx_.pluginSlot.getHostedPlugin();
 
-        // Load button is disabled while the worker is building or the
-        // message thread is mid-swap — re-arm coalescing applies, but
-        // the user shouldn't be encouraged to spam clicks.
+        const auto first = firstNodeId();
+        auto* hostedPlugin = (first != session::graphIO) ? ctx_.session.getHostedPlugin(first) : nullptr;
+
         loadButton_.setEnabled(idle);
         clearButton_.setEnabled(loaded && idle);
         bypassButton_.setEnabled(loaded);
         editButton_.setEnabled(loaded && hostedPlugin != nullptr && hostedPlugin->hasEditor());
-        bypassButton_.setToggleState(ctx_.pluginSlot.isBypassed(), juce::dontSendNotification);
+        bypassButton_.setToggleState(loaded && snaps.front().bypassed, juce::dontSendNotification);
 
         switch (state)
         {
@@ -245,7 +254,9 @@ private:
             if (err.isNotEmpty() && !loaded)
                 statusLabel_.setText("Load failed: " + err, juce::dontSendNotification);
             else if (loaded)
-                statusLabel_.setText("Loaded: " + ctx_.pluginSlot.getLoadedName(), juce::dontSendNotification);
+                statusLabel_.setText("Loaded: " + snaps.front().name +
+                                         "  (chain length: " + juce::String(static_cast<int>(snaps.size())) + ")",
+                                     juce::dontSendNotification);
             else
                 statusLabel_.setText("No plugin loaded", juce::dontSendNotification);
             break;
@@ -276,25 +287,29 @@ private:
         // Close any open editor for the previous plugin before swap.
         editorWindow_.reset();
 
-        // Async dispatch through the patch-switch state machine. Errors
-        // surface via the change-listener path (refreshSlotControls reads
-        // session::Session::getLastError on the next Idle transition).
-        ctx_.session.queueLoad(desc);
+        // Phase 1.D.3 transitional: clicking Load APPENDS to the chain
+        // via Session::addPlugin so the user can already build chains
+        // with the existing single-row UI. Phase 1.D.3 Unit 6's chain
+        // panel will rename the button to "Add to chain" and show all
+        // nodes. Errors surface via the change-listener path.
+        ctx_.session.addPlugin(desc);
     }
 
     void onClearClicked()
     {
         editorWindow_.reset();
-        ctx_.session.queueUnload();
+        ctx_.session.clearPatch();
     }
 
     void onEditClicked()
     {
-        auto* plugin = ctx_.pluginSlot.getHostedPlugin();
+        const auto first = firstNodeId();
+        if (first == session::graphIO)
+            return;
+        auto* plugin = ctx_.session.getHostedPlugin(first);
         if (plugin == nullptr || !plugin->hasEditor())
             return;
 
-        // If an editor window is already open, just bring it to front.
         if (editorWindow_ != nullptr)
         {
             editorWindow_->toFront(true);
@@ -305,10 +320,10 @@ private:
         if (editor == nullptr)
             return;
 
-        // Drop the editor when its window closes — JUCE expects the host
-        // to delete the editor before the plugin instance dies.
         auto onClose = [this] { editorWindow_.reset(); };
-        editorWindow_ = std::make_unique<EditorWindow>(ctx_.pluginSlot.getLoadedName(), editor, std::move(onClose));
+        const auto snaps = ctx_.session.getNodeSnapshots();
+        const auto title = !snaps.empty() ? snaps.front().name : juce::String();
+        editorWindow_ = std::make_unique<EditorWindow>(title, editor, std::move(onClose));
     }
 
     void openAudioSettings()
@@ -340,9 +355,12 @@ private:
     {
         if (toneButton_.getToggleState())
         {
-            // Test tone replaces any plugin in the slot — drop slot state
-            // first so the UI shows "no plugin loaded".
-            ctx_.pluginSlot.unload();
+            // Test tone replaces any plugin in the chain — drop chain
+            // state first so the UI shows "no plugin loaded". clearPatch
+            // is async; the tone graph swap is synchronous and runs
+            // after, which is fine — the previous graph is destroyed by
+            // the second swap.
+            ctx_.session.clearPatch();
             auto graph = buildTestToneGraph(*ctx_.audioEngine.getDeviceManager());
             ctx_.audioEngine.loadGraph(std::move(graph));
         }

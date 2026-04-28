@@ -6,7 +6,7 @@
 
 #include "engine/AudioEngine.h"
 #include "engine/PluginHost.h"
-#include "session/PluginSlot.h"
+#include "session/Patch.h"
 #include "session/PreparedGraph.h"
 #include "session/Session.h"
 #include "support/TestGainProcessor.h"
@@ -21,34 +21,32 @@ using namespace pedalboard3::testing;
 namespace
 {
 
-// Fake builder that returns a real (in-memory) graph wrapping a
-// TestGainProcessor — mirrors the production buildPreparedGraph minus
-// the BypassableInstance/PluginHost dependency. Records every invocation
-// so tests can assert coalescing behaviour.
+// Fake whole-patch builder (Phase 1.D.3 BuildFn signature). Returns a
+// minimal valid PreparedGraph for any non-empty Patch; returns invalid
+// when `failOnEmpty` is set and the first node's fileOrIdentifier is
+// empty (lets tests trigger build failure).
 class FakeBuilder
 {
 public:
     struct Call
     {
-        juce::PluginDescription desc;
+        session::Patch patch;
     };
 
     session::Session::BuildFn fn(int delayMs = 0, bool failOnEmpty = false)
     {
-        return [this, delayMs, failOnEmpty](const juce::PluginDescription& desc,
-                                            double sr,
-                                            int bs,
-                                            juce::String& errorOut) -> session::PreparedGraph
+        return [this, delayMs, failOnEmpty](
+                   const session::Patch& p, double sr, int bs, juce::String& errorOut) -> session::PreparedGraph
         {
             calls_.fetch_add(1, std::memory_order_release);
             {
                 std::lock_guard<std::mutex> lk(callsMutex_);
-                lastCalls_.push_back({desc});
+                lastCalls_.push_back({p});
             }
             if (delayMs > 0)
                 std::this_thread::sleep_for(std::chrono::milliseconds(delayMs));
 
-            if (failOnEmpty && desc.fileOrIdentifier.isEmpty())
+            if (failOnEmpty && !p.nodes.empty() && p.nodes.front().desc.fileOrIdentifier.isEmpty())
             {
                 errorOut = "FakeBuilder: empty fileOrIdentifier";
                 return {};
@@ -59,21 +57,26 @@ public:
             pg.graph->setPlayConfigDetails(2, 2, sr, bs);
             auto inNode = pg.graph->addNode(std::make_unique<juce::AudioProcessorGraph::AudioGraphIOProcessor>(
                 juce::AudioProcessorGraph::AudioGraphIOProcessor::audioInputNode));
-            auto procNode = pg.graph->addNode(std::make_unique<TestGainProcessor>(1.0f));
             auto outNode = pg.graph->addNode(std::make_unique<juce::AudioProcessorGraph::AudioGraphIOProcessor>(
                 juce::AudioProcessorGraph::AudioGraphIOProcessor::audioOutputNode));
-            for (int ch = 0; ch < 2; ++ch)
+            // One TestGainProcessor per Patch node. Populate the nodes
+            // map so Session can index by NodeId.
+            for (const auto& patchNode : p.nodes)
             {
-                pg.graph->addConnection({{inNode->nodeID, ch}, {procNode->nodeID, ch}});
-                pg.graph->addConnection({{procNode->nodeID, ch}, {outNode->nodeID, ch}});
+                auto procNode = pg.graph->addNode(std::make_unique<TestGainProcessor>(1.0f));
+                pg.nodes[patchNode.id] = session::PreparedGraph::NodeRefs{nullptr, nullptr, procNode.get()};
+                for (int ch = 0; ch < 2; ++ch)
+                {
+                    pg.graph->addConnection({{inNode->nodeID, ch}, {procNode->nodeID, ch}});
+                    pg.graph->addConnection({{procNode->nodeID, ch}, {outNode->nodeID, ch}});
+                }
+            }
+            if (p.nodes.empty())
+            {
+                for (int ch = 0; ch < 2; ++ch)
+                    pg.graph->addConnection({{inNode->nodeID, ch}, {outNode->nodeID, ch}});
             }
             pg.graph->prepareToPlay(sr, bs);
-            // 1.D.3 PreparedGraph shape: nodes map keyed by NodeId.
-            // For the fake we leave the map empty — Session's slot
-            // adapter handles an empty map by clearing observer
-            // pointers. The existing tests only check state-machine
-            // transitions, not hosted-plugin pointer identity.
-            (void)desc;
             return pg;
         };
     }
@@ -140,64 +143,81 @@ bool waitForVersion(session::Session& s, std::uint64_t target, int timeoutMs = 1
 
 } // namespace
 
-TEST_CASE("Session: starts Idle, no plugin loaded", "[session][state-machine]")
+namespace
+{
+
+session::Patch makeBogusPatch()
+{
+    session::Patch p;
+    session::PatchNode n;
+    n.id = 1;
+    n.desc.name = "Bogus";
+    n.desc.pluginFormatName = "VST3";
+    // fileOrIdentifier intentionally empty — triggers FakeBuilder failure path.
+    p.nodes.push_back(n);
+    return p;
+}
+
+session::Patch makeOneNodePatch(const juce::String& pluginName)
+{
+    session::Patch p;
+    session::PatchNode n;
+    n.id = 1;
+    n.desc = makeDesc(pluginName);
+    p.nodes.push_back(n);
+    return p;
+}
+
+} // namespace
+
+TEST_CASE("Session: starts Idle with no nodes", "[session][state-machine]")
 {
     engine::AudioEngine eng;
     eng.initialise();
     engine::PluginHost host;
-    session::PluginSlot slot(eng, host);
     FakeBuilder builder;
 
-    session::Session s(slot, eng, builder.fn());
+    session::Session s(eng, host, builder.fn());
 
     REQUIRE(s.getState() == session::Session::State::Idle);
-    REQUIRE_FALSE(s.isLoaded());
-    REQUIRE(s.getLoadedName().isEmpty());
+    REQUIRE(s.getNodeCount() == 0);
     REQUIRE(s.getLastError().isEmpty());
     REQUIRE(s.getStateVersion() == 0);
 }
 
-TEST_CASE("Session: queueLoad with bogus desc walks Idle→Building→Idle, error set", "[session][state-machine]")
+TEST_CASE("Session: replacePatch with bogus patch walks Idle→Building→Idle, error set", "[session][state-machine]")
 {
     engine::AudioEngine eng;
     eng.initialise();
     engine::PluginHost host;
-    session::PluginSlot slot(eng, host);
     FakeBuilder builder;
 
-    session::Session s(slot, eng, builder.fn(0, /*failOnEmpty*/ true));
+    session::Session s(eng, host, builder.fn(0, /*failOnEmpty*/ true));
 
-    juce::PluginDescription bogus;
-    bogus.name = "Bogus";
-    bogus.pluginFormatName = "VST3";
-    // fileOrIdentifier intentionally empty → builder fails
-
-    s.queueLoad(bogus);
+    s.replacePatch(makeBogusPatch());
 
     pumpUntilIdle(s);
 
     REQUIRE(s.getState() == session::Session::State::Idle);
-    REQUIRE_FALSE(s.isLoaded());
+    REQUIRE(s.getNodeCount() == 0);
     REQUIRE(s.getLastError().isNotEmpty());
-    REQUIRE(s.getStateVersion() >= 2u); // at least Idle→Building→Idle
+    REQUIRE(s.getStateVersion() >= 2u); // Idle→Building→Idle
 }
 
-TEST_CASE("Session: queueUnload on an empty slot transitions through Idle cleanly", "[session][state-machine]")
+TEST_CASE("Session: clearPatch from empty transitions through Idle cleanly", "[session][state-machine]")
 {
     engine::AudioEngine eng;
     eng.initialise();
     engine::PluginHost host;
-    session::PluginSlot slot(eng, host);
     FakeBuilder builder;
 
-    session::Session s(slot, eng, builder.fn());
+    session::Session s(eng, host, builder.fn());
 
-    s.queueUnload();
+    s.clearPatch();
     pumpUntilIdle(s);
 
     REQUIRE(s.getState() == session::Session::State::Idle);
-    REQUIRE_FALSE(s.isLoaded());
-    REQUIRE_FALSE(s.getActiveDescription().has_value());
+    REQUIRE(s.getNodeCount() == 0);
 }
 
 TEST_CASE("Session: dtor mid-build joins worker cleanly without crash", "[session][state-machine]")
@@ -205,13 +225,11 @@ TEST_CASE("Session: dtor mid-build joins worker cleanly without crash", "[sessio
     engine::AudioEngine eng;
     eng.initialise();
     engine::PluginHost host;
-    session::PluginSlot slot(eng, host);
     FakeBuilder builder;
 
     {
-        session::Session s(slot, eng, builder.fn(/*delayMs*/ 200));
-        s.queueLoad(makeDesc("Slow"));
-        // Don't wait for completion — destruct immediately.
+        session::Session s(eng, host, builder.fn(/*delayMs*/ 200));
+        s.replacePatch(makeOneNodePatch("Slow"));
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     SUCCEED();
@@ -222,22 +240,18 @@ TEST_CASE("Session: getStatus returns coherent snapshot", "[session][state-machi
     engine::AudioEngine eng;
     eng.initialise();
     engine::PluginHost host;
-    session::PluginSlot slot(eng, host);
     FakeBuilder builder;
 
-    session::Session s(slot, eng, builder.fn(0, /*failOnEmpty*/ true));
+    session::Session s(eng, host, builder.fn(0, /*failOnEmpty*/ true));
 
-    juce::PluginDescription bogus;
-    bogus.name = "Bogus2";
-    bogus.pluginFormatName = "VST3";
-    s.queueLoad(bogus);
+    s.replacePatch(makeBogusPatch());
     pumpUntilIdle(s);
 
     auto st = s.getStatus();
     REQUIRE(st.state == session::Session::State::Idle);
     REQUIRE(st.lastError.isNotEmpty());
     REQUIRE(st.version >= 2u);
-    REQUIRE_FALSE(st.activeDescription.has_value());
+    REQUIRE(st.nodeCount == 0);
 }
 
 TEST_CASE("Session: state version is monotonic across transitions", "[session][state-machine]")
@@ -245,19 +259,38 @@ TEST_CASE("Session: state version is monotonic across transitions", "[session][s
     engine::AudioEngine eng;
     eng.initialise();
     engine::PluginHost host;
-    session::PluginSlot slot(eng, host);
     FakeBuilder builder;
 
-    session::Session s(slot, eng, builder.fn(0, /*failOnEmpty*/ true));
+    session::Session s(eng, host, builder.fn(0, /*failOnEmpty*/ true));
 
     const auto v0 = s.getStateVersion();
-
-    juce::PluginDescription bogus;
-    bogus.name = "Bogus3";
-    bogus.pluginFormatName = "VST3";
-    s.queueLoad(bogus);
+    s.replacePatch(makeBogusPatch());
 
     REQUIRE(waitForVersion(s, v0 + 1)); // → Building
     pumpUntilIdle(s);
     REQUIRE(s.getStateVersion() >= v0 + 2u); // → Idle (with error)
+}
+
+TEST_CASE("Session: synchronous setNodeBypass on absent NodeId is a no-op", "[session][incremental]")
+{
+    engine::AudioEngine eng;
+    eng.initialise();
+    engine::PluginHost host;
+    FakeBuilder builder;
+    session::Session s(eng, host, builder.fn());
+
+    const auto v0 = s.getStateVersion();
+    s.setNodeBypass(42, true);          // no node 42 exists
+    REQUIRE(s.getStateVersion() == v0); // no version bump for no-op
+}
+
+TEST_CASE("Session: getNodeIdsInOrder returns empty for fresh Session", "[session][snapshot]")
+{
+    engine::AudioEngine eng;
+    eng.initialise();
+    engine::PluginHost host;
+    FakeBuilder builder;
+    session::Session s(eng, host, builder.fn());
+    REQUIRE(s.getNodeIdsInOrder().empty());
+    REQUIRE(s.getNodeSnapshots().empty());
 }

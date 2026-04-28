@@ -143,27 +143,4 @@ PreparedGraph buildPreparedGraph(
     return result;
 }
 
-PreparedGraph buildPreparedGraph(engine::PluginHost& host,
-                                 const juce::PluginDescription& desc,
-                                 double sampleRate,
-                                 int blockSize,
-                                 juce::String& errorOut)
-{
-    Patch p;
-    PatchNode n;
-    n.id = 1;
-    n.desc = desc;
-    p.nodes.push_back(std::move(n));
-    // Linear chain: graphIO → 1 → graphIO (stereo audio + MIDI).
-    p.connections.push_back({graphIO, 0, 1, 0});
-    p.connections.push_back({graphIO, 1, 1, 1});
-    p.connections.push_back({1, 0, graphIO, 0});
-    p.connections.push_back({1, 1, graphIO, 1});
-    p.connections.push_back(
-        {graphIO, juce::AudioProcessorGraph::midiChannelIndex, 1, juce::AudioProcessorGraph::midiChannelIndex});
-    p.connections.push_back(
-        {1, juce::AudioProcessorGraph::midiChannelIndex, graphIO, juce::AudioProcessorGraph::midiChannelIndex});
-    return buildPreparedGraph(host, p, sampleRate, blockSize, errorOut);
-}
-
 } // namespace pedalboard3::session
