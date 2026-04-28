@@ -19,9 +19,7 @@ TEST_CASE("PreparedGraph: default-constructed is empty and not valid", "[session
 {
     session::PreparedGraph pg;
     REQUIRE(pg.graph == nullptr);
-    REQUIRE(pg.bypass == nullptr);
-    REQUIRE(pg.hosted == nullptr);
-    REQUIRE(pg.name.isEmpty());
+    REQUIRE(pg.nodes.empty());
     REQUIRE_FALSE(pg.isValid());
 }
 
