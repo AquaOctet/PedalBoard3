@@ -121,6 +121,18 @@ public:
     // event loop). Used by integration harnesses.
     bool waitForIdle(int timeoutMs);
 
+    // Synchronously run the worker→message-thread hand-off if a result is
+    // pending. In a normal app the JUCE event loop drives this on its own;
+    // headless harnesses (Catch2 tests, future MCP loop without a JUCE
+    // message pump) call this in a poll loop because
+    // juce::MessageManager::runDispatchLoopUntil is gated on
+    // JUCE_MODAL_LOOPS_PERMITTED, which we keep disabled in pb3_juce_config.
+    //
+    // Wraps juce::AsyncUpdater::handleUpdateNowIfNeeded — must be called from
+    // the thread that owns the JUCE message manager (in tests, the test
+    // thread).
+    void dispatchPendingResult();
+
 private:
     enum class RequestKind
     {

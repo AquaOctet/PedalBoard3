@@ -5,6 +5,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/AudioEngine.h"
+#include "engine/PluginHost.h"
 #include "session/PluginSlot.h"
 #include "session/PreparedGraph.h"
 #include "session/Session.h"
@@ -98,29 +99,25 @@ juce::PluginDescription makeDesc(const juce::String& name)
 
 void pumpUntilIdle(session::Session& s, int timeoutMs = 2000)
 {
+    // The worker thread fires juce::AsyncUpdater::triggerAsyncUpdate; in a
+    // normal app the JUCE event loop dispatches it on the message thread.
+    // pb3_juce_config keeps JUCE_MODAL_LOOPS_PERMITTED off, so
+    // MessageManager::runDispatchLoopUntil isn't available. Instead drive
+    // the AsyncUpdater synchronously via Session::dispatchPendingResult,
+    // which calls handleUpdateNowIfNeeded under the hood.
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
     while (std::chrono::steady_clock::now() < deadline)
     {
-        // juce::AsyncUpdater needs the message thread to dispatch. In a
-        // headless test there's no event loop, so we tick the dispatcher
-        // manually.
-        if (auto* mm = juce::MessageManager::getInstanceWithoutCreating())
-            mm->runDispatchLoopUntil(5);
-        if (s.getState() == session::Session::State::Idle && !s.isLoaded())
+        s.dispatchPendingResult();
+        if (s.getState() == session::Session::State::Idle)
         {
-            // Ensure no in-flight work.
+            // Brief settle to catch a worker that's mid-publish.
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            s.dispatchPendingResult();
             if (s.getState() == session::Session::State::Idle)
                 return;
         }
-        if (s.waitForIdle(5))
-        {
-            // waitForIdle may return spuriously if state was Idle when
-            // entered; pump once more to drain pending updaters.
-            if (auto* mm = juce::MessageManager::getInstanceWithoutCreating())
-                mm->runDispatchLoopUntil(5);
-            return;
-        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
 }
 
@@ -130,8 +127,7 @@ bool waitForVersion(session::Session& s, std::uint64_t target, int timeoutMs = 1
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
     while (std::chrono::steady_clock::now() < deadline)
     {
-        if (auto* mm = juce::MessageManager::getInstanceWithoutCreating())
-            mm->runDispatchLoopUntil(5);
+        s.dispatchPendingResult();
         if (s.getStateVersion() >= target)
             return true;
         std::this_thread::sleep_for(std::chrono::milliseconds(2));

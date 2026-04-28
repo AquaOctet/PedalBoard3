@@ -244,6 +244,12 @@ bool Session::waitForIdle(int timeoutMs)
     return idleEvent_.wait(timeoutMs);
 }
 
+void Session::dispatchPendingResult()
+{
+    if (resultUpdater_ != nullptr)
+        resultUpdater_->handleUpdateNowIfNeeded();
+}
+
 void Session::publishStateChange(State newState)
 {
     state_.store(newState, std::memory_order_release);
