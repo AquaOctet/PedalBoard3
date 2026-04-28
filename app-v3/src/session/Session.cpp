@@ -246,8 +246,19 @@ bool Session::waitForIdle(int timeoutMs)
 
 void Session::dispatchPendingResult()
 {
-    if (resultUpdater_ != nullptr)
-        resultUpdater_->handleUpdateNowIfNeeded();
+    // Bypass juce::AsyncUpdater::handleUpdateNowIfNeeded — that method gates
+    // on JUCE_ASSERT_MESSAGE_THREAD and silently early-returns when the
+    // calling thread isn't bound as JUCE's message thread (Catch2 tests
+    // typically aren't, since the worker thread we start in Session ctor
+    // races with the test thread for the message-thread designation).
+    //
+    // Calling onBuildResult directly is safe: it acquires resultMutex_ so a
+    // concurrent AsyncUpdater drain in production sees an empty result_ and
+    // bails. The "synchronous fast paths" in engine::AudioGraphRuntime cover
+    // the headless-no-audio-device case; PluginSlot::adoptPrepared and
+    // ChangeBroadcaster::sendChangeMessage have no message-thread guards
+    // that matter in this test context.
+    onBuildResult();
 }
 
 void Session::publishStateChange(State newState)

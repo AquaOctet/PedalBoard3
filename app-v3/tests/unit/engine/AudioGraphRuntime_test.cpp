@@ -43,6 +43,13 @@ BuiltGraph buildGainGraph(float gain)
         std::make_unique<AudioGraph::AudioGraphIOProcessor>(AudioGraph::AudioGraphIOProcessor::audioInputNode));
     auto outNode = g->addNode(
         std::make_unique<AudioGraph::AudioGraphIOProcessor>(AudioGraph::AudioGraphIOProcessor::audioOutputNode));
+    // midiInputNode is required for the graph to route the input MidiBuffer
+    // (passed to processBlock) into nodes that acceptsMidi(). Without it,
+    // AudioProcessorGraph drops incoming MIDI on the floor — which broke the
+    // all-notes-off flush test that expected the gain processor to see
+    // 16ch × 3 events after a swap.
+    auto midiInNode = g->addNode(
+        std::make_unique<AudioGraph::AudioGraphIOProcessor>(AudioGraph::AudioGraphIOProcessor::midiInputNode));
     auto gainNode = g->addNode(std::make_unique<TestGainProcessor>(gain));
 
     // Wire stereo input → gain → output.
@@ -50,6 +57,9 @@ BuiltGraph buildGainGraph(float gain)
     g->addConnection({{inNode->nodeID, 1}, {gainNode->nodeID, 1}});
     g->addConnection({{gainNode->nodeID, 0}, {outNode->nodeID, 0}});
     g->addConnection({{gainNode->nodeID, 1}, {outNode->nodeID, 1}});
+    // Wire MIDI: graph's MIDI-in -> gain processor's MIDI-in pin.
+    g->addConnection(
+        {{midiInNode->nodeID, AudioGraph::midiChannelIndex}, {gainNode->nodeID, AudioGraph::midiChannelIndex}});
 
     return {std::move(g), gainNode->nodeID};
 }

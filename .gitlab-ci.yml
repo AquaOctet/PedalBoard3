@@ -54,16 +54,14 @@ default:
   - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
   - if: '$CI_COMMIT_BRANCH == "v3-rewrite"'   # initial dev branch
 
-# macOS jobs: saas-macos-large-m2pro queue waits + cold-VM boot are slow
-# (often 5-30 min before a runner picks up the job). Don't auto-run on
-# every MR push — that turns every "git push" into a long wait on the
-# critical path. Auto on default branch / v3-rewrite, manual on MRs;
-# Linux still gates merges fast on every push.
+# macOS jobs run automatically on every MR push as well as default branch /
+# v3-rewrite — the saas-macos-large-m2pro queue waits aren't the gate they
+# used to be, and `allow_failure: true` on the build/test jobs keeps a slow
+# macOS run from blocking the critical path of an MR.
 .rules-macos: &rules-macos
   - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
   - if: '$CI_COMMIT_BRANCH == "v3-rewrite"'
   - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-    when: manual
 
 # Image build runs only when the recipe (Dockerfile) or pipeline that
 # consumes it changes. NO `when: manual` catch-all: a manual-pending job
