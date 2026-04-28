@@ -481,8 +481,33 @@ void Session::applyConnectionsToLiveGraph()
     if (liveGraph_ == nullptr)
         return;
 
+    // Cache the four I/O processor NodeIDs once — they're stable across
+    // mutations (AudioGraphIOProcessor nodes added at graph build time).
+    AudioGraph::NodeID audioIn, audioOut, midiIn, midiOut;
+    for (auto* node : liveGraph_->getNodes())
+    {
+        if (auto* io = dynamic_cast<AudioGraph::AudioGraphIOProcessor*>(node->getProcessor()))
+        {
+            using IO = AudioGraph::AudioGraphIOProcessor;
+            switch (io->getType())
+            {
+            case IO::audioInputNode:
+                audioIn = node->nodeID;
+                break;
+            case IO::audioOutputNode:
+                audioOut = node->nodeID;
+                break;
+            case IO::midiInputNode:
+                midiIn = node->nodeID;
+                break;
+            case IO::midiOutputNode:
+                midiOut = node->nodeID;
+                break;
+            }
+        }
+    }
+
     // Clear all existing connections, then add the new linear-chain shape.
-    // UpdateKind::async on the clear, sync on the last addConnection.
     auto existing = liveGraph_->getConnections();
     for (const auto& c : existing)
         liveGraph_->removeConnection(c, UpdateKind::async);
@@ -492,55 +517,38 @@ void Session::applyConnectionsToLiveGraph()
     {
         const auto& c = conns[i];
         const bool isLast = (i == conns.size() - 1);
+        const bool isMidi = (c.srcChannel == AudioGraph::midiChannelIndex);
 
-        // Resolve graphIO endpoints: the AudioProcessorGraph uses its
-        // AudioGraphIOProcessor nodes for I/O. We don't have direct
-        // handles to those here — but the graph keeps stable NodeIDs,
-        // and the connections coming through us were authored against
-        // graphIO sentinel which we mapped at build-time. For
-        // incremental mutation we rebuild only between plugin nodes
-        // (the I/O processor nodes are stable across mutations) — so
-        // re-resolve via the graph's known I/O nodes.
-        const auto srcGraphId = (c.src == graphIO) ? AudioGraph::NodeID() : nodes_.at(c.src).graphNode->nodeID;
-        const auto dstGraphId = (c.dst == graphIO) ? AudioGraph::NodeID() : nodes_.at(c.dst).graphNode->nodeID;
-
-        // For graphIO endpoints we need the actual JUCE I/O node IDs.
-        // Walk the graph once to find them — cheap (4 nodes).
-        AudioGraph::NodeID audioIn, audioOut, midiIn, midiOut;
-        for (auto* node : liveGraph_->getNodes())
+        AudioGraph::NodeID resolvedSrc;
+        if (c.src == graphIO)
         {
-            if (auto* io = dynamic_cast<AudioGraph::AudioGraphIOProcessor*>(node->getProcessor()))
-            {
-                using IO = AudioGraph::AudioGraphIOProcessor;
-                switch (io->getType())
-                {
-                case IO::audioInputNode:
-                    audioIn = node->nodeID;
-                    break;
-                case IO::audioOutputNode:
-                    audioOut = node->nodeID;
-                    break;
-                case IO::midiInputNode:
-                    midiIn = node->nodeID;
-                    break;
-                case IO::midiOutputNode:
-                    midiOut = node->nodeID;
-                    break;
-                }
-            }
+            resolvedSrc = isMidi ? midiIn : audioIn;
+        }
+        else
+        {
+            auto it = nodes_.find(c.src);
+            if (it == nodes_.end() || it->second.graphNode == nullptr)
+                continue;
+            resolvedSrc = it->second.graphNode->nodeID;
         }
 
-        const bool isMidi = (c.srcChannel == AudioGraph::midiChannelIndex);
-        auto resolvedSrc = (c.src == graphIO) ? (isMidi ? midiIn : audioIn) : srcGraphId;
-        auto resolvedDst = (c.dst == graphIO) ? (isMidi ? midiOut : audioOut) : dstGraphId;
+        AudioGraph::NodeID resolvedDst;
+        if (c.dst == graphIO)
+        {
+            resolvedDst = isMidi ? midiOut : audioOut;
+        }
+        else
+        {
+            auto it = nodes_.find(c.dst);
+            if (it == nodes_.end() || it->second.graphNode == nullptr)
+                continue;
+            resolvedDst = it->second.graphNode->nodeID;
+        }
 
         liveGraph_->addConnection({{resolvedSrc, c.srcChannel}, {resolvedDst, c.dstChannel}},
                                   isLast ? UpdateKind::sync : UpdateKind::async);
     }
 
-    // Force a rebuild commit if we somehow had no connections (shouldn't
-    // happen since computeLinearConnections produces at least the
-    // passthrough conns).
     if (conns.empty())
         liveGraph_->rebuild();
 }

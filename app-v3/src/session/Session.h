@@ -14,6 +14,8 @@
 #include <functional>
 #include <mutex>
 #include <optional>
+#include <unordered_map>
+#include <variant>
 #include <vector>
 
 namespace pedalboard3::engine
