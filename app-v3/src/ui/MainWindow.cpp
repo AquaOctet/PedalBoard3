@@ -7,6 +7,7 @@
 #include "engine/processors/TestToneProcessor.h"
 #include "session/PluginSlot.h"
 #include "session/Preferences.h"
+#include "session/Session.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -109,8 +110,12 @@ public:
 
         ctx_.pluginHost.getKnownPluginList().addChangeListener(this);
         ctx_.pluginSlot.addChangeListener(this);
+        ctx_.session.addChangeListener(this);
 
         rebuildPluginCombo();
+        // Sync once with the current Session/PluginSlot state so a fast
+        // restore-on-launch that completed before MainWindow was built
+        // still updates the UI on the next paint.
         refreshSlotControls();
 
         setSize(720, 420);
@@ -120,6 +125,7 @@ public:
     {
         ctx_.pluginHost.getKnownPluginList().removeChangeListener(this);
         ctx_.pluginSlot.removeChangeListener(this);
+        ctx_.session.removeChangeListener(this);
         editorWindow_.reset();
     }
 
@@ -127,7 +133,7 @@ public:
     {
         if (source == &ctx_.pluginHost.getKnownPluginList())
             rebuildPluginCombo();
-        else if (source == &ctx_.pluginSlot)
+        else if (source == &ctx_.pluginSlot || source == &ctx_.session)
             refreshSlotControls();
     }
 
@@ -147,7 +153,7 @@ public:
 
         g.setColour(juce::Colours::grey);
         g.setFont(juce::FontOptions(14.0f, juce::Font::plain));
-        const auto subtitle = juce::String("Phase 1.D.1 — load a plugin into the audio graph.");
+        const auto subtitle = juce::String("Phase 1.D.2 — queued patch-switch with all-notes-off swap.");
         g.drawFittedText(subtitle, bodyArea, juce::Justification::centred, 1);
     }
 
@@ -211,16 +217,40 @@ private:
     void refreshSlotControls()
     {
         const bool loaded = ctx_.pluginSlot.isLoaded();
+        const auto state = ctx_.session.getState();
+        const bool idle = (state == session::Session::State::Idle);
         auto* hostedPlugin = ctx_.pluginSlot.getHostedPlugin();
-        clearButton_.setEnabled(loaded);
+
+        // Load button is disabled while the worker is building or the
+        // message thread is mid-swap — re-arm coalescing applies, but
+        // the user shouldn't be encouraged to spam clicks.
+        loadButton_.setEnabled(idle);
+        clearButton_.setEnabled(loaded && idle);
         bypassButton_.setEnabled(loaded);
         editButton_.setEnabled(loaded && hostedPlugin != nullptr && hostedPlugin->hasEditor());
         bypassButton_.setToggleState(ctx_.pluginSlot.isBypassed(), juce::dontSendNotification);
 
-        if (loaded)
-            statusLabel_.setText("Loaded: " + ctx_.pluginSlot.getLoadedName(), juce::dontSendNotification);
-        else
-            statusLabel_.setText("No plugin loaded", juce::dontSendNotification);
+        switch (state)
+        {
+        case session::Session::State::Building:
+            statusLabel_.setText("Loading...", juce::dontSendNotification);
+            break;
+        case session::Session::State::Swapping:
+            statusLabel_.setText("Swapping...", juce::dontSendNotification);
+            break;
+        case session::Session::State::Idle:
+        default:
+        {
+            const auto err = ctx_.session.getLastError();
+            if (err.isNotEmpty() && !loaded)
+                statusLabel_.setText("Load failed: " + err, juce::dontSendNotification);
+            else if (loaded)
+                statusLabel_.setText("Loaded: " + ctx_.pluginSlot.getLoadedName(), juce::dontSendNotification);
+            else
+                statusLabel_.setText("No plugin loaded", juce::dontSendNotification);
+            break;
+        }
+        }
 
         // Close any editor window for a no-longer-loaded plugin.
         if (!loaded)
@@ -246,22 +276,16 @@ private:
         // Close any open editor for the previous plugin before swap.
         editorWindow_.reset();
 
-        juce::String error;
-        if (!ctx_.pluginSlot.load(desc, error))
-        {
-            const auto opts = juce::MessageBoxOptions{}
-                                  .withIconType(juce::MessageBoxIconType::WarningIcon)
-                                  .withTitle("Load failed")
-                                  .withMessage("Could not load \"" + desc.name + "\":\n" + error)
-                                  .withButton("OK");
-            juce::AlertWindow::showAsync(opts, nullptr);
-        }
+        // Async dispatch through the patch-switch state machine. Errors
+        // surface via the change-listener path (refreshSlotControls reads
+        // session::Session::getLastError on the next Idle transition).
+        ctx_.session.queueLoad(desc);
     }
 
     void onClearClicked()
     {
         editorWindow_.reset();
-        ctx_.pluginSlot.unload();
+        ctx_.session.queueUnload();
     }
 
     void onEditClicked()

@@ -15,16 +15,17 @@ class PluginHost;
 namespace pedalboard3::session
 {
 
-// "What plugin is currently loaded?" — Phase 1.D.1's minimum viable
-// hosting state. Builds a 2-in/2-out audio-processor graph that wraps
-// the active plugin instance with a BypassableInstance and routes
-// input → plugin → output. Synchronous load/unload; the audio thread
-// sees a graph swap via AudioEngine::loadGraph ->
-// AudioGraphRuntime::swapPreparedGraph.
+struct PreparedGraph;
+
+// "What plugin is currently loaded?" — the message-thread-only view of
+// the active hosting slot. Holds non-owning observer pointers into the
+// graph that engine::AudioGraphRuntime owns, plus a display name.
 //
-// Phase 1.D.2 will add the queued/coalescing patch-switch state
-// machine on top of this synchronous load() — load() becomes its
-// blocking back-end, run on a worker thread.
+// Phase 1.D.1 introduced the synchronous load() that builds the graph
+// and swaps it in directly. Phase 1.D.2 keeps load() as a synchronous
+// primitive but routes the actual hot path through session::Session,
+// which calls session::buildPreparedGraph on a worker thread and then
+// commits the result here via adoptPrepared() on the message thread.
 //
 // Phase 1.D.3 grows this into a multi-plugin chain.
 //
@@ -40,7 +41,18 @@ public:
     // build a 2-in/2-out graph, swap into the engine. Returns true on
     // success. On failure returns false, fills `errorOut`, and leaves
     // any previously-loaded plugin intact.
+    //
+    // Internally: buildPreparedGraph -> engine.loadGraph -> adoptPrepared.
     bool load(const juce::PluginDescription& desc, juce::String& errorOut);
+
+    // Commits a PreparedGraph as the new live state. Caller must have
+    // already swapped `prepared.graph` into the engine via
+    // engine::AudioEngine::loadGraph BEFORE calling this — adoptPrepared
+    // only updates the observer pointers and fires the change message.
+    //
+    // Used by load() (synchronous path) and by Session::onBuildResult
+    // (queued/coalesced path). Message thread only.
+    void adoptPrepared(PreparedGraph&& prepared);
 
     // Swap a null graph in; engine goes silent. Idempotent.
     void unload();

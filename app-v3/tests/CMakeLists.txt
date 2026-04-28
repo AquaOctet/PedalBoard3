@@ -21,6 +21,8 @@ set(PB3_TEST_SOURCES
     unit/engine/PluginHost_test.cpp
     unit/session/Preferences_test.cpp
     unit/session/PluginSlot_test.cpp
+    unit/session/PreparedGraph_test.cpp
+    unit/session/Session_test.cpp
 )
 
 add_executable(pb3_smoke_tests ${PB3_TEST_SOURCES})

@@ -13,20 +13,33 @@ namespace pedalboard3::engine
 
 // The thing JUCE's AudioDeviceManager actually drives. Internally holds a
 // single-slot, atomic pointer to a `juce::AudioProcessorGraph` — the current
-// patch's graph. `swapPreparedGraph` exchanges the pointer for one that has
-// already had `prepareToPlay` called on a worker thread, and hands the
-// outgoing graph back to the caller for deferred deletion on the message
-// thread. Every processBlock ends with a final `OutputSanitiser` pass so no
+// patch's graph. `swapPreparedGraph` publishes a fully prepared replacement
+// graph into a `pending_` slot; the audio thread observes that slot at the
+// top of its next processBlock, runs an all-notes-off flush on the outgoing
+// graph (16ch × {allSoundOff, allNotesOff, resetAllControllers}), then
+// commits the swap by storing the new graph into `live_`. The message
+// thread waits for a generation-counter bump confirming the audio thread
+// has done all that, then takes ownership of the outgoing graph for
+// deferred deletion.
+//
+// Every processBlock ends with a final `OutputSanitiser` pass so no
 // NaN/Inf/|x|>1.5 ever reaches the audio device regardless of graph state.
 //
-// Phase 1.A: raw atomic-swap primitive + null-safety. The full patch-switch
-// state machine (Idle → Preparing → Ready_To_Swap → Cleanup with
-// all-notes-off flush, queued coalescing, and depth-1 latest-wins) is built
-// on top of this primitive in Phase 1.D. See plan §4.1.1 and Appendix A.1.
+// Phase 1.D.2 added:
+//   - `pending_` atomic so the swap and the all-notes-off flush both
+//     happen on the audio thread at a buffer boundary (master plan §4.1.1
+//     invariant 3).
+//   - Pre-built flush MidiBuffer + 4× block silence scratch in
+//     `prepareToPlay` to keep `processBlock` allocation-free.
+//   - 2-second hard ceiling on the ack-wait; on timeout, fall back to a
+//     synchronous message-thread swap with no flush (graceful degradation
+//     for a stalled or stopped audio device).
 //
-// RT contract: processBlock does not allocate or lock. `live.load` is the
-// only cross-thread read. The generation counter lets the swap side know
-// when a block has actually been observed using the new pointer.
+// RT contract: processBlock does not allocate or lock. Both `live_` and
+// `pending_` are atomic. Memory ordering:
+//   - msg pending_.store(release) ↔ audio pending_.exchange(acquire)
+//   - audio live_.store(release) — only audio writes live_
+//   - audio generationAckedByAudio_.fetch_add(release) ↔ msg load(acquire)
 class AudioGraphRuntime : public juce::AudioProcessor
 {
 public:
@@ -67,21 +80,23 @@ public:
     // Preconditions (caller's responsibility):
     //   - Caller is on the message thread.
     //   - `next` has been `prepareToPlay`'d at the same sample rate + block
-    //     size the runtime is currently running at (match
-    //     getSampleRate() / getBlockSize()).
-    //   - `next` is not null.
+    //     size the runtime is currently running at.
     //
     // Behaviour:
-    //   - Atomically exchanges the live pointer. The audio thread will pick
-    //     up `next` on its next block.
-    //   - Blocks the caller briefly (~1 buffer's worth) until the audio
-    //     thread has been observed to advance past the swap, using a
-    //     generation counter.
-    //   - Calls `releaseResources()` on the outgoing graph.
-    //   - Returns the outgoing graph wrapped in unique_ptr so the caller can
-    //     destruct it on the message thread (plugin dtors often require it).
+    //   - If the runtime has not been prepared yet (no audio device), does
+    //     a synchronous message-thread swap with no flush.
+    //   - Otherwise publishes `next` into `pending_`. The audio thread
+    //     observes it on its next block, flushes all-notes-off on the
+    //     outgoing graph using a pre-built MidiBuffer + silence scratch,
+    //     then commits the swap by storing into `live_`.
+    //   - Blocks the caller for up to 2 s waiting for an ack; on ack-timeout
+    //     falls back to a synchronous message-thread swap (best-effort).
+    //   - Calls `releaseResources()` on the outgoing graph and returns it
+    //     wrapped in unique_ptr so the caller can destruct it on the
+    //     message thread (plugin dtors often require it).
     //
-    // Returns nullptr if no graph was previously live.
+    // Returns nullptr if no graph was previously live. `next` may be null
+    // (clears the runtime).
     std::unique_ptr<juce::AudioProcessorGraph> swapPreparedGraph(std::unique_ptr<juce::AudioProcessorGraph> next);
 
     // Snapshot of the currently-active graph pointer. Null iff the runtime
@@ -98,13 +113,30 @@ public:
     }
 
 private:
+    // Audio-thread helper: runs 16ch × {allSoundOff, allNotesOff,
+    // resetAllControllers} into a silenced scratch buffer on the outgoing
+    // graph so synths don't hang notes through the swap. Allocation-free
+    // — buffers are sized in prepareToPlay.
+    void flushMidiReceivers(juce::AudioProcessorGraph* outgoing) noexcept;
+
     std::atomic<juce::AudioProcessorGraph*> live_{nullptr};
+    std::atomic<juce::AudioProcessorGraph*> pending_{nullptr};
     std::atomic<std::uint64_t> generationAckedByAudio_{0};
     processors::OutputSanitiser sanitiser_;
 
-    // Cached prepareToPlay params so the AudioGraphRuntime can forward them
-    // to a newly swapped-in graph if we ever allow swapping an un-prepared
-    // one. Phase 1.A forbids that; kept here for Phase 1.D use.
+    // Pre-built MIDI flush template + per-call scratch (plugins that
+    // producesMidi() write through). Both sized in prepareToPlay.
+    juce::MidiBuffer flushMidiTemplate_;
+    juce::MidiBuffer flushMidiScratch_;
+
+    // Pre-allocated silenced audio buffer for the flush block. Sized to
+    // 4× samplesPerBlock × max(numOutputChannels, 2) to absorb adversarial
+    // host block-size bursts without a real-time realloc.
+    juce::AudioBuffer<float> silenceScratch_;
+
+    // Cached prepareToPlay params. Used by the synchronous-fallback path
+    // to detect "no audio device" (currentBlockSize_ <= 0) and by the
+    // ack-wait timeout calculation.
     double currentSampleRate_{0.0};
     int currentBlockSize_{0};
 
