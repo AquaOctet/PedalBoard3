@@ -1,5 +1,7 @@
 #pragma once
 
+#include "NodeId.h"
+#include "Patch.h"
 #include "PreparedGraph.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -8,9 +10,13 @@
 
 #include <atomic>
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <mutex>
 #include <optional>
+#include <unordered_map>
+#include <variant>
+#include <vector>
 
 namespace pedalboard3::engine
 {
@@ -21,38 +27,44 @@ class PluginHost;
 namespace pedalboard3::session
 {
 
-class PluginSlot;
-
-// The patch-switch state machine specified by the master rewrite plan
-// §4.1.1, scoped to Phase 1.D.2's single-plugin slot. Wraps the
-// synchronous PluginSlot primitive in a worker-thread + latest-value
-// register that lets a UI thread dispatch loads without blocking.
+// The patch-switch state machine specified by master rewrite plan
+// §4.1.1, generalised in Phase 1.D.3 from a single-plugin slot to an
+// N-plugin chain. Owns the active Patch (specification) and the
+// per-NodeId observer pointers into the live graph (realisation).
 //
-// States:
-//   Idle      — no work in flight; mailbox empty.
-//   Building  — worker thread is calling buildPreparedGraph; mailbox may
-//               carry a newer request that supersedes this build.
-//   Swapping  — build complete, message thread is committing the swap
-//               into engine::AudioEngine. Bounded by ~one block of audio.
+// Two mutation paths:
 //
-// Mailbox semantics are "latest-value register" / "overwriting single-slot
-// queue": a new queueLoad while Building overwrites the slot; the in-flight
-// build's result is dropped on commit and the worker is re-armed for the
-// newer request. Same-plugin reload triggers a full rebuild.
+// 1. **Whole-patch swap** via `replacePatch(Patch)` / `clearPatch()`.
+//    Worker thread builds the new graph from scratch; message thread
+//    commits via engine::AudioGraphRuntime::swapPreparedGraph (1.D.2's
+//    audio-thread-side all-notes-off + atomic handshake). Existing
+//    plugin instances are destroyed — state preservation across
+//    replacePatch is Phase 2's concern (Node::Ptr reparenting requires
+//    a JUCE patch).
 //
-// Lifetime invariants:
-//   - Session::~Session cancels any pending AsyncUpdater callback BEFORE
-//     joining the worker thread, BEFORE PluginSlot/AudioEngine teardown.
-//   - The captured BuildFn must outlive the Session (the production
-//     ctor's lambda captures PluginHost by reference; App owns both).
+// 2. **Incremental mutation** via `addPlugin`, `removeNode`,
+//    `moveNode`, `setNodeBypass`, `setNodeCustomName`. Preserves
+//    existing live plugin instances. addPlugin runs on the worker
+//    thread (instantiation is the slow part); the rest are synchronous
+//    on the message thread. JUCE's AudioProcessorGraph::* mutation
+//    APIs handle audio-thread visibility (see deepening notes on
+//    UpdateKind::async + sync-on-last-call).
 //
-// Phase 2 will fold Session into the master plan §4.2 form (owning
-// PatchRegistry, current-patch pointer, dirty flag) — today this is the
-// state-machine slice only, sized for a single PluginSlot.
+// State machine: Idle / Building / Swapping. Synchronous ops keep
+// state == Idle but bump stateVersion_ so polling harnesses see the
+// change.
+//
+// Pointer stability: getHostedPlugin(NodeId) returns a stable pointer
+// across moveNode + setNodeBypass + setNodeCustomName. Invalidated by
+// removeNode, clearPatch, replacePatch. Re-fetch after those.
+//
+// Lifetime invariants (preserved from 1.D.2):
+//   - ~Session cancels any pending AsyncUpdater callback BEFORE joining
+//     the worker thread, BEFORE engine::AudioEngine teardown.
+//   - The captured BuildFn must outlive the Session.
 //
 // Not RT-safe. Public API is message-thread only with the noted
-// exceptions for the polling helpers (getState, getStateVersion,
-// waitForIdle).
+// exceptions for the polling helpers.
 class Session : public juce::ChangeBroadcaster
 {
 public:
@@ -63,136 +75,167 @@ public:
         Swapping
     };
 
-    // Coherent snapshot of every Session-visible field — populated under
-    // statusMutex_ so a polling harness sees no torn reads.
     struct Status
     {
         State state{State::Idle};
-        juce::String loadedName;
+        int nodeCount{0};
         juce::String lastError;
-        std::optional<juce::PluginDescription> activeDescription;
         std::uint64_t version{0};
     };
 
+    struct NodeSnapshot
+    {
+        NodeId id;
+        juce::String name;
+        bool bypassed{false};
+        juce::String customName;
+    };
+
     // The seam Unit 3 calls out: the function the worker thread invokes
-    // to build a PreparedGraph. Production wraps session::buildPreparedGraph
-    // bound to a PluginHost; tests inject fast fakes.
-    using BuildFn = std::function<PreparedGraph(
-        const juce::PluginDescription&, double sampleRate, int blockSize, juce::String& errorOut)>;
+    // to build a PreparedGraph from a Patch (used by replacePatch).
+    // Production wraps session::buildPreparedGraph bound to a PluginHost;
+    // tests inject fast fakes.
+    using BuildFn =
+        std::function<PreparedGraph(const Patch& patch, double sampleRate, int blockSize, juce::String& errorOut)>;
 
-    // Production constructor — builds a BuildFn that calls
-    // session::buildPreparedGraph against `host`.
-    Session(PluginSlot& slot, engine::AudioEngine& engine, engine::PluginHost& host);
+    // Production constructor — captures host_ for both the whole-patch
+    // BuildFn closure AND the per-plugin createInstance path used by
+    // addPlugin.
+    Session(engine::AudioEngine& engine, engine::PluginHost& host);
 
-    // Test / integration-harness constructor. Public, not friend-only,
-    // so out-of-process integration harnesses can use it.
-    Session(PluginSlot& slot, engine::AudioEngine& engine, BuildFn buildFn);
+    // Test / integration-harness constructor (public — not friend-only).
+    // BuildFn covers the replacePatch path; addPlugin still uses host_
+    // (so tests that exercise addPlugin must pass a real PluginHost,
+    // even if scanning is empty — the createInstance call surfaces an
+    // error rather than crashing).
+    Session(engine::AudioEngine& engine, engine::PluginHost& host, BuildFn buildFn);
 
     ~Session() override;
 
-    // Latest-value register entry point. std::nullopt requests an unload.
-    // Coalesces with any pending request — the second call wins. May be
-    // called from any thread; signals the worker.
-    void queueLoad(std::optional<juce::PluginDescription> desc);
+    // ---- Whole-patch swap (worker + atomic graph swap) ---------------------
 
-    // Convenience overloads (msg-thread).
-    void queueLoad(const juce::PluginDescription& desc);
-    void queueUnload();
+    // Atomic replacement. Coalesces with any pending replacePatch +
+    // discards any pending addPlugin requests (the new patch supersedes).
+    // May be called from any thread.
+    void replacePatch(Patch);
 
-    // Lock-free read.
+    // Equivalent to replacePatch(Patch{}).
+    void clearPatch();
+
+    // ---- Incremental mutation (preserve existing instances) ----------------
+
+    // Append a plugin to the active patch's chain. Worker instantiates
+    // off the message thread; message thread commits incrementally
+    // (no whole-graph rebuild). Errors surface via lastError + a change
+    // message; the active patch is unchanged on failure.
+    void addPlugin(juce::PluginDescription);
+
+    // Synchronous: take effect before the call returns.
+    void removeNode(NodeId);
+    void moveNode(NodeId, int newIndex);
+    void setNodeBypass(NodeId, bool);
+    void setNodeCustomName(NodeId, juce::String);
+
+    // ---- Snapshot accessors (message thread) -------------------------------
+
+    Patch getActivePatch() const;                  // heavyweight copy
+    std::vector<NodeId> getNodeIdsInOrder() const; // cheap polling
+    std::vector<NodeSnapshot> getNodeSnapshots() const;
+
+    bool hasNode(NodeId) const noexcept;
+    juce::AudioPluginInstance* getHostedPlugin(NodeId) const noexcept;
+    bool isNodeBypassed(NodeId) const noexcept;
+    int getNodeCount() const noexcept;
+
+    // ---- Polling primitives (lock-free / wait-event) -----------------------
+
     State getState() const noexcept { return state_.load(std::memory_order_acquire); }
-
-    // Monotonic counter; increments on every state transition. Polling
-    // harnesses (CLI tests, future MCP wrapper) read this to detect
-    // change without owning a juce::MessageManager.
     std::uint64_t getStateVersion() const noexcept { return stateVersion_.load(std::memory_order_acquire); }
-
-    // Coherent snapshot under statusMutex_.
     Status getStatus() const;
-
-    // Forwarders / convenience views.
-    juce::String getLoadedName() const;
     juce::String getLastError() const;
-    bool isLoaded() const noexcept;
-    std::optional<juce::PluginDescription> getActiveDescription() const;
 
-    // Block until state == Idle or timeout. Returns true on Idle, false on
-    // timeout. Safe to call off the message thread (does not pump the
-    // event loop). Used by integration harnesses.
     bool waitForIdle(int timeoutMs);
-
-    // Synchronously run the worker→message-thread hand-off if a result is
-    // pending. In a normal app the JUCE event loop drives this on its own;
-    // headless harnesses (Catch2 tests, future MCP loop without a JUCE
-    // message pump) call this in a poll loop because
-    // juce::MessageManager::runDispatchLoopUntil is gated on
-    // JUCE_MODAL_LOOPS_PERMITTED, which we keep disabled in pb3_juce_config.
-    //
-    // Wraps juce::AsyncUpdater::handleUpdateNowIfNeeded — must be called from
-    // the thread that owns the JUCE message manager (in tests, the test
-    // thread).
     void dispatchPendingResult();
 
 private:
     enum class RequestKind
     {
-        Load,
-        Unload
+        LoadPatch,
+        AddPlugin
     };
 
-    struct Request
+    struct LoadPatchRequest
     {
-        RequestKind kind{RequestKind::Load};
+        Patch patch;
+    };
+
+    struct AddPluginRequest
+    {
         juce::PluginDescription desc;
     };
 
-    struct BuildResult
+    struct LoadPatchResult
     {
-        std::optional<juce::PluginDescription> desc;
+        Patch patch;
         PreparedGraph prepared;
         juce::String errorOut;
-        bool isUnload{false};
     };
+
+    struct AddPluginResult
+    {
+        juce::PluginDescription desc;
+        std::unique_ptr<engine::BypassableInstance> wrapped;
+        juce::AudioPluginInstance* hosted{nullptr};
+        juce::String errorOut;
+    };
+
+    using Result = std::variant<std::monostate, LoadPatchResult, AddPluginResult>;
 
     class Worker;
     class ResultUpdater;
 
-    // Worker thread → message thread hand-off via AsyncUpdater. Replaces
-    // MessageManager::callAsync(λ-capturing-this) which has a residual
-    // race with Session destruction (the pending lambda would fire on a
-    // dead `this`). AsyncUpdater coalesces and supports cancelPendingUpdate.
+    // Worker → message thread hand-off via AsyncUpdater (lifetime-safe).
     void onBuildResult(); // message thread
 
-    // Atomic + change-message + idle-event publish.
     void publishStateChange(State newState);
+    void bumpVersionAndNotify();
+    void rearmWorkerIfQueueNonEmpty();
 
-    // If the mailbox holds a request and we are Idle, transition to
-    // Building and wake the worker.
-    void rearmWorkerIfMailboxNonEmpty();
+    void commitLoadPatch(LoadPatchResult&&);
+    void commitAddPlugin(AddPluginResult&&);
 
-    PluginSlot& slot_;
+    // Helpers used during incremental mutation on the message thread.
+    void recomputeLinearConnections(); // mutate activePatch_.connections
+    void applyConnectionsToLiveGraph();
+
+    static int stereoChannel(int ch) noexcept { return ch; }
+
     engine::AudioEngine& engine_;
+    engine::PluginHost& host_;
     BuildFn buildFn_;
 
-    // Latest-value-register mailbox. Mutex-guarded — UI + worker threads
-    // only. Audio thread never touches it.
-    mutable std::mutex mailboxMutex_;
-    std::optional<Request> mailbox_;
+    // Mailbox: latest-wins for LoadPatch (most disruptive).
+    // FIFO for AddPlugin (each is independent), bounded at kAddQueueMax.
+    static constexpr size_t kAddQueueMax = 16;
+    mutable std::mutex queueMutex_;
+    std::optional<LoadPatchRequest> pendingLoadPatch_;
+    std::deque<AddPluginRequest> addQueue_;
 
-    // Worker → message-thread result slot.
+    // Worker → message-thread result slot (variant covers both kinds).
     mutable std::mutex resultMutex_;
-    std::optional<BuildResult> result_;
+    Result result_;
 
-    // State.
+    // Active patch + live graph observers. activePatch_ is the
+    // canonical spec; nodes_ map keys must equal activePatch_.nodes ids
+    // after every successful mutation.
+    mutable std::mutex statusMutex_; // protects activePatch_, nodes_, lastError_
+    Patch activePatch_;
+    std::unordered_map<NodeId, PreparedGraph::NodeRefs> nodes_;
+    juce::AudioProcessorGraph* liveGraph_{nullptr}; // non-owning
+    juce::String lastError_;
+
     std::atomic<State> state_{State::Idle};
     std::atomic<std::uint64_t> stateVersion_{0};
-
-    // Accompaniment for getStatus() — guarded together with state to
-    // give callers a coherent snapshot.
-    mutable std::mutex statusMutex_;
-    juce::String lastError_;
-    std::optional<juce::PluginDescription> activeDescription_;
-
     juce::WaitableEvent idleEvent_{true /*manual reset*/};
 
     std::unique_ptr<Worker> worker_;

@@ -1,9 +1,13 @@
 #pragma once
 
+#include "NodeId.h"
+#include "Patch.h"
+
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_core/juce_core.h>
 
 #include <memory>
+#include <unordered_map>
 
 namespace pedalboard3::engine
 {
@@ -14,32 +18,58 @@ class PluginHost;
 namespace pedalboard3::session
 {
 
-// Result of a worker-thread-safe graph build. `graph` owns everything;
-// `bypass` and `hosted` are non-owning observer pointers into nodes
-// inside the graph, used by the message-thread side (see
-// PluginSlot::adoptPrepared) to wire UI/bypass without re-walking it.
+// Result of a worker-thread-safe graph build for a multi-plugin Patch.
+// `graph` owns every node (the audio/midi I/O processors and one
+// BypassableInstance per PatchNode). `nodes` maps each PatchNode's
+// NodeId to non-owning observers used by the message-thread side
+// (Session, MainWindow) to drive bypass / open the editor / route
+// incremental mutations without re-walking the graph.
 //
-// Empty (graph == nullptr) means the build failed; check isValid().
+// PreparedGraph deliberately does NOT store its own copy of the Patch.
+// Session is the single source of truth for the active Patch; the
+// invariant "graph nodes ≡ activePatch_.nodes ids" is maintained by
+// Session on every mutation.
+//
+// `graphIO` (NodeId 0) is reserved for the audio/midi I/O endpoints
+// (PatchConnection's `src == graphIO` or `dst == graphIO`); it is NOT
+// in the `nodes` map.
+//
+// Empty (graph == nullptr) means the build failed.
 struct PreparedGraph
 {
     std::unique_ptr<juce::AudioProcessorGraph> graph;
-    engine::BypassableInstance* bypass{nullptr};
-    juce::AudioPluginInstance* hosted{nullptr};
-    juce::String name;
+
+    struct NodeRefs
+    {
+        engine::BypassableInstance* bypass{nullptr};
+        juce::AudioPluginInstance* hosted{nullptr};
+        juce::AudioProcessorGraph::Node* graphNode{nullptr};
+    };
+    std::unordered_map<NodeId, NodeRefs> nodes;
 
     bool isValid() const noexcept { return graph != nullptr; }
 };
 
-// Worker-safe. Does NOT touch any AudioEngine, PluginSlot, or Session
-// state. Builds a 2-in/2-out graph hosting `desc`, wraps it in a
-// BypassableInstance, calls prepareToPlay, returns it ready for the
-// message thread to swap into engine::AudioGraphRuntime.
+// Worker-thread-safe builder. Iterates `patch.nodes`, instantiates each
+// plugin via `host.createInstance`, wraps in BypassableInstance,
+// addNode, then iterates `patch.connections` and addConnection per the
+// patch's topology. Adds audio in/out + midi in/out IO processors so
+// PatchConnections that reference `graphIO` resolve to the runtime's
+// hardware endpoints. Single graph->prepareToPlay at the end.
 //
-// On failure returns an empty PreparedGraph and fills `errorOut`.
-PreparedGraph buildPreparedGraph(engine::PluginHost& host,
-                                 const juce::PluginDescription& desc,
-                                 double sampleRate,
-                                 int blockSize,
-                                 juce::String& errorOut);
+// Empty patch builds an audio-passthrough graph (input → output direct
+// per stereo channel) plus a MIDI passthrough (midiInputNode →
+// midiOutputNode). Matches Pedalboard 2's empty-FILTERGRAPH behaviour.
+//
+// On any plugin instantiation failure, returns an empty PreparedGraph
+// (graph == nullptr) and `errorOut` carries a "<plugin name>: <reason>"
+// line for the offending node.
+//
+// Does NOT touch any AudioEngine, PluginSlot, or Session state. Safe to
+// call from a worker thread. The graph is fully prepared (prepareToPlay
+// run) before return; the caller commits it to engine::AudioGraphRuntime
+// from the message thread via swapPreparedGraph or by direct ownership.
+PreparedGraph buildPreparedGraph(
+    engine::PluginHost& host, const Patch& patch, double sampleRate, int blockSize, juce::String& errorOut);
 
 } // namespace pedalboard3::session

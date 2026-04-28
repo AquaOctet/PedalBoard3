@@ -2,9 +2,10 @@
 
 #include "engine/AudioEngine.h"
 #include "engine/AudioGraphRuntime.h"
+#include "engine/BypassableInstance.h"
 #include "engine/PluginHost.h"
-#include "PluginSlot.h"
 
+#include <algorithm>
 #include <utility>
 
 namespace pedalboard3::session
@@ -15,6 +16,10 @@ namespace
 
 constexpr double kFallbackSampleRate = 48000.0;
 constexpr int kFallbackBlockSize = 512;
+constexpr int kStereoChannels = 2;
+
+using AudioGraph = juce::AudioProcessorGraph;
+using UpdateKind = AudioGraph::UpdateKind;
 
 struct DeviceConfig
 {
@@ -36,14 +41,43 @@ DeviceConfig deriveConfig(engine::AudioEngine& eng)
     return {kFallbackSampleRate, kFallbackBlockSize};
 }
 
+// Recompute a linear-chain `connections` vector from a node ordering.
+// Stereo audio + MIDI through every node in order: graphIO → node[0] →
+// node[1] → ... → graphIO.
+std::vector<PatchConnection> computeLinearConnections(const std::vector<PatchNode>& nodes)
+{
+    std::vector<PatchConnection> conns;
+    if (nodes.empty())
+    {
+        // Audio passthrough.
+        conns.push_back({graphIO, 0, graphIO, 0});
+        conns.push_back({graphIO, 1, graphIO, 1});
+        // MIDI passthrough.
+        conns.push_back({graphIO, AudioGraph::midiChannelIndex, graphIO, AudioGraph::midiChannelIndex});
+        return conns;
+    }
+
+    // Stereo audio: in → first node, last → out, intermediates form the chain.
+    for (int ch = 0; ch < kStereoChannels; ++ch)
+    {
+        conns.push_back({graphIO, ch, nodes.front().id, ch});
+        for (size_t i = 0; i + 1 < nodes.size(); ++i)
+            conns.push_back({nodes[i].id, ch, nodes[i + 1].id, ch});
+        conns.push_back({nodes.back().id, ch, graphIO, ch});
+    }
+
+    // MIDI follows the same shape (master plan §4.5 v2 parity, not broadcast).
+    conns.push_back({graphIO, AudioGraph::midiChannelIndex, nodes.front().id, AudioGraph::midiChannelIndex});
+    for (size_t i = 0; i + 1 < nodes.size(); ++i)
+        conns.push_back({nodes[i].id, AudioGraph::midiChannelIndex, nodes[i + 1].id, AudioGraph::midiChannelIndex});
+    conns.push_back({nodes.back().id, AudioGraph::midiChannelIndex, graphIO, AudioGraph::midiChannelIndex});
+
+    return conns;
+}
+
 } // namespace
 
 // -------- Result updater ---------------------------------------------------
-//
-// Defined BEFORE Worker so Worker::run() can call triggerAsyncUpdate() on the
-// complete type without needing an out-of-line definition. (Worker -> result
-// hand-off is the only direction; the reverse pointer in handleAsyncUpdate is
-// just `session_.onBuildResult()`, which doesn't need Worker's definition.)
 
 class Session::ResultUpdater : public juce::AsyncUpdater
 {
@@ -67,44 +101,71 @@ public:
     {
         while (!threadShouldExit())
         {
-            // Sleep until notified, or until shutdown asks us to exit.
-            // juce::Thread::wait(-1) returns when notify() or
-            // signalThreadShouldExit() is called.
             wait(-1);
             if (threadShouldExit())
                 return;
 
-            // Snapshot the mailbox under lock and release it BEFORE the
-            // slow build call. The mailbox lock must NEVER be held across
-            // buildFn_ — that's the 1–4 second call that would otherwise
-            // freeze the UI thread on its next queueLoad.
-            std::optional<Request> req;
+            // Drain LoadPatch first (it supersedes any pending Adds).
+            std::optional<LoadPatchRequest> loadReq;
+            std::optional<AddPluginRequest> addReq;
             {
-                std::lock_guard<std::mutex> lk(session_.mailboxMutex_);
-                req = std::exchange(session_.mailbox_, std::nullopt);
+                std::lock_guard<std::mutex> lk(session_.queueMutex_);
+                if (session_.pendingLoadPatch_.has_value())
+                {
+                    loadReq = std::move(session_.pendingLoadPatch_);
+                    session_.pendingLoadPatch_.reset();
+                    // Drop pending adds — the load supersedes them.
+                    session_.addQueue_.clear();
+                }
+                else if (!session_.addQueue_.empty())
+                {
+                    addReq = std::move(session_.addQueue_.front());
+                    session_.addQueue_.pop_front();
+                }
             }
-            if (!req)
-                continue;
 
-            BuildResult br;
-            if (req->kind == RequestKind::Unload)
+            const auto cfg = deriveConfig(session_.engine_);
+
+            if (loadReq.has_value())
             {
-                br.isUnload = true;
+                LoadPatchResult lr;
+                lr.patch = loadReq->patch;
+                lr.prepared = session_.buildFn_(loadReq->patch, cfg.sampleRate, cfg.blockSize, lr.errorOut);
+                {
+                    std::lock_guard<std::mutex> lk(session_.resultMutex_);
+                    session_.result_ = std::move(lr);
+                }
+            }
+            else if (addReq.has_value())
+            {
+                AddPluginResult ar;
+                ar.desc = addReq->desc;
+
+                // Direct host.createInstance — bypasses BuildFn so we
+                // get a single AudioPluginInstance back, not a graph.
+                auto plugin = session_.host_.createInstance(addReq->desc, cfg.sampleRate, cfg.blockSize, ar.errorOut);
+                if (plugin != nullptr)
+                {
+                    ar.hosted = plugin.get();
+                    ar.wrapped = std::make_unique<engine::BypassableInstance>(std::move(plugin));
+                    // Pre-warm: prepare the wrapper at the runtime's SR/block
+                    // so JUCE's AudioProcessorGraph::addNode (called on the
+                    // message thread) doesn't need a slow first-block init
+                    // to fire there.
+                    ar.wrapped->setRateAndBufferSizeDetails(cfg.sampleRate, cfg.blockSize);
+                    ar.wrapped->prepareToPlay(cfg.sampleRate, cfg.blockSize);
+                }
+
+                {
+                    std::lock_guard<std::mutex> lk(session_.resultMutex_);
+                    session_.result_ = std::move(ar);
+                }
             }
             else
             {
-                const auto cfg = deriveConfig(session_.engine_);
-                br.desc = req->desc;
-                br.prepared = session_.buildFn_(req->desc, cfg.sampleRate, cfg.blockSize, br.errorOut);
+                continue;
             }
 
-            {
-                std::lock_guard<std::mutex> lk(session_.resultMutex_);
-                session_.result_ = std::move(br);
-            }
-
-            // Drain only one request per signal: the message thread will
-            // re-arm us if mailbox grew during the build.
             if (session_.resultUpdater_ != nullptr)
                 session_.resultUpdater_->triggerAsyncUpdate();
         }
@@ -116,90 +177,254 @@ private:
 
 // -------- Session ----------------------------------------------------------
 
-Session::Session(PluginSlot& slot, engine::AudioEngine& engine, engine::PluginHost& host)
-    : Session(slot,
-              engine,
-              [&host](const juce::PluginDescription& d, double sr, int bs, juce::String& err)
-              { return buildPreparedGraph(host, d, sr, bs, err); })
+Session::Session(engine::AudioEngine& engine, engine::PluginHost& host)
+    : Session(engine,
+              host,
+              [&host](const Patch& p, double sr, int bs, juce::String& err)
+              { return buildPreparedGraph(host, p, sr, bs, err); })
 {
 }
 
-Session::Session(PluginSlot& slot, engine::AudioEngine& engine, BuildFn buildFn)
-    : slot_(slot), engine_(engine), buildFn_(std::move(buildFn))
+Session::Session(engine::AudioEngine& engine, engine::PluginHost& host, BuildFn buildFn)
+    : engine_(engine), host_(host), buildFn_(std::move(buildFn))
 {
     jassert(buildFn_);
     resultUpdater_ = std::make_unique<ResultUpdater>(*this);
     worker_ = std::make_unique<Worker>(*this);
     worker_->startThread();
-    idleEvent_.signal(); // we start Idle
+    idleEvent_.signal(); // start Idle
+
+    // Synchronous initial empty graph: builds a 4-IO-node passthrough
+    // (audioIn → audioOut, midiIn → midiOut) and swaps it into the
+    // engine BEFORE the ctor returns. Without this, the very first
+    // addPlugin() call lands in commitAddPlugin with liveGraph_ == nullptr
+    // — there's no graph to mutate. Building inline avoids an async race
+    // with the user's first Load click.
+    //
+    // The build is fast (no plugin instantiation, just 4 IO processors
+    // + 3 connections + prepareToPlay). State stays Idle, version stays
+    // 0 — this is initialisation, not a transition users observe.
+    juce::String warmupErr;
+    const auto cfg = deriveConfig(engine_);
+    auto initial = buildFn_(Patch{}, cfg.sampleRate, cfg.blockSize, warmupErr);
+    if (initial.isValid())
+    {
+        auto previous = engine_.loadGraph(std::move(initial.graph));
+        (void)previous;
+        liveGraph_ = engine_.getRuntime() != nullptr ? engine_.getRuntime()->getLiveGraph() : nullptr;
+        // activePatch_ + nodes_ stay empty — no plugin nodes in the
+        // passthrough graph.
+    }
 }
 
 Session::~Session()
 {
-    // Cancel any AsyncUpdater callback that's already been scheduled —
-    // it would otherwise fire on a partially-destroyed Session after the
-    // worker join (worker join alone cannot drain already-queued message-
-    // thread items).
     if (resultUpdater_ != nullptr)
         resultUpdater_->cancelPendingUpdate();
 
-    // Tell the worker to exit, then wake it so it observes the flag.
     if (worker_ != nullptr)
     {
         worker_->signalThreadShouldExit();
         worker_->notify();
-        // Bounded by the slowest plugin's createInstance / prepareToPlay.
         worker_->stopThread(5000);
     }
 
-    // Drop any orphaned BuildResult so the prepared graph (if any) is
-    // destroyed on this (message) thread alongside us.
     {
         std::lock_guard<std::mutex> lk(resultMutex_);
-        result_.reset();
+        result_ = std::monostate{};
     }
 }
 
-void Session::queueLoad(std::optional<juce::PluginDescription> desc)
+// ---- Public API: whole-patch swap -----------------------------------------
+
+void Session::replacePatch(Patch p)
 {
-    Request req;
-    if (desc)
     {
-        req.kind = RequestKind::Load;
-        req.desc = *desc;
-    }
-    else
-    {
-        req.kind = RequestKind::Unload;
+        std::lock_guard<std::mutex> lk(queueMutex_);
+        pendingLoadPatch_ = LoadPatchRequest{std::move(p)};
+        addQueue_.clear();
     }
 
-    {
-        std::lock_guard<std::mutex> lk(mailboxMutex_);
-        mailbox_ = std::move(req);
-    }
-
-    bool wasIdle = false;
-    {
-        std::lock_guard<std::mutex> lk(statusMutex_);
-        wasIdle = (state_.load(std::memory_order_relaxed) == State::Idle);
-    }
-
-    if (wasIdle)
+    if (state_.load(std::memory_order_relaxed) == State::Idle)
         publishStateChange(State::Building);
 
     if (worker_ != nullptr)
         worker_->notify();
 }
 
-void Session::queueLoad(const juce::PluginDescription& desc)
+void Session::clearPatch()
 {
-    queueLoad(std::optional<juce::PluginDescription>{desc});
+    replacePatch(Patch{});
 }
 
-void Session::queueUnload()
+// ---- Public API: incremental ops ------------------------------------------
+
+void Session::addPlugin(juce::PluginDescription desc)
 {
-    queueLoad(std::nullopt);
+    bool dropped = false;
+    {
+        std::lock_guard<std::mutex> lk(queueMutex_);
+        if (addQueue_.size() >= kAddQueueMax)
+        {
+            dropped = true;
+        }
+        else
+        {
+            addQueue_.push_back(AddPluginRequest{std::move(desc)});
+        }
+    }
+
+    if (dropped)
+    {
+        std::lock_guard<std::mutex> lk(statusMutex_);
+        lastError_ = "addQueue full — request dropped";
+        bumpVersionAndNotify();
+        return;
+    }
+
+    if (state_.load(std::memory_order_relaxed) == State::Idle)
+        publishStateChange(State::Building);
+
+    if (worker_ != nullptr)
+        worker_->notify();
 }
+
+void Session::removeNode(NodeId id)
+{
+    if (id == graphIO)
+        return;
+
+    std::lock_guard<std::mutex> lk(statusMutex_);
+
+    auto it = nodes_.find(id);
+    if (it == nodes_.end())
+        return;
+
+    if (liveGraph_ != nullptr && it->second.graphNode != nullptr)
+    {
+        // removeNode returns a Node::Ptr; let it fall off scope so the
+        // BypassableInstance + plugin destruct on this (message) thread.
+        auto removed = liveGraph_->removeNode(it->second.graphNode->nodeID, UpdateKind::async);
+        (void)removed;
+    }
+    nodes_.erase(it);
+
+    auto idx = activePatch_.indexOfNode(id);
+    if (idx >= 0)
+        activePatch_.nodes.erase(activePatch_.nodes.begin() + idx);
+
+    recomputeLinearConnections();
+    applyConnectionsToLiveGraph();
+
+    bumpVersionAndNotify();
+}
+
+void Session::moveNode(NodeId id, int newIndex)
+{
+    std::lock_guard<std::mutex> lk(statusMutex_);
+
+    const auto curIdx = activePatch_.indexOfNode(id);
+    if (curIdx < 0)
+        return;
+    const int n = static_cast<int>(activePatch_.nodes.size());
+    const int target = juce::jlimit(0, n - 1, newIndex);
+    if (target == curIdx)
+        return;
+
+    auto node = activePatch_.nodes[static_cast<size_t>(curIdx)];
+    activePatch_.nodes.erase(activePatch_.nodes.begin() + curIdx);
+    activePatch_.nodes.insert(activePatch_.nodes.begin() + target, std::move(node));
+
+    recomputeLinearConnections();
+    applyConnectionsToLiveGraph();
+
+    bumpVersionAndNotify();
+}
+
+void Session::setNodeBypass(NodeId id, bool shouldBypass)
+{
+    std::lock_guard<std::mutex> lk(statusMutex_);
+    auto it = nodes_.find(id);
+    if (it == nodes_.end() || it->second.bypass == nullptr)
+        return;
+    it->second.bypass->setBypass(shouldBypass);
+    if (auto* pn = activePatch_.findNode(id))
+        pn->bypass = shouldBypass;
+    bumpVersionAndNotify();
+}
+
+void Session::setNodeCustomName(NodeId id, juce::String name)
+{
+    std::lock_guard<std::mutex> lk(statusMutex_);
+    if (auto* pn = activePatch_.findNode(id))
+    {
+        pn->customName = std::move(name);
+        bumpVersionAndNotify();
+    }
+}
+
+// ---- Public API: snapshot accessors ---------------------------------------
+
+Patch Session::getActivePatch() const
+{
+    std::lock_guard<std::mutex> lk(statusMutex_);
+    return activePatch_;
+}
+
+std::vector<NodeId> Session::getNodeIdsInOrder() const
+{
+    std::lock_guard<std::mutex> lk(statusMutex_);
+    std::vector<NodeId> result;
+    result.reserve(activePatch_.nodes.size());
+    for (const auto& n : activePatch_.nodes)
+        result.push_back(n.id);
+    return result;
+}
+
+std::vector<Session::NodeSnapshot> Session::getNodeSnapshots() const
+{
+    std::lock_guard<std::mutex> lk(statusMutex_);
+    std::vector<NodeSnapshot> snaps;
+    snaps.reserve(activePatch_.nodes.size());
+    for (const auto& n : activePatch_.nodes)
+    {
+        NodeSnapshot s;
+        s.id = n.id;
+        s.name = n.desc.name;
+        s.bypassed = n.bypass;
+        s.customName = n.customName;
+        snaps.push_back(std::move(s));
+    }
+    return snaps;
+}
+
+bool Session::hasNode(NodeId id) const noexcept
+{
+    std::lock_guard<std::mutex> lk(statusMutex_);
+    return nodes_.find(id) != nodes_.end();
+}
+
+juce::AudioPluginInstance* Session::getHostedPlugin(NodeId id) const noexcept
+{
+    std::lock_guard<std::mutex> lk(statusMutex_);
+    auto it = nodes_.find(id);
+    return it != nodes_.end() ? it->second.hosted : nullptr;
+}
+
+bool Session::isNodeBypassed(NodeId id) const noexcept
+{
+    std::lock_guard<std::mutex> lk(statusMutex_);
+    auto it = nodes_.find(id);
+    return it != nodes_.end() && it->second.bypass != nullptr && it->second.bypass->isBypassed();
+}
+
+int Session::getNodeCount() const noexcept
+{
+    std::lock_guard<std::mutex> lk(statusMutex_);
+    return static_cast<int>(activePatch_.nodes.size());
+}
+
+// ---- Public API: status / polling -----------------------------------------
 
 Session::Status Session::getStatus() const
 {
@@ -208,33 +433,16 @@ Session::Status Session::getStatus() const
     s.version = stateVersion_.load(std::memory_order_acquire);
     {
         std::lock_guard<std::mutex> lk(statusMutex_);
+        s.nodeCount = static_cast<int>(activePatch_.nodes.size());
         s.lastError = lastError_;
-        s.activeDescription = activeDescription_;
     }
-    s.loadedName = slot_.getLoadedName();
     return s;
-}
-
-juce::String Session::getLoadedName() const
-{
-    return slot_.getLoadedName();
 }
 
 juce::String Session::getLastError() const
 {
     std::lock_guard<std::mutex> lk(statusMutex_);
     return lastError_;
-}
-
-bool Session::isLoaded() const noexcept
-{
-    return slot_.isLoaded();
-}
-
-std::optional<juce::PluginDescription> Session::getActiveDescription() const
-{
-    std::lock_guard<std::mutex> lk(statusMutex_);
-    return activeDescription_;
 }
 
 bool Session::waitForIdle(int timeoutMs)
@@ -246,20 +454,10 @@ bool Session::waitForIdle(int timeoutMs)
 
 void Session::dispatchPendingResult()
 {
-    // Bypass juce::AsyncUpdater::handleUpdateNowIfNeeded — that method gates
-    // on JUCE_ASSERT_MESSAGE_THREAD and silently early-returns when the
-    // calling thread isn't bound as JUCE's message thread (Catch2 tests
-    // typically aren't, since the worker thread we start in Session ctor
-    // races with the test thread for the message-thread designation).
-    //
-    // Calling onBuildResult directly is safe: it acquires resultMutex_ so a
-    // concurrent AsyncUpdater drain in production sees an empty result_ and
-    // bails. The "synchronous fast paths" in engine::AudioGraphRuntime cover
-    // the headless-no-audio-device case; PluginSlot::adoptPrepared and
-    // ChangeBroadcaster::sendChangeMessage have no message-thread guards
-    // that matter in this test context.
     onBuildResult();
 }
+
+// ---- Private helpers ------------------------------------------------------
 
 void Session::publishStateChange(State newState)
 {
@@ -274,14 +472,20 @@ void Session::publishStateChange(State newState)
     sendChangeMessage();
 }
 
-void Session::rearmWorkerIfMailboxNonEmpty()
+void Session::bumpVersionAndNotify()
 {
-    bool hasMore = false;
+    stateVersion_.fetch_add(1, std::memory_order_release);
+    sendChangeMessage();
+}
+
+void Session::rearmWorkerIfQueueNonEmpty()
+{
+    bool more = false;
     {
-        std::lock_guard<std::mutex> lk(mailboxMutex_);
-        hasMore = mailbox_.has_value();
+        std::lock_guard<std::mutex> lk(queueMutex_);
+        more = pendingLoadPatch_.has_value() || !addQueue_.empty();
     }
-    if (hasMore)
+    if (more)
     {
         publishStateChange(State::Building);
         if (worker_ != nullptr)
@@ -289,94 +493,195 @@ void Session::rearmWorkerIfMailboxNonEmpty()
     }
 }
 
-void Session::onBuildResult()
+void Session::recomputeLinearConnections()
 {
-    std::optional<BuildResult> result;
-    {
-        std::lock_guard<std::mutex> lk(resultMutex_);
-        result = std::exchange(result_, std::nullopt);
-    }
+    activePatch_.connections = computeLinearConnections(activePatch_.nodes);
+}
 
-    if (!result)
+void Session::applyConnectionsToLiveGraph()
+{
+    if (liveGraph_ == nullptr)
         return;
 
-    // Coalescing check — if a newer request landed in the mailbox during
-    // the build, drop this result and re-arm the worker for the new one.
+    // Cache the four I/O processor NodeIDs once — they're stable across
+    // mutations (AudioGraphIOProcessor nodes added at graph build time).
+    AudioGraph::NodeID audioIn, audioOut, midiIn, midiOut;
+    for (auto* node : liveGraph_->getNodes())
     {
-        std::lock_guard<std::mutex> lk(mailboxMutex_);
-        if (mailbox_.has_value())
+        if (auto* io = dynamic_cast<AudioGraph::AudioGraphIOProcessor*>(node->getProcessor()))
         {
-            // Stay in Building; worker will pick up the new request.
-            if (worker_ != nullptr)
-                worker_->notify();
-            return; // result.prepared is destroyed via RAII as we exit.
-        }
-    }
-
-    if (result->isUnload)
-    {
-        slot_.unload();
-        {
-            std::lock_guard<std::mutex> lk(statusMutex_);
-            activeDescription_ = std::nullopt;
-            lastError_.clear();
-        }
-        publishStateChange(State::Idle);
-    }
-    else if (!result->prepared.isValid())
-    {
-        // Build failed — leave any previously-loaded plugin intact. Do
-        // NOT clear activeDescription_; that would lose the user's
-        // restore state when a missing plugin fails to load on launch.
-        {
-            std::lock_guard<std::mutex> lk(statusMutex_);
-            lastError_ = result->errorOut.isNotEmpty() ? result->errorOut : juce::String("Plugin load failed");
-        }
-        publishStateChange(State::Idle);
-    }
-    else
-    {
-        publishStateChange(State::Swapping);
-
-        // SR/block-change recovery: if the audio runtime has changed sample
-        // rate or block size since the worker dispatched, re-prepareToPlay
-        // on the message thread before swapping. Cheap (only inner
-        // prepareToPlay re-runs), and avoids the prepared graph being
-        // mismatched with the live runtime.
-        if (auto* runtime = engine_.getRuntime(); runtime != nullptr && result->prepared.graph != nullptr)
-        {
-            const double rtSr = runtime->getSampleRate();
-            const int rtBlock = runtime->getBlockSize();
-            const double pgSr = result->prepared.graph->getSampleRate();
-            const int pgBlock = result->prepared.graph->getBlockSize();
-            // juce::approximatelyEqual avoids the -Wfloat-equal warning while
-            // matching JUCE's own pattern for sample-rate compares; sample
-            // rates are integer-valued in practice (44100/48000/96000), so
-            // any deviation here means a real device-state change.
-            const bool srChanged = !juce::approximatelyEqual(rtSr, pgSr);
-            if (rtSr > 0.0 && rtBlock > 0 && (srChanged || rtBlock != pgBlock))
+            using IO = AudioGraph::AudioGraphIOProcessor;
+            switch (io->getType())
             {
-                result->prepared.graph->setPlayConfigDetails(2, 2, rtSr, rtBlock);
-                result->prepared.graph->prepareToPlay(rtSr, rtBlock);
+            case IO::audioInputNode:
+                audioIn = node->nodeID;
+                break;
+            case IO::audioOutputNode:
+                audioOut = node->nodeID;
+                break;
+            case IO::midiInputNode:
+                midiIn = node->nodeID;
+                break;
+            case IO::midiOutputNode:
+                midiOut = node->nodeID;
+                break;
             }
         }
-
-        auto previous = engine_.loadGraph(std::move(result->prepared.graph));
-        (void)previous;
-
-        slot_.adoptPrepared(std::move(result->prepared));
-
-        {
-            std::lock_guard<std::mutex> lk(statusMutex_);
-            activeDescription_ = result->desc;
-            lastError_.clear();
-        }
-        publishStateChange(State::Idle);
     }
 
-    // A queueLoad may have arrived between our coalescing check above and
-    // the publishStateChange to Idle — re-check and re-arm.
-    rearmWorkerIfMailboxNonEmpty();
+    // Clear all existing connections, then add the new linear-chain shape.
+    auto existing = liveGraph_->getConnections();
+    for (const auto& c : existing)
+        liveGraph_->removeConnection(c, UpdateKind::async);
+
+    const auto& conns = activePatch_.connections;
+    for (size_t i = 0; i < conns.size(); ++i)
+    {
+        const auto& c = conns[i];
+        const bool isLast = (i == conns.size() - 1);
+        const bool isMidi = (c.srcChannel == AudioGraph::midiChannelIndex);
+
+        AudioGraph::NodeID resolvedSrc;
+        if (c.src == graphIO)
+        {
+            resolvedSrc = isMidi ? midiIn : audioIn;
+        }
+        else
+        {
+            auto it = nodes_.find(c.src);
+            if (it == nodes_.end() || it->second.graphNode == nullptr)
+                continue;
+            resolvedSrc = it->second.graphNode->nodeID;
+        }
+
+        AudioGraph::NodeID resolvedDst;
+        if (c.dst == graphIO)
+        {
+            resolvedDst = isMidi ? midiOut : audioOut;
+        }
+        else
+        {
+            auto it = nodes_.find(c.dst);
+            if (it == nodes_.end() || it->second.graphNode == nullptr)
+                continue;
+            resolvedDst = it->second.graphNode->nodeID;
+        }
+
+        liveGraph_->addConnection({{resolvedSrc, c.srcChannel}, {resolvedDst, c.dstChannel}},
+                                  isLast ? UpdateKind::sync : UpdateKind::async);
+    }
+
+    if (conns.empty())
+        liveGraph_->rebuild();
+}
+
+void Session::commitLoadPatch(LoadPatchResult&& result)
+{
+    publishStateChange(State::Swapping);
+
+    if (!result.prepared.isValid())
+    {
+        std::lock_guard<std::mutex> lk(statusMutex_);
+        lastError_ = result.errorOut.isNotEmpty() ? result.errorOut : juce::String("Patch build failed");
+        publishStateChange(State::Idle);
+        return;
+    }
+
+    auto previous = engine_.loadGraph(std::move(result.prepared.graph));
+    (void)previous;
+
+    {
+        std::lock_guard<std::mutex> lk(statusMutex_);
+        activePatch_ = std::move(result.patch);
+        nodes_ = std::move(result.prepared.nodes);
+        liveGraph_ = engine_.getRuntime() != nullptr ? engine_.getRuntime()->getLiveGraph() : nullptr;
+        lastError_.clear();
+    }
+
+    publishStateChange(State::Idle);
+}
+
+void Session::commitAddPlugin(AddPluginResult&& result)
+{
+    publishStateChange(State::Swapping);
+
+    if (result.wrapped == nullptr)
+    {
+        std::lock_guard<std::mutex> lk(statusMutex_);
+        lastError_ = result.errorOut.isNotEmpty() ? result.errorOut : juce::String("addPlugin failed");
+        publishStateChange(State::Idle);
+        return;
+    }
+
+    {
+        std::lock_guard<std::mutex> lk(statusMutex_);
+        if (liveGraph_ == nullptr)
+        {
+            lastError_ = "addPlugin: no live graph";
+            publishStateChange(State::Idle);
+            return;
+        }
+
+        auto* hostedPtr = result.hosted;
+        auto* wrapPtr = result.wrapped.get();
+        auto graphNode = liveGraph_->addNode(std::move(result.wrapped), {}, UpdateKind::async);
+        if (graphNode == nullptr)
+        {
+            lastError_ = "addPlugin: graph addNode failed";
+            publishStateChange(State::Idle);
+            return;
+        }
+
+        const auto newId = activePatch_.nextNodeId();
+        PatchNode pn;
+        pn.id = newId;
+        pn.desc = std::move(result.desc);
+        activePatch_.nodes.push_back(std::move(pn));
+
+        nodes_[newId] = PreparedGraph::NodeRefs{wrapPtr, hostedPtr, graphNode.get()};
+
+        recomputeLinearConnections();
+    }
+
+    applyConnectionsToLiveGraph();
+
+    {
+        std::lock_guard<std::mutex> lk(statusMutex_);
+        lastError_.clear();
+    }
+    publishStateChange(State::Idle);
+}
+
+void Session::onBuildResult()
+{
+    Result result;
+    {
+        std::lock_guard<std::mutex> lk(resultMutex_);
+        result = std::move(result_);
+        result_ = std::monostate{};
+    }
+
+    if (std::holds_alternative<std::monostate>(result))
+        return;
+
+    // Coalescing check — if a newer LoadPatch is pending, drop this
+    // result (RAII destroys any prepared instance/graph here).
+    {
+        std::lock_guard<std::mutex> lk(queueMutex_);
+        if (pendingLoadPatch_.has_value())
+        {
+            if (worker_ != nullptr)
+                worker_->notify();
+            return; // discard `result` via RAII as we exit
+        }
+    }
+
+    if (std::holds_alternative<LoadPatchResult>(result))
+        commitLoadPatch(std::get<LoadPatchResult>(std::move(result)));
+    else if (std::holds_alternative<AddPluginResult>(result))
+        commitAddPlugin(std::get<AddPluginResult>(std::move(result)));
+
+    rearmWorkerIfQueueNonEmpty();
 }
 
 } // namespace pedalboard3::session

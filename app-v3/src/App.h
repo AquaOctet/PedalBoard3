@@ -3,7 +3,6 @@
 #include "AppContext.h"
 #include "engine/AudioEngine.h"
 #include "engine/PluginHost.h"
-#include "session/PluginSlot.h"
 #include "session/Preferences.h"
 #include "session/PreferencesPersister.h"
 #include "session/Session.h"
@@ -23,6 +22,8 @@ namespace pedalboard3
 // and exposes them to UI via an AppContext reference bundle (see
 // AppContext.h). Phase 1.D.2 extracted listener fan-out into
 // session::PreferencesPersister so App is a pure composition root.
+// Phase 1.D.3 retired PluginSlot — Session now owns the multi-node
+// patch directly.
 class App : public juce::JUCEApplication
 {
 public:
@@ -39,17 +40,16 @@ public:
     void anotherInstanceStarted(const juce::String&) override {}
 
 private:
-    // Try to restore the previously-active plugin per AC-1.D.2-F, gated
-    // by the KnownPluginList cross-check (AC-1.D.2-L) and the
-    // restore-in-flight crash-loop guard (AC-1.D.2-N).
-    void restoreActivePluginIfAny();
+    // Try to restore the previously-active patch per AC-1.D.3-G, gated by
+    // the KnownPluginList cross-check (AC-1.D.3-L) and the restore-in-flight
+    // crash-loop guard (AC-1.D.3-M). Implemented in Unit 5.
+    void restoreActivePatchIfAny();
 
     // Construction order (also reverse destruction order). Each member's
     // dtor depends on the ones below it being still alive.
     std::unique_ptr<session::Preferences> preferences;
     std::unique_ptr<engine::AudioEngine> engine;
     std::unique_ptr<engine::PluginHost> pluginHost;
-    std::unique_ptr<session::PluginSlot> pluginSlot;
     std::unique_ptr<session::Session> session;
     std::unique_ptr<session::PreferencesPersister> persister;
     std::optional<AppContext> context;
