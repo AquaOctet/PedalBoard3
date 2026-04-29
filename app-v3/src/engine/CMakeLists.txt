@@ -26,6 +26,8 @@ add_library(pb3_engine_core STATIC
     KnownProblemPlugins.h
     PluginHost.cpp
     PluginHost.h
+    PluginScanner.cpp
+    PluginScanner.h
     processors/OutputSanitiser.cpp
     processors/OutputSanitiser.h
     processors/TestToneProcessor.cpp
@@ -60,6 +62,7 @@ pb3_apply_strict_warnings(pb3_engine_core
     AudioGraphRuntime.cpp
     BypassableInstance.cpp
     PluginHost.cpp
+    PluginScanner.cpp
     processors/OutputSanitiser.cpp
     processors/TestToneProcessor.cpp
 )
