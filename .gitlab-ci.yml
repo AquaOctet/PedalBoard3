@@ -147,6 +147,16 @@ default:
 # -First 1 is safer than the bare -property form (avoids parsing edge
 # cases when multiple installs are present).
 .windows-setup: &windows-setup
+  # Add the GitLab build dir to Windows Defender's exclusion list. Without
+  # this, Defender's Real-Time Protection scans every freshly-built
+  # executable on first run; juceaide.exe (which JUCE configures + invokes
+  # via execute_process during cmake configure) gets quarantined or
+  # delayed, producing the empty-output / non-zero-exit failure that
+  # surfaces as "Testing juceaide failed". Add-MpPreference requires
+  # admin; saas-windows-medium-amd64 runs as LocalSystem which has it.
+  # SilentlyContinue so a permission denial doesn't sink the pipeline
+  # — if the exclusion can't be added we still want the build to try.
+  - 'Add-MpPreference -ExclusionPath "$env:CI_PROJECT_DIR" -ErrorAction SilentlyContinue'
   - '$vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"'
   - 'if (-not (Test-Path $vswhere)) { throw "vswhere not found at $vswhere" }'
   - '$installRoot = & $vswhere -latest -prerelease -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath'
