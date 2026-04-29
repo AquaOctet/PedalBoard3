@@ -5,6 +5,11 @@ namespace pedalboard3
 
 void App::initialise(const juce::String& /*commandLine*/)
 {
+    // Install the Pedalboard 3 LookAndFeel before any Component is built —
+    // every dialog launched after this point picks up the new palette.
+    lookAndFeel = std::make_unique<ui::Pb3LookAndFeel>();
+    juce::LookAndFeel::setDefaultLookAndFeel(lookAndFeel.get());
+
     preferences = std::make_unique<session::Preferences>();
 
     engine = std::make_unique<engine::AudioEngine>();
@@ -49,6 +54,13 @@ void App::shutdown()
     pluginHost.reset();
     engine.reset();
     preferences.reset();
+
+    // Drop the default LookAndFeel pointer BEFORE destroying the
+    // singleton instance — juce::Desktop holds the pointer; if we
+    // destroy the LookAndFeel without unregistering, any latent
+    // tooltip/redraw on the way out dereferences a dangling ptr.
+    juce::LookAndFeel::setDefaultLookAndFeel(nullptr);
+    lookAndFeel.reset();
 }
 
 void App::restoreActivePatchIfAny()

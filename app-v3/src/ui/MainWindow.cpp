@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 
 #include "AppContext.h"
+#include "ColourScheme.h"
 #include "engine/AudioEngine.h"
 #include "engine/AudioGraphRuntime.h"
 #include "engine/PluginHost.h"
@@ -344,7 +345,7 @@ private:
         juce::DialogWindow::LaunchOptions options;
         options.content.setOwned(selector.release());
         options.dialogTitle = "Audio Settings";
-        options.dialogBackgroundColour = juce::Colour::fromRGB(0x2A, 0x2A, 0x2A);
+        options.dialogBackgroundColour = tokens::bgPopover;
         options.escapeKeyTriggersCloseButton = true;
         options.useNativeTitleBar = true;
         options.resizable = false;
@@ -387,7 +388,7 @@ private:
         juce::DialogWindow::LaunchOptions options;
         options.content.setOwned(listComponent.release());
         options.dialogTitle = "Plugin List";
-        options.dialogBackgroundColour = juce::Colour::fromRGB(0x2A, 0x2A, 0x2A);
+        options.dialogBackgroundColour = tokens::bgPopover;
         options.escapeKeyTriggersCloseButton = true;
         options.useNativeTitleBar = true;
         options.resizable = true;

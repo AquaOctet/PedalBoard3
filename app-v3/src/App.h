@@ -7,6 +7,7 @@
 #include "session/PreferencesPersister.h"
 #include "session/Session.h"
 #include "ui/MainWindow.h"
+#include "ui/Pb3LookAndFeel.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_core/juce_core.h>
@@ -47,6 +48,12 @@ private:
 
     // Construction order (also reverse destruction order). Each member's
     // dtor depends on the ones below it being still alive.
+    //
+    // lookAndFeel is constructed first and destroyed last: every other
+    // UI element (MainWindow, dialogs, alerts) reads juce::Desktop's
+    // default LookAndFeel pointer during draw, so the pointer must
+    // outlive any visible Component.
+    std::unique_ptr<ui::Pb3LookAndFeel> lookAndFeel;
     std::unique_ptr<session::Preferences> preferences;
     std::unique_ptr<engine::AudioEngine> engine;
     std::unique_ptr<engine::PluginHost> pluginHost;

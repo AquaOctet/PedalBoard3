@@ -22,8 +22,11 @@ add_library(pb3_app_core STATIC
     App.cpp
     App.h
     AppContext.h
+    ui/ColourScheme.h
     ui/MainWindow.cpp
     ui/MainWindow.h
+    ui/Pb3LookAndFeel.cpp
+    ui/Pb3LookAndFeel.h
 )
 
 target_include_directories(pb3_app_core PUBLIC
@@ -57,6 +60,7 @@ target_link_libraries(pb3_app_core
 pb3_apply_strict_warnings(pb3_app_core
     App.cpp
     ui/MainWindow.cpp
+    ui/Pb3LookAndFeel.cpp
 )
 
 # -----------------------------------------------------------------------------
