@@ -84,6 +84,23 @@ public:
     // can iterate safely while a concurrent scan adds to the live list.
     juce::Array<juce::PluginDescription> getKnownPlugins() const;
 
+    // Subset of getKnownPlugins() filtered to audio-effect plugins only —
+    // entries with PluginDescription::isInstrument == false.
+    //
+    // v3.0 ships as an effect-rack host (master plan §4.2.D — "live
+    // performance effect chain"). Instrument plugins (Kontakt, Diva,
+    // Massive X, etc.) live in DAWs; routing MIDI into them is a
+    // Phase 4 concern (MidiRouter), and many of them have heavy
+    // license-check / online-refresh code in their constructors that's
+    // exactly the failure mode the user has hit on Current.vst3 and
+    // Kontakt during scan. Filtering instruments out at the chain-
+    // entry point sidesteps both problems for v3.0.
+    //
+    // The Plugin List dialog still shows every scanned plugin (effects
+    // and instruments) so the user can see what's installed; the
+    // filter only applies at the "Add to chain" path.
+    juce::Array<juce::PluginDescription> getKnownEffects() const;
+
     // Create a single plugin instance. Returns nullptr and fills `errorOut`
     // on any failure (plugin missing, format unregistered, plugin ctor
     // threw, etc.). Caller takes ownership; the Phase 1.D patch builder
@@ -111,6 +128,22 @@ public:
     // lazily on first access. Caller is responsible for passing this to
     // PluginDirectoryScanner / PluginListComponent.
     juce::File getCrashedPluginsFile() const;
+
+    // Walk the default VST3 search paths, find every bundle whose
+    // basename matches an entry in engine/KnownProblemPlugins.h, and
+    // pre-add it to KnownPluginList's blacklist. Plugins on that list
+    // are known to crash the host during scan / construction /
+    // destruction (e.g. Minimal Audio Current's pure-virtual license
+    // refresh, Kontakt's async analytics deinit) — once a crash fires
+    // we can't recover, so the only protection is to never open them.
+    //
+    // Idempotent: addToBlacklist short-circuits duplicates. Returns
+    // true if any new entries were added (caller can flush prefs to
+    // persist).
+    //
+    // Replaced by an out-of-process subprocess scanner in v3.1
+    // (master plan §4.2.A) — at that point this list goes away.
+    bool applyKnownProblemBlacklist();
 
 private:
     juce::AudioPluginFormatManager formats_;

@@ -1,459 +1,81 @@
 #include "MainWindow.h"
 
 #include "AppContext.h"
-#include "engine/AudioEngine.h"
-#include "engine/AudioGraphRuntime.h"
-#include "engine/PluginHost.h"
-#include "engine/processors/TestToneProcessor.h"
-#include "session/Patch.h"
-#include "session/Preferences.h"
-#include "session/Session.h"
+#include "ColourScheme.h"
+#include "SignalCanvas.h"
+#include "StatusBar.h"
+#include "TransportBar.h"
 
-#include <juce_audio_devices/juce_audio_devices.h>
-#include <juce_audio_processors/juce_audio_processors.h>
-#include <juce_audio_utils/juce_audio_utils.h>
-
-#include <memory>
+#include <juce_gui_basics/juce_gui_basics.h>
 
 namespace pedalboard3::ui
 {
 
 namespace
 {
+constexpr int kTransportBarHeight = 48;
+constexpr int kStatusBarHeight = 32;
+constexpr int kInitialWidth = 960;
+constexpr int kInitialHeight = 540;
+} // namespace
 
-// Build a minimal graph that routes a TestToneProcessor straight to the
-// master output. Used by the "Test Tone" toggle so the user can verify
-// end-to-end audio without any plugin hosted. Prepared to whatever sample
-// rate / buffer size the current audio device is running at, or 48k/512
-// as a fallback when no device is open yet.
-std::unique_ptr<juce::AudioProcessorGraph> buildTestToneGraph(juce::AudioDeviceManager& dm)
-{
-    double sr = 48000.0;
-    int bs = 512;
-    if (auto* dev = dm.getCurrentAudioDevice())
-    {
-        sr = dev->getCurrentSampleRate();
-        bs = dev->getCurrentBufferSizeSamples();
-        if (sr <= 0.0)
-            sr = 48000.0;
-        if (bs <= 0)
-            bs = 512;
-    }
-
-    auto graph = std::make_unique<juce::AudioProcessorGraph>();
-    graph->setPlayConfigDetails(2, 2, sr, bs);
-
-    auto toneNode = graph->addNode(std::make_unique<engine::processors::TestToneProcessor>());
-    auto outNode = graph->addNode(std::make_unique<juce::AudioProcessorGraph::AudioGraphIOProcessor>(
-        juce::AudioProcessorGraph::AudioGraphIOProcessor::audioOutputNode));
-
-    if (auto* tone = dynamic_cast<engine::processors::TestToneProcessor*>(toneNode->getProcessor()))
-    {
-        tone->setAmplitude(0.25f);
-        tone->setFrequency(440.0f);
-        tone->setEnabled(true);
-    }
-
-    graph->addConnection({{toneNode->nodeID, 0}, {outNode->nodeID, 0}});
-    graph->addConnection({{toneNode->nodeID, 1}, {outNode->nodeID, 1}});
-
-    graph->prepareToPlay(sr, bs);
-    return graph;
-}
-
-// Root component — hosts the title plus the diagnostic + plugin-slot
-// controls. Holds a reference to the AppContext so button handlers can
-// drive the runtime, open the device-selector dialog, populate plugin
-// lists, and load/unload plugins.
-class RootComponent : public juce::Component, public juce::ChangeListener
+// Container for the three-zone vertical layout. MainWindow owns one
+// of these; everything chain-related lives inside.
+class MainWindow::RootComponent : public juce::Component
 {
 public:
-    explicit RootComponent(AppContext& ctxRef) : ctx_(ctxRef)
+    explicit RootComponent(AppContext& ctxRef)
+        : ctx_(ctxRef), canvas_(ctx_), transportBar_(ctx_, canvas_), statusBar_(ctx_)
     {
-        settingsButton_.setButtonText("Audio Settings...");
-        settingsButton_.onClick = [this] { openAudioSettings(); };
-        addAndMakeVisible(settingsButton_);
+        addAndMakeVisible(transportBar_);
+        addAndMakeVisible(viewport_);
+        addAndMakeVisible(statusBar_);
 
-        toneButton_.setButtonText("Test Tone");
-        toneButton_.setClickingTogglesState(true);
-        toneButton_.onClick = [this] { onTestToneToggled(); };
-        addAndMakeVisible(toneButton_);
+        viewport_.setViewedComponent(&canvas_, /*deleteComponentWhenNoLongerNeeded*/ false);
+        viewport_.setScrollBarsShown(/*vert*/ false, /*horiz*/ true);
 
-        pluginListButton_.setButtonText("Plugin List...");
-        pluginListButton_.onClick = [this] { openPluginList(); };
-        addAndMakeVisible(pluginListButton_);
-
-        pluginCombo_.setTextWhenNothingSelected("(no plugins scanned — click Plugin List)");
-        pluginCombo_.setTextWhenNoChoicesAvailable("(no plugins scanned — click Plugin List)");
-        addAndMakeVisible(pluginCombo_);
-
-        loadButton_.setButtonText("Load");
-        loadButton_.onClick = [this] { onLoadClicked(); };
-        addAndMakeVisible(loadButton_);
-
-        clearButton_.setButtonText("Clear");
-        clearButton_.onClick = [this] { onClearClicked(); };
-        addAndMakeVisible(clearButton_);
-
-        bypassButton_.setButtonText("Bypass");
-        bypassButton_.setClickingTogglesState(true);
-        bypassButton_.onClick = [this]
-        {
-            const auto first = firstNodeId();
-            if (first != session::graphIO)
-                ctx_.session.setNodeBypass(first, bypassButton_.getToggleState());
-        };
-        addAndMakeVisible(bypassButton_);
-
-        editButton_.setButtonText("Edit");
-        editButton_.onClick = [this] { onEditClicked(); };
-        addAndMakeVisible(editButton_);
-
-        statusLabel_.setJustificationType(juce::Justification::centredLeft);
-        statusLabel_.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
-        addAndMakeVisible(statusLabel_);
-
-        ctx_.pluginHost.getKnownPluginList().addChangeListener(this);
-        ctx_.session.addChangeListener(this);
-
-        rebuildPluginCombo();
-        // Sync once with the current Session state so a fast restore-on-
-        // launch that completed before MainWindow was built still updates
-        // the UI on the next paint.
-        refreshSlotControls();
-
-        setSize(720, 420);
+        setSize(kInitialWidth, kInitialHeight);
     }
 
-    ~RootComponent() override
-    {
-        ctx_.pluginHost.getKnownPluginList().removeChangeListener(this);
-        ctx_.session.removeChangeListener(this);
-        editorWindow_.reset();
-    }
-
-    void changeListenerCallback(juce::ChangeBroadcaster* source) override
-    {
-        if (source == &ctx_.pluginHost.getKnownPluginList())
-            rebuildPluginCombo();
-        else if (source == &ctx_.session)
-            refreshSlotControls();
-    }
-
-    void paint(juce::Graphics& g) override
-    {
-        g.fillAll(juce::Colour::fromRGB(0x1A, 0x1A, 0x1A));
-
-        auto bounds = getLocalBounds().reduced(16);
-        const int titleHeight = 60;
-        const int bodyHeight = 40;
-        auto titleArea = bounds.removeFromTop(titleHeight);
-        auto bodyArea = bounds.removeFromTop(bodyHeight);
-
-        g.setColour(juce::Colours::white);
-        g.setFont(juce::FontOptions(32.0f, juce::Font::plain));
-        g.drawFittedText("Pedalboard 3", titleArea, juce::Justification::centred, 1);
-
-        g.setColour(juce::Colours::grey);
-        g.setFont(juce::FontOptions(14.0f, juce::Font::plain));
-        const auto subtitle = juce::String("Phase 1.D.3 — multi-plugin chain (transitional UI).");
-        g.drawFittedText(subtitle, bodyArea, juce::Justification::centred, 1);
-    }
+    void paint(juce::Graphics& g) override { g.fillAll(tokens::bgWindow); }
 
     void resized() override
     {
-        const int rowHeight = 32;
-        const int gap = 12;
-
-        auto area = getLocalBounds().reduced(16);
-        // Top region (paint draws title/body; reserve their space).
-        area.removeFromTop(60 + 40 + 8);
-
-        // Plugin slot row: ComboBox | Load | Clear | Bypass | Edit
-        auto slotRow = area.removeFromTop(rowHeight);
-        const int btnW = 80;
-        editButton_.setBounds(slotRow.removeFromRight(btnW));
-        slotRow.removeFromRight(gap);
-        bypassButton_.setBounds(slotRow.removeFromRight(btnW));
-        slotRow.removeFromRight(gap);
-        clearButton_.setBounds(slotRow.removeFromRight(btnW));
-        slotRow.removeFromRight(gap);
-        loadButton_.setBounds(slotRow.removeFromRight(btnW));
-        slotRow.removeFromRight(gap);
-        pluginCombo_.setBounds(slotRow);
-
-        area.removeFromTop(gap);
-
-        // Status row.
-        auto statusRow = area.removeFromTop(28);
-        statusLabel_.setBounds(statusRow);
-
-        // Bottom strip with the original three diagnostic buttons.
-        auto bottom = getLocalBounds().reduced(16).removeFromBottom(rowHeight + 16);
-        bottom.removeFromBottom(16);
-        const int totalWidth = juce::jmin(bottom.getWidth(), 660);
-        const int eachWidth = (totalWidth - gap * 2) / 3;
-        auto strip = bottom.withSizeKeepingCentre(totalWidth, rowHeight);
-
-        settingsButton_.setBounds(strip.removeFromLeft(eachWidth));
-        strip.removeFromLeft(gap);
-        toneButton_.setBounds(strip.removeFromLeft(eachWidth));
-        strip.removeFromLeft(gap);
-        pluginListButton_.setBounds(strip.removeFromLeft(eachWidth));
+        auto bounds = getLocalBounds();
+        transportBar_.setBounds(bounds.removeFromTop(kTransportBarHeight));
+        statusBar_.setBounds(bounds.removeFromBottom(kStatusBarHeight));
+        viewport_.setBounds(bounds);
     }
 
 private:
-    void rebuildPluginCombo()
-    {
-        pluginCombo_.clear(juce::dontSendNotification);
-        comboItemDescriptions_.clearQuick();
-
-        const auto plugins = ctx_.pluginHost.getKnownPlugins();
-        int id = 1;
-        for (const auto& desc : plugins)
-        {
-            pluginCombo_.addItem(desc.name + "  [" + desc.pluginFormatName + "]", id++);
-            comboItemDescriptions_.add(desc);
-        }
-    }
-
-    session::NodeId firstNodeId() const
-    {
-        const auto ids = ctx_.session.getNodeIdsInOrder();
-        return ids.empty() ? session::graphIO : ids.front();
-    }
-
-    void refreshSlotControls()
-    {
-        const auto snaps = ctx_.session.getNodeSnapshots();
-        const bool loaded = !snaps.empty();
-        const auto state = ctx_.session.getState();
-        const bool idle = (state == session::Session::State::Idle);
-
-        const auto first = firstNodeId();
-        auto* hostedPlugin = (first != session::graphIO) ? ctx_.session.getHostedPlugin(first) : nullptr;
-
-        loadButton_.setEnabled(idle);
-        clearButton_.setEnabled(loaded && idle);
-        bypassButton_.setEnabled(loaded);
-        editButton_.setEnabled(loaded && hostedPlugin != nullptr && hostedPlugin->hasEditor());
-        bypassButton_.setToggleState(loaded && snaps.front().bypassed, juce::dontSendNotification);
-
-        switch (state)
-        {
-        case session::Session::State::Building:
-            statusLabel_.setText("Loading...", juce::dontSendNotification);
-            break;
-        case session::Session::State::Swapping:
-            statusLabel_.setText("Swapping...", juce::dontSendNotification);
-            break;
-        case session::Session::State::Idle:
-        default:
-        {
-            const auto err = ctx_.session.getLastError();
-            if (err.isNotEmpty() && !loaded)
-                statusLabel_.setText("Load failed: " + err, juce::dontSendNotification);
-            else if (loaded)
-                statusLabel_.setText("Loaded: " + snaps.front().name +
-                                         "  (chain length: " + juce::String(static_cast<int>(snaps.size())) + ")",
-                                     juce::dontSendNotification);
-            else
-                statusLabel_.setText("No plugin loaded", juce::dontSendNotification);
-            break;
-        }
-        }
-
-        // Close any editor window for a no-longer-loaded plugin.
-        if (!loaded)
-            editorWindow_.reset();
-    }
-
-    void onLoadClicked()
-    {
-        const int selected = pluginCombo_.getSelectedId(); // 1-based
-        if (selected < 1 || selected > comboItemDescriptions_.size())
-        {
-            const auto opts = juce::MessageBoxOptions{}
-                                  .withIconType(juce::MessageBoxIconType::WarningIcon)
-                                  .withTitle("Load plugin")
-                                  .withMessage("Pick a plugin from the list first.")
-                                  .withButton("OK");
-            juce::AlertWindow::showAsync(opts, nullptr);
-            return;
-        }
-
-        const auto& desc = comboItemDescriptions_.getReference(selected - 1);
-
-        // Close any open editor for the previous plugin before swap.
-        editorWindow_.reset();
-
-        // Phase 1.D.3 transitional: clicking Load APPENDS to the chain
-        // via Session::addPlugin so the user can already build chains
-        // with the existing single-row UI. Phase 1.D.3 Unit 6's chain
-        // panel will rename the button to "Add to chain" and show all
-        // nodes. Errors surface via the change-listener path.
-        ctx_.session.addPlugin(desc);
-    }
-
-    void onClearClicked()
-    {
-        editorWindow_.reset();
-        ctx_.session.clearPatch();
-    }
-
-    void onEditClicked()
-    {
-        const auto first = firstNodeId();
-        if (first == session::graphIO)
-            return;
-        auto* plugin = ctx_.session.getHostedPlugin(first);
-        if (plugin == nullptr || !plugin->hasEditor())
-            return;
-
-        if (editorWindow_ != nullptr)
-        {
-            editorWindow_->toFront(true);
-            return;
-        }
-
-        auto* editor = plugin->createEditorIfNeeded();
-        if (editor == nullptr)
-            return;
-
-        auto onClose = [this] { editorWindow_.reset(); };
-        const auto snaps = ctx_.session.getNodeSnapshots();
-        const auto title = !snaps.empty() ? snaps.front().name : juce::String();
-        editorWindow_ = std::make_unique<EditorWindow>(title, editor, std::move(onClose));
-    }
-
-    void openAudioSettings()
-    {
-        // Standard JUCE device selector. 2-channel stereo in / 2-channel
-        // stereo out keeps parity with AudioEngine::initialise.
-        auto selector = std::make_unique<juce::AudioDeviceSelectorComponent>(*ctx_.audioEngine.getDeviceManager(),
-                                                                             0,
-                                                                             2, // min/max input channels
-                                                                             0,
-                                                                             2, // min/max output channels
-                                                                             /*showMidiInputOptions*/ true,
-                                                                             /*showMidiOutputSelector*/ false,
-                                                                             /*showChannelsAsStereoPairs*/ true,
-                                                                             /*hideAdvancedOptionsWithButton*/ false);
-        selector->setSize(500, 420);
-
-        juce::DialogWindow::LaunchOptions options;
-        options.content.setOwned(selector.release());
-        options.dialogTitle = "Audio Settings";
-        options.dialogBackgroundColour = juce::Colour::fromRGB(0x2A, 0x2A, 0x2A);
-        options.escapeKeyTriggersCloseButton = true;
-        options.useNativeTitleBar = true;
-        options.resizable = false;
-        options.launchAsync();
-    }
-
-    void onTestToneToggled()
-    {
-        if (toneButton_.getToggleState())
-        {
-            // Test tone replaces any plugin in the chain — drop chain
-            // state first so the UI shows "no plugin loaded". clearPatch
-            // is async; the tone graph swap is synchronous and runs
-            // after, which is fine — the previous graph is destroyed by
-            // the second swap.
-            ctx_.session.clearPatch();
-            auto graph = buildTestToneGraph(*ctx_.audioEngine.getDeviceManager());
-            ctx_.audioEngine.loadGraph(std::move(graph));
-        }
-        else
-        {
-            ctx_.audioEngine.loadGraph(nullptr);
-        }
-    }
-
-    void openPluginList()
-    {
-        // JUCE's standard plugin-list UI. Handles scanning (including
-        // out-of-process where supported), per-format scan buttons, and
-        // remove/enable per row. The PropertiesFile pointer lets JUCE
-        // auto-save user edits (enable/disable, blacklist) to our
-        // session::Preferences store.
-        auto listComponent = std::make_unique<juce::PluginListComponent>(ctx_.pluginHost.getFormatManager(),
-                                                                         ctx_.pluginHost.getKnownPluginList(),
-                                                                         ctx_.pluginHost.getCrashedPluginsFile(),
-                                                                         ctx_.preferences.getStore(),
-                                                                         /*allowAsyncScanning*/ false);
-        listComponent->setSize(720, 520);
-
-        juce::DialogWindow::LaunchOptions options;
-        options.content.setOwned(listComponent.release());
-        options.dialogTitle = "Plugin List";
-        options.dialogBackgroundColour = juce::Colour::fromRGB(0x2A, 0x2A, 0x2A);
-        options.escapeKeyTriggersCloseButton = true;
-        options.useNativeTitleBar = true;
-        options.resizable = true;
-        options.launchAsync();
-    }
-
-    // Holds the plugin's AudioProcessorEditor in a DocumentWindow and
-    // calls a callback on close so the host can drop its handle.
-    class EditorWindow : public juce::DocumentWindow
-    {
-    public:
-        EditorWindow(const juce::String& title, juce::AudioProcessorEditor* editor, std::function<void()> onClose)
-            : juce::DocumentWindow(title,
-                                   juce::Desktop::getInstance().getDefaultLookAndFeel().findColour(
-                                       juce::ResizableWindow::backgroundColourId),
-                                   juce::DocumentWindow::closeButton),
-              onClose_(std::move(onClose))
-        {
-            setUsingNativeTitleBar(true);
-            setResizable(editor->isResizable(), false);
-            setContentOwned(editor, true);
-            centreWithSize(getWidth(), getHeight());
-            setVisible(true);
-        }
-
-        void closeButtonPressed() override
-        {
-            if (onClose_)
-                onClose_();
-        }
-
-    private:
-        std::function<void()> onClose_;
-        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(EditorWindow)
-    };
-
     AppContext& ctx_;
+    SignalCanvas canvas_;
+    juce::Viewport viewport_;
+    TransportBar transportBar_;
+    StatusBar statusBar_;
 
-    juce::ComboBox pluginCombo_;
-    juce::Array<juce::PluginDescription> comboItemDescriptions_;
-    juce::TextButton loadButton_;
-    juce::TextButton clearButton_;
-    juce::TextButton bypassButton_;
-    juce::TextButton editButton_;
-    juce::Label statusLabel_;
-
-    std::unique_ptr<EditorWindow> editorWindow_;
-
-    juce::TextButton settingsButton_;
-    juce::TextButton toneButton_;
-    juce::TextButton pluginListButton_;
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RootComponent)
 };
 
-} // namespace
-
 MainWindow::MainWindow(const juce::String& name, AppContext& context)
-    : juce::DocumentWindow(
-          name,
-          juce::Desktop::getInstance().getDefaultLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId),
-          juce::DocumentWindow::allButtons)
+    : juce::DocumentWindow(name, tokens::bgWindow, juce::DocumentWindow::allButtons)
 {
     setUsingNativeTitleBar(true);
-    setContentOwned(new RootComponent(context), true);
-    setResizable(true, true);
-    centreWithSize(getWidth(), getHeight());
+    setResizable(/*shouldBeResizable*/ true, /*useBottomRightCornerResizer*/ false);
+
+    root_ = std::make_unique<RootComponent>(context);
+    setContentNonOwned(root_.get(), /*resizeToFitWhenContentChangesSize*/ true);
+
+    centreWithSize(kInitialWidth, kInitialHeight);
     setVisible(true);
+}
+
+MainWindow::~MainWindow()
+{
+    // setContentNonOwned holds a raw pointer; drop the window's content
+    // ref before root_ is destroyed so paint() doesn't fire on a moved
+    // component during teardown.
+    setContentNonOwned(nullptr, false);
 }
 
 void MainWindow::closeButtonPressed()
