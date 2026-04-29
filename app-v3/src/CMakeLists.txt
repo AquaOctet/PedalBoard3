@@ -33,6 +33,10 @@ add_library(pb3_app_core STATIC
     ui/PluginCard.h
     ui/SignalCanvas.cpp
     ui/SignalCanvas.h
+    ui/StatusBar.cpp
+    ui/StatusBar.h
+    ui/TransportBar.cpp
+    ui/TransportBar.h
 )
 
 target_include_directories(pb3_app_core PUBLIC
@@ -70,6 +74,8 @@ pb3_apply_strict_warnings(pb3_app_core
     ui/Pb3LookAndFeel.cpp
     ui/PluginCard.cpp
     ui/SignalCanvas.cpp
+    ui/StatusBar.cpp
+    ui/TransportBar.cpp
 )
 
 # -----------------------------------------------------------------------------
