@@ -3,6 +3,7 @@
 #include "ColourScheme.h"
 #include "engine/AudioEngine.h"
 #include "engine/PluginHost.h"
+#include "engine/PluginScanner.h"
 #include "engine/processors/TestToneProcessor.h"
 #include "session/Preferences.h"
 #include "session/Session.h"
@@ -23,8 +24,9 @@ constexpr int kBarPadding = 12;
 constexpr int kButtonGap = 6;
 constexpr int kAddButtonWidth = 130;
 constexpr int kSettingsButtonWidth = 140;
-constexpr int kToneButtonWidth = 110;
-constexpr int kPluginListButtonWidth = 130;
+constexpr int kToneButtonWidth = 100;
+constexpr int kRescanButtonWidth = 130;
+constexpr int kPluginListButtonWidth = 110;
 
 // Build a minimal graph that routes a TestToneProcessor straight to
 // the master output. Lifted from the previous MainWindow.cpp (the
@@ -72,6 +74,7 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas) : ctx_(ctx), c
 
     addPluginButton_.onClick = [this] { openAddPluginMenu(); };
     settingsButton_.onClick = [this] { openAudioSettings(); };
+    rescanButton_.onClick = [this] { rescanPlugins(); };
     pluginListButton_.onClick = [this] { openPluginList(); };
 
     toneButton_.setClickingTogglesState(true);
@@ -80,6 +83,7 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas) : ctx_(ctx), c
     addAndMakeVisible(addPluginButton_);
     addAndMakeVisible(settingsButton_);
     addAndMakeVisible(toneButton_);
+    addAndMakeVisible(rescanButton_);
     addAndMakeVisible(pluginListButton_);
 
     titleLabel_.setText("Pedalboard 3", juce::dontSendNotification);
@@ -124,12 +128,14 @@ void TransportBar::resized()
 {
     auto bounds = getLocalBounds().reduced(kBarPadding, 6);
 
-    // Right cluster: Plugin List | Test Tone | Audio Settings.
-    auto right =
-        bounds.removeFromRight(kPluginListButtonWidth + kToneButtonWidth + kSettingsButtonWidth + 2 * kButtonGap);
+    // Right cluster: Audio Settings | Test Tone | Rescan | Plugin List.
+    auto right = bounds.removeFromRight(kSettingsButtonWidth + kToneButtonWidth + kRescanButtonWidth +
+                                        kPluginListButtonWidth + 3 * kButtonGap);
     settingsButton_.setBounds(right.removeFromLeft(kSettingsButtonWidth));
     right.removeFromLeft(kButtonGap);
     toneButton_.setBounds(right.removeFromLeft(kToneButtonWidth));
+    right.removeFromLeft(kButtonGap);
+    rescanButton_.setBounds(right.removeFromLeft(kRescanButtonWidth));
     right.removeFromLeft(kButtonGap);
     pluginListButton_.setBounds(right.removeFromLeft(kPluginListButtonWidth));
 
@@ -323,6 +329,93 @@ void TransportBar::openPluginList()
     options.useNativeTitleBar = true;
     options.resizable = true;
     options.launchAsync();
+}
+
+namespace
+{
+
+// ThreadWithProgressWindow subclass that runs the out-of-process
+// PluginScanner on its worker thread and pumps the JUCE-supplied
+// progress UI via setProgress / setStatusMessage. Each plugin is
+// scanned in a child process — if it crashes, only the helper dies,
+// and the progress window keeps moving to the next plugin.
+class PluginRescanThread : public juce::ThreadWithProgressWindow
+{
+public:
+    PluginRescanThread(engine::PluginScanner& scanner, int& outAdded)
+        : juce::ThreadWithProgressWindow("Scanning plugins…", /*hasProgressBar*/ true, /*hasCancelButton*/ true),
+          scanner_(scanner), outAdded_(outAdded)
+    {
+        setStatusMessage("Enumerating plugin search paths…");
+    }
+
+    void run() override
+    {
+        outAdded_ = scanner_.scanAllDefaultPaths(
+            [this](int idx, int total, const juce::String& path)
+            {
+                if (threadShouldExit() || total == 0)
+                    return;
+                setProgress(static_cast<double>(idx) / static_cast<double>(total));
+                setStatusMessage("Scanning: " + juce::File(path).getFileName());
+            });
+    }
+
+private:
+    engine::PluginScanner& scanner_;
+    int& outAdded_;
+};
+
+} // namespace
+
+void TransportBar::rescanPlugins()
+{
+    auto helper = engine::PluginScanner::findHelperBinary();
+    if (!helper.existsAsFile())
+    {
+        // Helper missing — happens on dev builds where POST_BUILD copy
+        // hasn't run, or installs missing the bundled helper. Fall
+        // back to the existing JUCE-driven scan via Plugin List dialog
+        // (which still has the in-process scanner + our shipping
+        // KnownProblemPlugins.h floor list as best-effort protection).
+        const auto opts = juce::MessageBoxOptions{}
+                              .withIconType(juce::MessageBoxIconType::WarningIcon)
+                              .withTitle("Out-of-process scanner unavailable")
+                              .withMessage("pb3-scanner-helper binary was not found next to the host executable. "
+                                           "Falling back to the in-process scan via Plugin List → Options. "
+                                           "Known-problem plugins are still skipped via the shipping floor list.")
+                              .withButton("OK");
+        juce::AlertWindow::showAsync(opts, nullptr);
+        return;
+    }
+
+    engine::PluginScanner scanner(ctx_.pluginHost, helper);
+
+    int added = 0;
+    PluginRescanThread runner(scanner, added);
+    const bool finished = runner.runThread();
+
+    // Persist KnownPluginList synchronously regardless of cancel — even
+    // a partial scan added new descriptors and possibly blacklisted
+    // crashed plugins; both are worth keeping.
+    if (auto xml = ctx_.pluginHost.createKnownListXml())
+        ctx_.preferences.setKnownPluginList(*xml);
+    ctx_.preferences.flush();
+
+    const auto& blacklist = ctx_.pluginHost.getKnownPluginList().getBlacklistedFiles();
+    juce::String summary;
+    if (!finished)
+    {
+        summary = "Scan cancelled. Partial results saved.\n\n";
+    }
+    summary += "Plugins found: " + juce::String(added) + "\n";
+    summary += "Plugins skipped (blacklist): " + juce::String(blacklist.size());
+    const auto opts = juce::MessageBoxOptions{}
+                          .withIconType(juce::MessageBoxIconType::InfoIcon)
+                          .withTitle(finished ? "Scan complete" : "Scan cancelled")
+                          .withMessage(summary)
+                          .withButton("OK");
+    juce::AlertWindow::showAsync(opts, nullptr);
 }
 
 void TransportBar::onTestToneToggled()

@@ -57,6 +57,7 @@ private:
     void openAddPluginMenu();
     void openAudioSettings();
     void openPluginList();
+    void rescanPlugins();
     void onTestToneToggled();
     void updateAddPluginEnabled();
 
@@ -66,6 +67,7 @@ private:
     juce::TextButton addPluginButton_{"+ Add Plugin"};
     juce::TextButton settingsButton_{"Audio Settings..."};
     juce::ToggleButton toneButton_{"Test Tone"};
+    juce::TextButton rescanButton_{"Rescan Plugins"};
     juce::TextButton pluginListButton_{"Plugin List..."};
 
     juce::Label titleLabel_;
