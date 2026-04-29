@@ -334,24 +334,27 @@ void TransportBar::openPluginList()
 namespace
 {
 
-// ThreadWithProgressWindow subclass that runs the out-of-process
-// PluginScanner on its worker thread and pumps the JUCE-supplied
-// progress UI via setProgress / setStatusMessage. Each plugin is
-// scanned in a child process — if it crashes, only the helper dies,
-// and the progress window keeps moving to the next plugin.
+// Self-deleting ThreadWithProgressWindow that owns its own PluginScanner
+// and posts the post-scan summary on the message thread. We can't use
+// ThreadWithProgressWindow::runThread() — that's gated by
+// JUCE_MODAL_LOOPS_PERMITTED, which Pedalboard 3 disables (modal
+// loops on the message thread are forbidden in a real-time audio app).
+// launchThread() is non-blocking; threadComplete() fires on the
+// message thread when the worker exits, and that's where we persist
+// preferences, surface results to the user, and self-delete.
 class PluginRescanThread : public juce::ThreadWithProgressWindow
 {
 public:
-    PluginRescanThread(engine::PluginScanner& scanner, int& outAdded)
+    PluginRescanThread(AppContext& ctx, juce::File helperBinary)
         : juce::ThreadWithProgressWindow("Scanning plugins…", /*hasProgressBar*/ true, /*hasCancelButton*/ true),
-          scanner_(scanner), outAdded_(outAdded)
+          ctx_(ctx), scanner_(ctx_.pluginHost, std::move(helperBinary))
     {
         setStatusMessage("Enumerating plugin search paths…");
     }
 
     void run() override
     {
-        outAdded_ = scanner_.scanAllDefaultPaths(
+        added_ = scanner_.scanAllDefaultPaths(
             [this](int idx, int total, const juce::String& path)
             {
                 if (threadShouldExit() || total == 0)
@@ -361,9 +364,36 @@ public:
             });
     }
 
+    void threadComplete(bool userPressedCancel) override
+    {
+        // Message thread. Persist + summarise + self-delete.
+        if (auto xml = ctx_.pluginHost.createKnownListXml())
+            ctx_.preferences.setKnownPluginList(*xml);
+        ctx_.preferences.flush();
+
+        const auto& blacklist = ctx_.pluginHost.getKnownPluginList().getBlacklistedFiles();
+        juce::String summary;
+        if (userPressedCancel)
+            summary = "Scan cancelled. Partial results saved.\n\n";
+        summary += "Plugins found: " + juce::String(added_) + "\n";
+        summary += "Plugins skipped (blacklist): " + juce::String(blacklist.size());
+
+        const auto opts = juce::MessageBoxOptions{}
+                              .withIconType(juce::MessageBoxIconType::InfoIcon)
+                              .withTitle(userPressedCancel ? "Scan cancelled" : "Scan complete")
+                              .withMessage(summary)
+                              .withButton("OK");
+        juce::AlertWindow::showAsync(opts, nullptr);
+
+        delete this;
+    }
+
 private:
-    engine::PluginScanner& scanner_;
-    int& outAdded_;
+    AppContext& ctx_;
+    engine::PluginScanner scanner_;
+    int added_{0};
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginRescanThread)
 };
 
 } // namespace
@@ -389,33 +419,12 @@ void TransportBar::rescanPlugins()
         return;
     }
 
-    engine::PluginScanner scanner(ctx_.pluginHost, helper);
-
-    int added = 0;
-    PluginRescanThread runner(scanner, added);
-    const bool finished = runner.runThread();
-
-    // Persist KnownPluginList synchronously regardless of cancel — even
-    // a partial scan added new descriptors and possibly blacklisted
-    // crashed plugins; both are worth keeping.
-    if (auto xml = ctx_.pluginHost.createKnownListXml())
-        ctx_.preferences.setKnownPluginList(*xml);
-    ctx_.preferences.flush();
-
-    const auto& blacklist = ctx_.pluginHost.getKnownPluginList().getBlacklistedFiles();
-    juce::String summary;
-    if (!finished)
-    {
-        summary = "Scan cancelled. Partial results saved.\n\n";
-    }
-    summary += "Plugins found: " + juce::String(added) + "\n";
-    summary += "Plugins skipped (blacklist): " + juce::String(blacklist.size());
-    const auto opts = juce::MessageBoxOptions{}
-                          .withIconType(juce::MessageBoxIconType::InfoIcon)
-                          .withTitle(finished ? "Scan complete" : "Scan cancelled")
-                          .withMessage(summary)
-                          .withButton("OK");
-    juce::AlertWindow::showAsync(opts, nullptr);
+    // Heap-allocated; deletes itself in threadComplete on the message
+    // thread after the user dismisses the result alert. launchThread
+    // returns immediately — TransportBar message-thread responsiveness
+    // is preserved while the scan walks the user's plugin paths.
+    auto* runner = new PluginRescanThread(ctx_, std::move(helper));
+    runner->launchThread();
 }
 
 void TransportBar::onTestToneToggled()
