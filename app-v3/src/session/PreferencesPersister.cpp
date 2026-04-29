@@ -99,6 +99,17 @@ void PreferencesPersister::changeListenerCallback(juce::ChangeBroadcaster* sourc
     {
         if (auto xml = host_.createKnownListXml())
             prefs_.setKnownPluginList(*xml);
+
+        // Flush eagerly. The KnownPluginList change message includes
+        // dead-man's-pedal blacklist updates, and JUCE's
+        // PluginListComponent ctor DELETES the dead-man's-pedal file
+        // immediately after applying its contents (juce_PluginListComponent.cpp:444).
+        // If we relied on the default lazy save, a crashing third-party
+        // plugin scan would delete the dead-man's-pedal file AND lose the
+        // in-memory blacklist on the next crash — re-exposing the user
+        // to the same crash on next launch. Eager flush makes the blacklist
+        // crash-durable.
+        prefs_.flush();
         return;
     }
 
