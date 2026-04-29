@@ -12,6 +12,25 @@ BypassableInstance::BypassableInstance(std::unique_ptr<juce::AudioProcessor> inn
       inner_(std::move(inner))
 {
     jassert(inner_ != nullptr);
+
+    // Lock inner_'s bus topology once, here, before any prepareToPlay
+    // sees it. Without this, plugins that expose sidechain or other
+    // aux buses (FabFilter Pro-Q 3, most NI compressors, etc.) leave
+    // aux-buffer pointers half-wired inside their JUCE VST3 wrapper —
+    // the plugin's processBlock then reads from those pointers and
+    // the access goes through null/garbage, SIGSEGVing the audio
+    // thread. disableNonMainBuses + the explicit stereo constraint
+    // matches what hosts like Pedalboard 1/2 and Ableton Live do for
+    // their "everything is a stereo effect slot" chain semantics.
+    inner_->disableNonMainBuses();
+
+    auto layout = inner_->getBusesLayout();
+    if (!layout.inputBuses.isEmpty())
+        layout.inputBuses.getReference(0) = juce::AudioChannelSet::stereo();
+    if (!layout.outputBuses.isEmpty())
+        layout.outputBuses.getReference(0) = juce::AudioChannelSet::stereo();
+    if (inner_->checkBusesLayoutSupported(layout))
+        inner_->setBusesLayout(layout);
 }
 
 bool BypassableInstance::isBusesLayoutSupported(const BusesLayout& layouts) const
@@ -43,6 +62,8 @@ void BypassableInstance::prepareToPlay(double sampleRate, int samplesPerBlock)
     }
     consecutiveOverruns_.store(0, std::memory_order_relaxed);
 
+    // Bus topology is locked in the constructor (see comment there).
+    // prepareToPlay only forwards rate/block-size details.
     inner_->setRateAndBufferSizeDetails(sampleRate, samplesPerBlock);
     inner_->prepareToPlay(sampleRate, samplesPerBlock);
 }
