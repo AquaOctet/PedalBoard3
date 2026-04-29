@@ -129,6 +129,22 @@ public:
     // PluginDirectoryScanner / PluginListComponent.
     juce::File getCrashedPluginsFile() const;
 
+    // Walk the default VST3 search paths, find every bundle whose
+    // basename matches an entry in engine/KnownProblemPlugins.h, and
+    // pre-add it to KnownPluginList's blacklist. Plugins on that list
+    // are known to crash the host during scan / construction /
+    // destruction (e.g. Minimal Audio Current's pure-virtual license
+    // refresh, Kontakt's async analytics deinit) — once a crash fires
+    // we can't recover, so the only protection is to never open them.
+    //
+    // Idempotent: addToBlacklist short-circuits duplicates. Returns
+    // true if any new entries were added (caller can flush prefs to
+    // persist).
+    //
+    // Replaced by an out-of-process subprocess scanner in v3.1
+    // (master plan §4.2.A) — at that point this list goes away.
+    bool applyKnownProblemBlacklist();
+
 private:
     juce::AudioPluginFormatManager formats_;
     juce::KnownPluginList knownList_;

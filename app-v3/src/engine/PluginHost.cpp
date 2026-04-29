@@ -1,5 +1,7 @@
 #include "PluginHost.h"
 
+#include "KnownProblemPlugins.h"
+
 namespace pedalboard3::engine
 {
 
@@ -136,6 +138,47 @@ juce::File PluginHost::getCrashedPluginsFile() const
     auto appDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("Pedalboard3");
     appDir.createDirectory();
     return appDir.getChildFile("crashed_plugins.xml");
+}
+
+bool PluginHost::applyKnownProblemBlacklist()
+{
+    const juce::ScopedWriteLock sl(listLock_);
+
+    bool anyAdded = false;
+
+    // Walk every registered format (VST3, AU on macOS, etc.) and ask
+    // it to enumerate plugin paths under its default search path. For
+    // each path, check if the bundle basename matches a known-problem
+    // entry and blacklist it.
+    for (int i = 0; i < formats_.getNumFormats(); ++i)
+    {
+        auto* format = formats_.getFormat(i);
+        if (format == nullptr)
+            continue;
+
+        const auto searchPath = format->getDefaultLocationsToSearch();
+        const auto pluginPaths = format->searchPathsForPlugins(searchPath, /*recursive*/ true, /*allowAsync*/ false);
+
+        for (const auto& path : pluginPaths)
+        {
+            const auto basename = juce::File(path).getFileName();
+
+            for (const auto& entry : kKnownProblemPlugins)
+            {
+                if (basename == juce::String(entry.bundleBasename.data(), entry.bundleBasename.size()))
+                {
+                    if (!knownList_.getBlacklistedFiles().contains(path))
+                    {
+                        knownList_.addToBlacklist(path);
+                        anyAdded = true;
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    return anyAdded;
 }
 
 } // namespace pedalboard3::engine

@@ -23,6 +23,7 @@ add_library(pb3_engine_core STATIC
     AudioGraphRuntime.h
     BypassableInstance.cpp
     BypassableInstance.h
+    KnownProblemPlugins.h
     PluginHost.cpp
     PluginHost.h
     processors/OutputSanitiser.cpp

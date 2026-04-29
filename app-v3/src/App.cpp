@@ -27,6 +27,19 @@ void App::initialise(const juce::String& /*commandLine*/)
     if (auto savedList = preferences->getKnownPluginList())
         pluginHost->loadKnownList(*savedList);
 
+    // Apply the shipping known-problem blacklist BEFORE any user-driven
+    // scan can happen. These plugins crash the host on scan / ctor /
+    // dtor and the only protection until v3.1's out-of-process scanner
+    // is to never open them. See engine/KnownProblemPlugins.h for the
+    // list and reasons. Persist immediately if any new entries were
+    // added so a fresh crash later in this session doesn't lose them.
+    if (pluginHost->applyKnownProblemBlacklist())
+    {
+        if (auto xml = pluginHost->createKnownListXml())
+            preferences->setKnownPluginList(*xml);
+        preferences->flush();
+    }
+
     session = std::make_unique<session::Session>(*engine, *pluginHost);
     persister = std::make_unique<session::PreferencesPersister>(*preferences, *engine, *pluginHost, *session);
 
