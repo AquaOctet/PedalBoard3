@@ -180,13 +180,23 @@ void TransportBar::updateAddPluginEnabled()
 
 void TransportBar::openAddPluginMenu()
 {
-    const auto plugins = ctx_.pluginHost.getKnownPlugins();
-    if (plugins.isEmpty())
+    // Effects-only filter: v3.0 ships as a live-performance effect rack;
+    // instruments are sidestepped per the master-plan scope and to dodge
+    // the heavyweight license/auth crashes that hit Current.vst3 and
+    // Kontakt-class plugins during construction. See
+    // PluginHost::getKnownEffects for the rationale.
+    const auto effects = ctx_.pluginHost.getKnownEffects();
+    if (effects.isEmpty())
     {
+        const auto allKnown = ctx_.pluginHost.getKnownPlugins().size();
+        const auto message = allKnown > 0
+                                 ? "All scanned plugins are instruments — Pedalboard 3 only loads effects in v3.0. "
+                                   "Open the Plugin List dialog to scan for effect plugins."
+                                 : "No plugins scanned yet. Open the Plugin List dialog to scan.";
         const auto opts = juce::MessageBoxOptions{}
                               .withIconType(juce::MessageBoxIconType::InfoIcon)
                               .withTitle("Add plugin")
-                              .withMessage("No plugins scanned yet. Open the Plugin List dialog to scan.")
+                              .withMessage(message)
                               .withButton("OK");
         juce::AlertWindow::showAsync(opts, nullptr);
         return;
@@ -194,16 +204,16 @@ void TransportBar::openAddPluginMenu()
 
     juce::PopupMenu menu;
     int id = 1;
-    for (const auto& desc : plugins)
+    for (const auto& desc : effects)
         menu.addItem(id++, desc.name + "  [" + desc.pluginFormatName + "]");
 
     auto opts = juce::PopupMenu::Options{}.withTargetComponent(addPluginButton_);
     menu.showMenuAsync(opts,
-                       [this, plugins](int chosen)
+                       [this, effects](int chosen)
                        {
-                           if (chosen <= 0 || chosen > plugins.size())
+                           if (chosen <= 0 || chosen > effects.size())
                                return;
-                           ctx_.session.addPlugin(plugins.getReference(chosen - 1));
+                           ctx_.session.addPlugin(effects.getReference(chosen - 1));
                        });
 }
 

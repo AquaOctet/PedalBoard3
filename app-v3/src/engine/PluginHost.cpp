@@ -113,6 +113,16 @@ juce::Array<juce::PluginDescription> PluginHost::getKnownPlugins() const
     return knownList_.getTypes();
 }
 
+juce::Array<juce::PluginDescription> PluginHost::getKnownEffects() const
+{
+    const juce::ScopedReadLock sl(listLock_);
+    juce::Array<juce::PluginDescription> result;
+    for (const auto& desc : knownList_.getTypes())
+        if (!desc.isInstrument)
+            result.add(desc);
+    return result;
+}
+
 std::unique_ptr<juce::AudioPluginInstance> PluginHost::createInstance(const juce::PluginDescription& desc,
                                                                       double sampleRate,
                                                                       int blockSize,
