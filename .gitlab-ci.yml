@@ -103,6 +103,15 @@ default:
       paths: [ .ccache/ ]
       policy: pull-push
 
+# Windows runner has no ccache (sccache is the analog but not yet wired).
+# CPM cache alone is the big-ticket item — it saves the JUCE source tarball
+# fetch (+ Catch2 etc.) per pipeline. ~50 MB cache, ~30 s saved on rerun.
+.cache-windows: &cache-windows
+  cache:
+    - key: "cpm-${CI_PROJECT_PATH_SLUG}"
+      paths: [ .cpm-cache/ ]
+      policy: pull-push
+
 # Lint-only setup: clang-format + just. Skips the heavy build toolchain
 # that ci-linux:latest carries. Lint runs on saas-linux on a stock
 # ubuntu:24.04 image to avoid blocking on cluster state for a check
@@ -231,6 +240,7 @@ build:windows:
   tags: [ saas-windows-medium-amd64 ]
   rules: *rules-windows
   allow_failure: true
+  <<: *cache-windows
   before_script: *windows-setup
   script:
     - cmake --preset windows-dev -S app-v3
@@ -288,6 +298,7 @@ test:windows:unit:
   rules: *rules-windows
   needs: [ build:windows ]
   allow_failure: true
+  <<: *cache-windows
   before_script: *windows-setup
   script:
     - ctest --preset windows-dev
