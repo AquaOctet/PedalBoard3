@@ -27,6 +27,8 @@ add_library(pb3_app_core STATIC
     ui/MainWindow.h
     ui/Pb3LookAndFeel.cpp
     ui/Pb3LookAndFeel.h
+    ui/PluginCard.cpp
+    ui/PluginCard.h
 )
 
 target_include_directories(pb3_app_core PUBLIC
@@ -61,6 +63,7 @@ pb3_apply_strict_warnings(pb3_app_core
     App.cpp
     ui/MainWindow.cpp
     ui/Pb3LookAndFeel.cpp
+    ui/PluginCard.cpp
 )
 
 # -----------------------------------------------------------------------------
