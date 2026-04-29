@@ -68,6 +68,25 @@
       }
     },
     {
+      "name": "windows-dev",
+      "displayName": "Windows MSVC Debug (dev inner loop)",
+      "description": "Debug build on Windows MSVC — matches linux-dev / macos-dev. Used by GitLab CI on saas-windows-medium-amd64.",
+      "generator": "Ninja",
+      "binaryDir": "${fileDir}/../build/windows-dev",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "PB3_BUILD_TESTS": "ON",
+        "PB3_ENABLE_CLAP": "OFF",
+        "PB3_ENABLE_VST2": "OFF",
+        "PB3_ENABLE_RTSAN": "OFF"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
       "name": "windows-ci",
       "displayName": "Windows MSVC (CI)",
       "description": "Release build on Windows using MSVC. Runs on self-hosted QA runner (Phase 6).",
@@ -128,6 +147,7 @@
     { "name": "linux-dev",       "configurePreset": "linux-dev" },
     { "name": "linux-release",   "configurePreset": "linux-release" },
     { "name": "linux-rtsan",     "configurePreset": "linux-rtsan" },
+    { "name": "windows-dev",     "configurePreset": "windows-dev" },
     { "name": "windows-ci",      "configurePreset": "windows-ci" },
     { "name": "macos-dev",       "configurePreset": "macos-dev" },
     { "name": "macos-universal", "configurePreset": "macos-universal" }
@@ -136,6 +156,7 @@
     { "name": "linux-dev",      "configurePreset": "linux-dev",      "output": {"outputOnFailure": true} },
     { "name": "linux-release",  "configurePreset": "linux-release",  "output": {"outputOnFailure": true} },
     { "name": "linux-rtsan",    "configurePreset": "linux-rtsan",    "output": {"outputOnFailure": true} },
+    { "name": "windows-dev",    "configurePreset": "windows-dev",    "output": {"outputOnFailure": true} },
     { "name": "windows-ci",     "configurePreset": "windows-ci",     "output": {"outputOnFailure": true} },
     { "name": "macos-dev",      "configurePreset": "macos-dev",      "output": {"outputOnFailure": true} },
     { "name": "macos-universal","configurePreset": "macos-universal","output": {"outputOnFailure": true} }
