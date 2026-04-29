@@ -59,6 +59,12 @@ public:
     void setMovableUp(bool);
     void setMovableDown(bool);
 
+    // Port centre in card-local coordinates. SignalCanvas adds
+    // getPosition() to convert into canvas-global coordinates.
+    // `channel`: 0 = L, 1 = R, `juce::AudioProcessorGraph::midiChannelIndex`
+    // (0x1000) = MIDI.
+    juce::Point<int> getPortCentre(bool isInput, int channel) const noexcept;
+
     void paint(juce::Graphics&) override;
     void resized() override;
 

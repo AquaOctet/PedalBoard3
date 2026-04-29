@@ -23,12 +23,16 @@ add_library(pb3_app_core STATIC
     App.h
     AppContext.h
     ui/ColourScheme.h
+    ui/EditorWindow.cpp
+    ui/EditorWindow.h
     ui/MainWindow.cpp
     ui/MainWindow.h
     ui/Pb3LookAndFeel.cpp
     ui/Pb3LookAndFeel.h
     ui/PluginCard.cpp
     ui/PluginCard.h
+    ui/SignalCanvas.cpp
+    ui/SignalCanvas.h
 )
 
 target_include_directories(pb3_app_core PUBLIC
@@ -61,9 +65,11 @@ target_link_libraries(pb3_app_core
 
 pb3_apply_strict_warnings(pb3_app_core
     App.cpp
+    ui/EditorWindow.cpp
     ui/MainWindow.cpp
     ui/Pb3LookAndFeel.cpp
     ui/PluginCard.cpp
+    ui/SignalCanvas.cpp
 )
 
 # -----------------------------------------------------------------------------

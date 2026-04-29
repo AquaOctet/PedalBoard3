@@ -1,5 +1,7 @@
 #include "PluginCard.h"
 
+#include <juce_audio_processors/juce_audio_processors.h>
+
 namespace pedalboard3::ui
 {
 
@@ -111,6 +113,22 @@ void PluginCard::refreshFromSnapshot()
     // (foreground muted) so a glance reveals "this plugin is OFF".
     bypassButton_.setColour(juce::TextButton::textColourOffId,
                             snapshot_.bypassed ? tokens::fgMuted : tokens::accentPrimary);
+}
+
+juce::Point<int> PluginCard::getPortCentre(bool isInput, int channel) const noexcept
+{
+    const int leftPortX = static_cast<int>(kAccentBorderWidth) + kPortStripeInset;
+    const int rightPortX = getWidth() - kPortStripeInset;
+    const int x = isInput ? leftPortX : rightPortX;
+
+    const int portsTopY = kHeaderHeight + 4;
+    const int rowL = portsTopY + kPortRowHeight / 2;
+    const int rowR = portsTopY + kPortRowHeight + kPortRowHeight / 2;
+    const int midiY = kHeaderHeight + 2 * kPortRowHeight + 4 + kMidiRowHeight / 2;
+
+    if (channel == juce::AudioProcessorGraph::midiChannelIndex)
+        return {x, midiY};
+    return {x, channel == 0 ? rowL : rowR};
 }
 
 void PluginCard::paint(juce::Graphics& g)
