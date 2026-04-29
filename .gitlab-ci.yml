@@ -129,11 +129,22 @@ default:
 # installation root; Launch-VsDevShell sets up the environment in-process.
 # Ninja is bundled with VS Build Tools at <VS>\Common7\IDE\CommonExtensions\
 # Microsoft\CMake\Ninja\ninja.exe — Launch-VsDevShell adds it to PATH too.
+#
+# vswhere flags: `-latest -prerelease -products *` is the broadest match;
+# the SaaS runner has Build Tools (not "regular" VS), and a default
+# `-latest -property installationPath` returns empty without the
+# -prerelease + -products * combo. -requires VC.Tools narrows to installs
+# that actually have the C++ compiler. -format json + Select-Object
+# -First 1 is safer than the bare -property form (avoids parsing edge
+# cases when multiple installs are present).
 .windows-setup: &windows-setup
-  - $vswhere = 'C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe'
-  - $installRoot = & $vswhere -latest -property installationPath
-  - $devShell = Join-Path $installRoot 'Common7\Tools\Launch-VsDevShell.ps1'
-  - if (-not (Test-Path $devShell)) { throw "VS dev shell not found at $devShell" }
+  - '$vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"'
+  - 'if (-not (Test-Path $vswhere)) { throw "vswhere not found at $vswhere" }'
+  - '$installRoot = & $vswhere -latest -prerelease -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath'
+  - 'if (-not $installRoot) { throw "No Visual Studio install with C++ tools found by vswhere." }'
+  - 'Write-Host "VS install root: $installRoot"'
+  - '$devShell = Join-Path $installRoot ''Common7\Tools\Launch-VsDevShell.ps1'''
+  - 'if (-not (Test-Path $devShell)) { throw "VS dev shell not found at $devShell" }'
   - '& $devShell -Arch amd64 -SkipAutomaticLocation'
   - cmake --version
   - ninja --version

@@ -135,10 +135,14 @@ target_sources(pb3-scanner-helper PRIVATE tools/pb3-scanner-helper.cpp)
 
 # juce_gui_basics is required even for the "console" helper because
 # AudioUnit plugin scans on macOS need an NSApplication / NSAutoreleasePool
-# alive (ScopedJuceInitialiser_GUI handles this). VST3 scans don't need it
-# but bundling the GUI module makes the helper portable across formats.
+# alive (ScopedJuceInitialiser_GUI handles this). juce_audio_utils pulls
+# in the AudioUnit-aware bits — without it, juce_audio_processors.mm
+# references AUGenericView from AudioUnit.framework, which the linker
+# can't resolve unless something downstream pulls it in. (Linux + Windows
+# don't have AudioUnit so the dep is no-op there.)
 target_link_libraries(pb3-scanner-helper PRIVATE
     juce::juce_audio_processors
+    juce::juce_audio_utils
     juce::juce_gui_basics
     pb3_juce_config
     juce::juce_recommended_config_flags
