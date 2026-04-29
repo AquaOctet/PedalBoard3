@@ -96,9 +96,22 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas) : ctx_(ctx), c
 
     refreshDeviceInfo();
     updateAddPluginEnabled();
+
+    ctx_.session.addChangeListener(this);
 }
 
-TransportBar::~TransportBar() = default;
+TransportBar::~TransportBar()
+{
+    ctx_.session.removeChangeListener(this);
+}
+
+void TransportBar::changeListenerCallback(juce::ChangeBroadcaster*)
+{
+    // Session state may have transitioned; Add Plugin is enabled only
+    // when Idle and Test Tone is off (otherwise the chain isn't the
+    // live graph being driven by the engine).
+    updateAddPluginEnabled();
+}
 
 void TransportBar::paint(juce::Graphics& g)
 {
@@ -157,7 +170,12 @@ void TransportBar::refreshDeviceInfo()
 
 void TransportBar::updateAddPluginEnabled()
 {
-    addPluginButton_.setEnabled(ctx_.session.getState() == session::Session::State::Idle);
+    // Disable while Session is mid-build/swap, AND while Test Tone is
+    // on — the tone graph is not Session-managed, so adding a plugin
+    // would either be a no-op (post-fix) or stale-pointer-crash (pre-fix).
+    const bool idle = ctx_.session.getState() == session::Session::State::Idle;
+    const bool toneOn = toneButton_.getToggleState();
+    addPluginButton_.setEnabled(idle && !toneOn);
 }
 
 void TransportBar::openAddPluginMenu()
@@ -245,8 +263,18 @@ void TransportBar::onTestToneToggled()
     }
     else
     {
-        ctx_.audioEngine.loadGraph(nullptr);
+        // Toggle OFF: route through Session::clearPatch instead of
+        // audioEngine.loadGraph(nullptr). The latter would leave
+        // Session::liveGraph_ pointing at the now-destroyed tone graph
+        // (a dangling pointer); the next addPlugin would crash with a
+        // null vtable read inside juce::AudioProcessorGraph::Pimpl.
+        // clearPatch goes through the worker → commitLoadPatch path,
+        // which builds a fresh empty-passthrough graph and updates
+        // liveGraph_ atomically. The brief audible silence between the
+        // tone stopping and the empty graph swapping in is acceptable.
+        ctx_.session.clearPatch();
     }
+    updateAddPluginEnabled();
 }
 
 } // namespace pedalboard3::ui

@@ -36,7 +36,7 @@ class SignalCanvas;
 // Threading: message thread only. Listens to nothing; AppContext is
 // queried each time the Audio Settings dialog closes (via the dialog's
 // close callback) to refresh the centre label.
-class TransportBar : public juce::Component
+class TransportBar : public juce::Component, private juce::ChangeListener
 {
 public:
     TransportBar(AppContext& ctx, SignalCanvas& canvas);
@@ -52,6 +52,8 @@ public:
     void refreshDeviceInfo();
 
 private:
+    void changeListenerCallback(juce::ChangeBroadcaster*) override;
+
     void openAddPluginMenu();
     void openAudioSettings();
     void openPluginList();

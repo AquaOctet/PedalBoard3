@@ -500,6 +500,14 @@ void Session::recomputeLinearConnections()
 
 void Session::applyConnectionsToLiveGraph()
 {
+    // Same staleness defence as commitAddPlugin — refresh from the
+    // runtime's atomic pointer in case something outside Session
+    // (Test Tone, future patch-load paths) swapped the live graph.
+    if (auto* runtime = engine_.getRuntime())
+        liveGraph_ = runtime->getLiveGraph();
+    else
+        liveGraph_ = nullptr;
+
     if (liveGraph_ == nullptr)
         return;
 
@@ -615,6 +623,20 @@ void Session::commitAddPlugin(AddPluginResult&& result)
 
     {
         std::lock_guard<std::mutex> lk(statusMutex_);
+
+        // Refresh liveGraph_ from the runtime's authoritative atomic
+        // pointer. The cached field can become stale when anything
+        // outside Session calls AudioEngine::loadGraph — e.g. the
+        // Test Tone diagnostic in TransportBar swaps a non-chain graph
+        // in directly, then `loadGraph(nullptr)` on toggle-off clears
+        // it. Either path leaves liveGraph_ pointing at freed memory.
+        // Re-deriving from the runtime here means addNode either gets
+        // the live chain graph (good) or nullptr (early-return below).
+        if (auto* runtime = engine_.getRuntime())
+            liveGraph_ = runtime->getLiveGraph();
+        else
+            liveGraph_ = nullptr;
+
         if (liveGraph_ == nullptr)
         {
             lastError_ = "addPlugin: no live graph";
