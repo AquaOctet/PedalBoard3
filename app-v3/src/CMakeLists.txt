@@ -112,3 +112,43 @@ if(PB3_ENABLE_CLAP)
     target_link_libraries(Pedalboard3 PRIVATE juce_clap_hosting)
     target_compile_definitions(Pedalboard3 PRIVATE PB3_HAS_CLAP=1)
 endif()
+
+# -----------------------------------------------------------------------------
+# pb3-scanner-helper — out-of-process plugin descriptor extractor
+# -----------------------------------------------------------------------------
+# Master plan §4.2.A: each plugin scan runs in its own subprocess so
+# crashing plugins cannot kill the host. The parent (engine::PluginScanner)
+# spawns this binary per plugin file via juce::ChildProcess, reads the
+# resulting <PB3_SCAN_RESULT> XML from stdout, and adds descriptors to
+# KnownPluginList. A non-zero exit code (signal, abort, throw) tells the
+# parent to blacklist the plugin.
+#
+# Console app — no GUI dependency. Same plugin-format set as the host.
+juce_add_console_app(pb3-scanner-helper
+    VERSION             "${PROJECT_VERSION}"
+    BUNDLE_ID           "com.pedalboard3.scanner-helper"
+    NEEDS_CURL          FALSE
+    NEEDS_WEB_BROWSER   FALSE
+)
+
+target_sources(pb3-scanner-helper PRIVATE tools/pb3-scanner-helper.cpp)
+
+# juce_gui_basics is required even for the "console" helper because
+# AudioUnit plugin scans on macOS need an NSApplication / NSAutoreleasePool
+# alive (ScopedJuceInitialiser_GUI handles this). VST3 scans don't need it
+# but bundling the GUI module makes the helper portable across formats.
+target_link_libraries(pb3-scanner-helper PRIVATE
+    juce::juce_audio_processors
+    juce::juce_gui_basics
+    pb3_juce_config
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags
+    juce::juce_recommended_lto_flags
+)
+
+pb3_apply_strict_warnings(pb3-scanner-helper tools/pb3-scanner-helper.cpp)
+
+if(PB3_ENABLE_CLAP)
+    target_link_libraries(pb3-scanner-helper PRIVATE juce_clap_hosting)
+    target_compile_definitions(pb3-scanner-helper PRIVATE PB3_HAS_CLAP=1)
+endif()
