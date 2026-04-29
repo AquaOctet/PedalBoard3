@@ -53,9 +53,7 @@ namespace pedalboard3::ui
 // paths are derived from `activePatch_.connections` (not from chain
 // adjacency) so Phase 3's arbitrary-topology canvas reuses the same
 // rendering.
-class SignalCanvas
-    : public juce::Component
-    , private juce::ChangeListener
+class SignalCanvas : public juce::Component, private juce::ChangeListener
 {
 public:
     using NodeId = pedalboard3::session::NodeId;

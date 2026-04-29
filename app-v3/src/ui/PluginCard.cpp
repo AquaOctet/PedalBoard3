@@ -36,7 +36,8 @@ PluginCard::PluginCard(NodeSnapshot initialSnapshot, Callbacks callbacks)
     nameLabel_.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(nameLabel_);
 
-    auto wireSmallButton = [this](juce::TextButton& b) {
+    auto wireSmallButton = [this](juce::TextButton& b)
+    {
         b.setColour(juce::TextButton::buttonColourId, tokens::bgSecondary);
         b.setColour(juce::TextButton::textColourOffId, tokens::fgPrimary);
         addAndMakeVisible(b);
@@ -49,23 +50,28 @@ PluginCard::PluginCard(NodeSnapshot initialSnapshot, Callbacks callbacks)
 
     removeButton_.setColour(juce::TextButton::textColourOffId, tokens::accentDestructive);
 
-    bypassButton_.onClick = [this] {
+    bypassButton_.onClick = [this]
+    {
         if (callbacks_.onBypassToggle)
             callbacks_.onBypassToggle(snapshot_.id);
     };
-    editButton_.onClick = [this] {
+    editButton_.onClick = [this]
+    {
         if (callbacks_.onEdit)
             callbacks_.onEdit(snapshot_.id);
     };
-    removeButton_.onClick = [this] {
+    removeButton_.onClick = [this]
+    {
         if (callbacks_.onRemove)
             callbacks_.onRemove(snapshot_.id);
     };
-    moveUpButton_.onClick = [this] {
+    moveUpButton_.onClick = [this]
+    {
         if (callbacks_.onMoveUp)
             callbacks_.onMoveUp(snapshot_.id);
     };
-    moveDownButton_.onClick = [this] {
+    moveDownButton_.onClick = [this]
+    {
         if (callbacks_.onMoveDown)
             callbacks_.onMoveDown(snapshot_.id);
     };
@@ -166,9 +172,7 @@ void PluginCard::paint(juce::Graphics& g)
     // Header divider line below the title row.
     const auto y1 = static_cast<float>(kHeaderHeight);
     g.setColour(tokens::borderMuted);
-    g.drawHorizontalLine(static_cast<int>(y1),
-                         bounds.getX() + kAccentBorderWidth,
-                         bounds.getRight());
+    g.drawHorizontalLine(static_cast<int>(y1), bounds.getX() + kAccentBorderWidth, bounds.getRight());
 
     // Port circles + labels (Path γ is read-only — drawn but no
     // mouseDown handler; Phase 3 wires interactivity).
@@ -180,7 +184,8 @@ void PluginCard::paint(juce::Graphics& g)
     const int portRowL = portsTopY + kPortRowHeight / 2;
     const int portRowR = portsTopY + kPortRowHeight + kPortRowHeight / 2;
 
-    auto drawPort = [&](int cx, int cy, juce::Colour c) {
+    auto drawPort = [&](int cx, int cy, juce::Colour c)
+    {
         auto box = juce::Rectangle<float>(0.0f, 0.0f, kPortRadius * 2.0f, kPortRadius * 2.0f)
                        .withCentre({static_cast<float>(cx), static_cast<float>(cy)});
         g.setColour(tokens::bgWindow);
@@ -194,24 +199,16 @@ void PluginCard::paint(juce::Graphics& g)
 
     // Audio L (input + output) — input port colour = primary teal,
     // output port colour = chart-3 amber per the mockup.
-    drawPort(leftPortX,  portRowL, tokens::accentPrimary);
+    drawPort(leftPortX, portRowL, tokens::accentPrimary);
     drawPort(rightPortX, portRowL, tokens::accentWarning);
-    drawPort(leftPortX,  portRowR, tokens::accentPrimary);
+    drawPort(leftPortX, portRowR, tokens::accentPrimary);
     drawPort(rightPortX, portRowR, tokens::accentWarning);
 
     g.setColour(tokens::fgMuted);
-    g.drawText("In L",
-               leftPortX + kPortRadius + 4, portRowL - 7, 30, 14,
-               juce::Justification::centredLeft);
-    g.drawText("Out L",
-               rightPortX - kPortRadius - 34, portRowL - 7, 30, 14,
-               juce::Justification::centredRight);
-    g.drawText("In R",
-               leftPortX + kPortRadius + 4, portRowR - 7, 30, 14,
-               juce::Justification::centredLeft);
-    g.drawText("Out R",
-               rightPortX - kPortRadius - 34, portRowR - 7, 30, 14,
-               juce::Justification::centredRight);
+    g.drawText("In L", leftPortX + kPortRadius + 4, portRowL - 7, 30, 14, juce::Justification::centredLeft);
+    g.drawText("Out L", rightPortX - kPortRadius - 34, portRowL - 7, 30, 14, juce::Justification::centredRight);
+    g.drawText("In R", leftPortX + kPortRadius + 4, portRowR - 7, 30, 14, juce::Justification::centredLeft);
+    g.drawText("Out R", rightPortX - kPortRadius - 34, portRowR - 7, 30, 14, juce::Justification::centredRight);
 
     // MIDI activity strip — placeholder (no router yet).
     const int midiY = kHeaderHeight + 2 * kPortRowHeight + 4;

@@ -13,8 +13,7 @@ constexpr int kDotSize = 8;
 constexpr int kDotTextGap = 8;
 } // namespace
 
-StatusBar::StatusBar(AppContext& ctx)
-    : ctx_(ctx), stateDotColour_(tokens::statusIdle)
+StatusBar::StatusBar(AppContext& ctx) : ctx_(ctx), stateDotColour_(tokens::statusIdle)
 {
     setOpaque(true);
 
@@ -32,8 +31,7 @@ StatusBar::StatusBar(AppContext& ctx)
     errorLabel_.setVisible(false);
     addAndMakeVisible(errorLabel_);
 
-    rightLabel_.setText(juce::String("v") + JUCE_APPLICATION_VERSION_STRING + "-pre",
-                        juce::dontSendNotification);
+    rightLabel_.setText(juce::String("v") + JUCE_APPLICATION_VERSION_STRING + "-pre", juce::dontSendNotification);
     rightLabel_.setColour(juce::Label::textColourId, tokens::fgMuted);
     rightLabel_.setFont(juce::Font(11.0f));
     rightLabel_.setJustificationType(juce::Justification::centredRight);
@@ -59,8 +57,8 @@ void StatusBar::paint(juce::Graphics& g)
     const int dotX = kBarPadding;
     const int dotY = (getHeight() - kDotSize) / 2;
     g.setColour(stateDotColour_);
-    g.fillEllipse(static_cast<float>(dotX), static_cast<float>(dotY),
-                  static_cast<float>(kDotSize), static_cast<float>(kDotSize));
+    g.fillEllipse(
+        static_cast<float>(dotX), static_cast<float>(dotY), static_cast<float>(kDotSize), static_cast<float>(kDotSize));
 }
 
 void StatusBar::resized()

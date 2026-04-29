@@ -1,12 +1,12 @@
 #include "TransportBar.h"
 
 #include "ColourScheme.h"
-#include "SignalCanvas.h"
 #include "engine/AudioEngine.h"
 #include "engine/PluginHost.h"
 #include "engine/processors/TestToneProcessor.h"
 #include "session/Preferences.h"
 #include "session/Session.h"
+#include "SignalCanvas.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -70,9 +70,9 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas) : ctx_(ctx), c
 {
     setOpaque(true);
 
-    addPluginButton_.onClick   = [this] { openAddPluginMenu(); };
-    settingsButton_.onClick    = [this] { openAudioSettings(); };
-    pluginListButton_.onClick  = [this] { openPluginList(); };
+    addPluginButton_.onClick = [this] { openAddPluginMenu(); };
+    settingsButton_.onClick = [this] { openAudioSettings(); };
+    pluginListButton_.onClick = [this] { openPluginList(); };
 
     toneButton_.setClickingTogglesState(true);
     toneButton_.onClick = [this] { onTestToneToggled(); };
@@ -112,7 +112,8 @@ void TransportBar::resized()
     auto bounds = getLocalBounds().reduced(kBarPadding, 6);
 
     // Right cluster: Plugin List | Test Tone | Audio Settings.
-    auto right = bounds.removeFromRight(kPluginListButtonWidth + kToneButtonWidth + kSettingsButtonWidth + 2 * kButtonGap);
+    auto right =
+        bounds.removeFromRight(kPluginListButtonWidth + kToneButtonWidth + kSettingsButtonWidth + 2 * kButtonGap);
     settingsButton_.setBounds(right.removeFromLeft(kSettingsButtonWidth));
     right.removeFromLeft(kButtonGap);
     toneButton_.setBounds(right.removeFromLeft(kToneButtonWidth));
@@ -164,7 +165,7 @@ void TransportBar::openAddPluginMenu()
     const auto plugins = ctx_.pluginHost.getKnownPlugins();
     if (plugins.isEmpty())
     {
-        const auto opts = juce::MessageBoxOptions {}
+        const auto opts = juce::MessageBoxOptions{}
                               .withIconType(juce::MessageBoxIconType::InfoIcon)
                               .withTitle("Add plugin")
                               .withMessage("No plugins scanned yet. Open the Plugin List dialog to scan.")
@@ -178,12 +179,14 @@ void TransportBar::openAddPluginMenu()
     for (const auto& desc : plugins)
         menu.addItem(id++, desc.name + "  [" + desc.pluginFormatName + "]");
 
-    auto opts = juce::PopupMenu::Options {}.withTargetComponent(addPluginButton_);
-    menu.showMenuAsync(opts, [this, plugins](int chosen) {
-        if (chosen <= 0 || chosen > plugins.size())
-            return;
-        ctx_.session.addPlugin(plugins.getReference(chosen - 1));
-    });
+    auto opts = juce::PopupMenu::Options{}.withTargetComponent(addPluginButton_);
+    menu.showMenuAsync(opts,
+                       [this, plugins](int chosen)
+                       {
+                           if (chosen <= 0 || chosen > plugins.size())
+                               return;
+                           ctx_.session.addPlugin(plugins.getReference(chosen - 1));
+                       });
 }
 
 void TransportBar::openAudioSettings()

@@ -71,14 +71,14 @@ public:
 private:
     NodeSnapshot snapshot_;
     Callbacks callbacks_;
-    juce::Colour accent_ {tokens::accentPrimary};
+    juce::Colour accent_{tokens::accentPrimary};
 
     juce::Label nameLabel_;
-    juce::TextButton bypassButton_ {"BYP"};
-    juce::TextButton editButton_   {"Edit"};
-    juce::TextButton removeButton_ {"X"};
-    juce::TextButton moveUpButton_   {"Up"};
-    juce::TextButton moveDownButton_ {"Dn"};
+    juce::TextButton bypassButton_{"BYP"};
+    juce::TextButton editButton_{"Edit"};
+    juce::TextButton removeButton_{"X"};
+    juce::TextButton moveUpButton_{"Up"};
+    juce::TextButton moveDownButton_{"Dn"};
 
     void refreshFromSnapshot();
 

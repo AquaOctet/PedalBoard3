@@ -23,9 +23,7 @@ namespace pedalboard3::ui
 // transition. The error text persists in the pill until the next
 // successful op (which clears lastError_ via Session.cpp's
 // commitLoadPatch / commitAddPlugin success paths).
-class StatusBar
-    : public juce::Component
-    , private juce::ChangeListener
+class StatusBar : public juce::Component, private juce::ChangeListener
 {
 public:
     explicit StatusBar(AppContext& ctx);

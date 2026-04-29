@@ -121,8 +121,7 @@ void SignalCanvas::changeListenerCallback(juce::ChangeBroadcaster*)
         cards_[i]->setMovableDown(i + 1 < cards_.size());
         const auto* pn = patch.findNode(cards_[i]->getNodeId());
         if (pn != nullptr)
-            cards_[i]->setAccentColour(isInstrumentNode(*pn) ? tokens::accentWarning
-                                                             : tokens::accentPrimary);
+            cards_[i]->setAccentColour(isInstrumentNode(*pn) ? tokens::accentWarning : tokens::accentPrimary);
     }
 
     // Defensive editor cleanup (D1b): in normal flow the UI handler
@@ -143,7 +142,7 @@ void SignalCanvas::changeListenerCallback(juce::ChangeBroadcaster*)
 
 std::unique_ptr<PluginCard> SignalCanvas::makeCard(const PluginCard::NodeSnapshot& s)
 {
-    PluginCard::Callbacks cb {
+    PluginCard::Callbacks cb{
         [this](NodeId id) { onCardBypassToggle(id); },
         [this](NodeId id) { onCardEdit(id); },
         [this](NodeId id) { onCardMoveUp(id); },
@@ -252,7 +251,8 @@ void SignalCanvas::paint(juce::Graphics& g)
             g.fillRect(gx, gy, 1, 1);
 
     // Endpoint card frames.
-    auto drawEndpoint = [&g](const juce::Rectangle<int>& r, const juce::String& label) {
+    auto drawEndpoint = [&g](const juce::Rectangle<int>& r, const juce::String& label)
+    {
         auto rf = r.toFloat().reduced(0.5f);
         g.setColour(tokens::bgCard.withMultipliedAlpha(0.85f));
         g.fillRoundedRectangle(rf, 6.0f);
@@ -262,7 +262,7 @@ void SignalCanvas::paint(juce::Graphics& g)
         g.setFont(juce::Font(13.0f, juce::Font::bold));
         g.drawText(label, r, juce::Justification::centred);
     };
-    drawEndpoint(inputCardBounds_,  "Input");
+    drawEndpoint(inputCardBounds_, "Input");
     drawEndpoint(outputCardBounds_, "Output");
 
     // Cables — two paths, two strokes, regardless of N. Audio first
@@ -270,10 +270,9 @@ void SignalCanvas::paint(juce::Graphics& g)
     g.setColour(cableColourFor(kChannelL));
     g.strokePath(audioCablesPath_, juce::PathStrokeType(kCableThickness));
     g.setColour(cableColourFor(kChannelMidi));
-    g.strokePath(midiCablesPath_,
-                 juce::PathStrokeType(kCableMidiThickness,
-                                      juce::PathStrokeType::curved,
-                                      juce::PathStrokeType::rounded));
+    g.strokePath(
+        midiCablesPath_,
+        juce::PathStrokeType(kCableMidiThickness, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 }
 
 // ----- Card delegates --------------------------------------------------------

@@ -32,9 +32,7 @@ namespace pedalboard3::ui
 class EditorWindow : public juce::DocumentWindow
 {
 public:
-    EditorWindow(const juce::String& title,
-                 juce::AudioProcessorEditor* editor,
-                 std::function<void()> onClose);
+    EditorWindow(const juce::String& title, juce::AudioProcessorEditor* editor, std::function<void()> onClose);
 
     void closeButtonPressed() override;
 

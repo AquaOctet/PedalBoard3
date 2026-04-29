@@ -61,10 +61,10 @@ private:
     AppContext& ctx_;
     SignalCanvas& canvas_;
 
-    juce::TextButton addPluginButton_  {"+ Add Plugin"};
-    juce::TextButton settingsButton_   {"Audio Settings..."};
-    juce::ToggleButton toneButton_     {"Test Tone"};
-    juce::TextButton pluginListButton_ {"Plugin List..."};
+    juce::TextButton addPluginButton_{"+ Add Plugin"};
+    juce::TextButton settingsButton_{"Audio Settings..."};
+    juce::ToggleButton toneButton_{"Test Tone"};
+    juce::TextButton pluginListButton_{"Plugin List..."};
 
     juce::Label titleLabel_;
     juce::Label deviceInfoLabel_;

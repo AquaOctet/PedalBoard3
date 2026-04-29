@@ -25,10 +25,7 @@ class MainWindow::RootComponent : public juce::Component
 {
 public:
     explicit RootComponent(AppContext& ctxRef)
-        : ctx_(ctxRef)
-        , canvas_(ctx_)
-        , transportBar_(ctx_, canvas_)
-        , statusBar_(ctx_)
+        : ctx_(ctxRef), canvas_(ctx_), transportBar_(ctx_, canvas_), statusBar_(ctx_)
     {
         addAndMakeVisible(transportBar_);
         addAndMakeVisible(viewport_);
@@ -61,9 +58,7 @@ private:
 };
 
 MainWindow::MainWindow(const juce::String& name, AppContext& context)
-    : juce::DocumentWindow(name,
-                           tokens::bgWindow,
-                           juce::DocumentWindow::allButtons)
+    : juce::DocumentWindow(name, tokens::bgWindow, juce::DocumentWindow::allButtons)
 {
     setUsingNativeTitleBar(true);
     setResizable(/*shouldBeResizable*/ true, /*useBottomRightCornerResizer*/ false);
