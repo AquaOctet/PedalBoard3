@@ -258,12 +258,13 @@ void TransportBar::openPluginList()
     // the dialog. JUCE's later applyBlacklistings is a no-op (addToBlacklist
     // checks for duplicates and short-circuits), but the file gets deleted
     // either way so we close the loop the same.
+    auto& list = ctx_.pluginHost.getKnownPluginList();
+    bool blacklistChanged = false;
+
     const auto crashedFile = ctx_.pluginHost.getCrashedPluginsFile();
     if (crashedFile.existsAsFile())
     {
         const auto contents = crashedFile.loadFileAsString();
-        auto& list = ctx_.pluginHost.getKnownPluginList();
-        bool changed = false;
         for (const auto& line : juce::StringArray::fromLines(contents))
         {
             const auto trimmed = line.trim();
@@ -272,19 +273,39 @@ void TransportBar::openPluginList()
             if (!list.getBlacklistedFiles().contains(trimmed))
             {
                 list.addToBlacklist(trimmed);
-                changed = true;
+                blacklistChanged = true;
             }
         }
-        if (changed)
+    }
+
+    // Effects-only host (master plan §4.2.D — see PluginHost::getKnownEffects
+    // for the rationale): instruments in v3.0 are exactly the plugins most
+    // likely to crash during scan / destruction (Kontakt's analytics worker
+    // throws from BusinessAnalytics::deInit on a background thread after
+    // scanAndAddFile already returned, so the dead-man's-pedal file no
+    // longer points at Kontakt by the time the abort fires). Auto-blacklist
+    // every isInstrument plugin we know about so re-scans skip them. The
+    // user can still see them in the Plugin List dialog as blacklisted
+    // entries, and can manually un-blacklist if v3.1 adds instrument
+    // hosting.
+    for (const auto& desc : list.getTypes())
+    {
+        if (desc.isInstrument && !list.getBlacklistedFiles().contains(desc.fileOrIdentifier))
         {
-            // addToBlacklist sends an async change message, so the
-            // PreferencesPersister listener won't have fired yet. Mirror
-            // its work synchronously here so flush() actually writes
-            // the new blacklist (rather than the pre-update state).
-            if (auto xml = ctx_.pluginHost.createKnownListXml())
-                ctx_.preferences.setKnownPluginList(*xml);
-            ctx_.preferences.flush();
+            list.addToBlacklist(desc.fileOrIdentifier);
+            blacklistChanged = true;
         }
+    }
+
+    if (blacklistChanged)
+    {
+        // addToBlacklist sends an async change message, so the
+        // PreferencesPersister listener won't have fired yet. Mirror
+        // its work synchronously here so flush() actually writes
+        // the new blacklist (rather than the pre-update state).
+        if (auto xml = ctx_.pluginHost.createKnownListXml())
+            ctx_.preferences.setKnownPluginList(*xml);
+        ctx_.preferences.flush();
     }
 
     auto listComponent = std::make_unique<juce::PluginListComponent>(ctx_.pluginHost.getFormatManager(),
