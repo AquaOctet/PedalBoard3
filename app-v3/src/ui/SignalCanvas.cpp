@@ -259,7 +259,7 @@ void SignalCanvas::paint(juce::Graphics& g)
         g.setColour(tokens::borderDefault);
         g.drawRoundedRectangle(rf, 6.0f, 1.0f);
         g.setColour(tokens::fgMuted);
-        g.setFont(juce::Font(13.0f, juce::Font::bold));
+        g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
         g.drawText(label, r, juce::Justification::centred);
     };
     drawEndpoint(inputCardBounds_, "Input");

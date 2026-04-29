@@ -31,7 +31,7 @@ PluginCard::PluginCard(NodeSnapshot initialSnapshot, Callbacks callbacks)
 {
     nameLabel_.setText(snapshot_.name, juce::dontSendNotification);
     nameLabel_.setColour(juce::Label::textColourId, tokens::fgPrimary);
-    nameLabel_.setFont(juce::Font(14.0f, juce::Font::bold));
+    nameLabel_.setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::bold)));
     nameLabel_.setMinimumHorizontalScale(0.7f);
     nameLabel_.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(nameLabel_);
@@ -177,7 +177,7 @@ void PluginCard::paint(juce::Graphics& g)
     // Port circles + labels (Path γ is read-only — drawn but no
     // mouseDown handler; Phase 3 wires interactivity).
     const auto portFontHeight = 10.0f;
-    g.setFont(juce::Font(portFontHeight));
+    g.setFont(juce::Font(juce::FontOptions(portFontHeight)));
     g.setColour(tokens::fgMuted);
 
     const int portsTopY = kHeaderHeight + 4;

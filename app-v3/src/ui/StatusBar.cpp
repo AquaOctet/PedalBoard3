@@ -18,14 +18,14 @@ StatusBar::StatusBar(AppContext& ctx) : ctx_(ctx), stateDotColour_(tokens::statu
     setOpaque(true);
 
     leftLabel_.setColour(juce::Label::textColourId, tokens::fgPrimary);
-    leftLabel_.setFont(juce::Font(12.0f));
+    leftLabel_.setFont(juce::Font(juce::FontOptions(12.0f)));
     leftLabel_.setJustificationType(juce::Justification::centredLeft);
     leftLabel_.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(leftLabel_);
 
     errorLabel_.setColour(juce::Label::textColourId, tokens::accentDestructive);
     errorLabel_.setColour(juce::Label::backgroundColourId, tokens::accentDestructive.withAlpha(0.12f));
-    errorLabel_.setFont(juce::Font(12.0f));
+    errorLabel_.setFont(juce::Font(juce::FontOptions(12.0f)));
     errorLabel_.setJustificationType(juce::Justification::centred);
     errorLabel_.setInterceptsMouseClicks(false, false);
     errorLabel_.setVisible(false);
@@ -33,7 +33,7 @@ StatusBar::StatusBar(AppContext& ctx) : ctx_(ctx), stateDotColour_(tokens::statu
 
     rightLabel_.setText(juce::String("v") + JUCE_APPLICATION_VERSION_STRING + "-pre", juce::dontSendNotification);
     rightLabel_.setColour(juce::Label::textColourId, tokens::fgMuted);
-    rightLabel_.setFont(juce::Font(11.0f));
+    rightLabel_.setFont(juce::Font(juce::FontOptions(11.0f)));
     rightLabel_.setJustificationType(juce::Justification::centredRight);
     rightLabel_.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(rightLabel_);

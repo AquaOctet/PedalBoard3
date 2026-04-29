@@ -84,12 +84,12 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas) : ctx_(ctx), c
 
     titleLabel_.setText("Pedalboard 3", juce::dontSendNotification);
     titleLabel_.setColour(juce::Label::textColourId, tokens::fgPrimary);
-    titleLabel_.setFont(juce::Font(15.0f, juce::Font::bold));
+    titleLabel_.setFont(juce::Font(juce::FontOptions(15.0f, juce::Font::bold)));
     titleLabel_.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(titleLabel_);
 
     deviceInfoLabel_.setColour(juce::Label::textColourId, tokens::fgMuted);
-    deviceInfoLabel_.setFont(juce::Font(12.0f));
+    deviceInfoLabel_.setFont(juce::Font(juce::FontOptions(12.0f)));
     deviceInfoLabel_.setJustificationType(juce::Justification::centred);
     deviceInfoLabel_.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(deviceInfoLabel_);
