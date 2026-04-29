@@ -232,6 +232,51 @@ void TransportBar::openAudioSettings()
 
 void TransportBar::openPluginList()
 {
+    // Pre-emptive crash-loop protection. JUCE's PluginListComponent ctor
+    // reads the dead-man's-pedal file via applyBlacklistingsFromDeadMansPedal,
+    // adds entries to KnownPluginList's blacklist via an async change
+    // message, THEN deletes the file. The async change message is then
+    // routed through PreferencesPersister to persist the new blacklist.
+    //
+    // That chain is fragile: if a second crash hits before the listener
+    // flushes preferences (e.g. user clicks Scan immediately), the
+    // dead-man's-pedal file is already gone AND the blacklist isn't on
+    // disk. Next launch has no record of the bad plugin and re-tries it.
+    //
+    // Pre-empt the chain: read the dead-man's-pedal file ourselves,
+    // populate the blacklist, flush preferences SYNCHRONOUSLY, then show
+    // the dialog. JUCE's later applyBlacklistings is a no-op (addToBlacklist
+    // checks for duplicates and short-circuits), but the file gets deleted
+    // either way so we close the loop the same.
+    const auto crashedFile = ctx_.pluginHost.getCrashedPluginsFile();
+    if (crashedFile.existsAsFile())
+    {
+        const auto contents = crashedFile.loadFileAsString();
+        auto& list = ctx_.pluginHost.getKnownPluginList();
+        bool changed = false;
+        for (const auto& line : juce::StringArray::fromLines(contents))
+        {
+            const auto trimmed = line.trim();
+            if (trimmed.isEmpty())
+                continue;
+            if (!list.getBlacklistedFiles().contains(trimmed))
+            {
+                list.addToBlacklist(trimmed);
+                changed = true;
+            }
+        }
+        if (changed)
+        {
+            // addToBlacklist sends an async change message, so the
+            // PreferencesPersister listener won't have fired yet. Mirror
+            // its work synchronously here so flush() actually writes
+            // the new blacklist (rather than the pre-update state).
+            if (auto xml = ctx_.pluginHost.createKnownListXml())
+                ctx_.preferences.setKnownPluginList(*xml);
+            ctx_.preferences.flush();
+        }
+    }
+
     auto listComponent = std::make_unique<juce::PluginListComponent>(ctx_.pluginHost.getFormatManager(),
                                                                      ctx_.pluginHost.getKnownPluginList(),
                                                                      ctx_.pluginHost.getCrashedPluginsFile(),
