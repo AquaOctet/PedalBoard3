@@ -9,6 +9,7 @@
 #include "session/Patch.h"
 #include "session/PreparedGraph.h"
 #include "session/Session.h"
+#include "support/OfflineRender.h"
 #include "support/TestGainProcessor.h"
 
 #include <atomic>
