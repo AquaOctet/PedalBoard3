@@ -290,55 +290,79 @@ build:windows:
   <<: *cache-windows
   before_script: *windows-setup
   script:
-    # Wrap cmake configure so that on the recurring "Testing juceaide
-    # failed" path (#131-#135) we get a real diagnostic dump rather
-    # than just CMake's empty-output FATAL_ERROR. Defender is already
-    # ruled out (whoami confirms admin, Get-MpPreference confirms
-    # RTP=disabled + ExclusionProcess=juceaide.exe, yet juceaide still
-    # produces empty stdout + non-zero exit). The only way to learn
-    # what's actually killing it is to run the just-built juceaide.exe
-    # ourselves, outside JUCE's execute_process, and inspect what
-    # happens. Once we know the cause we can fix it and the wrapper
-    # can be removed.
+    # Patch JUCE to delay-load dcomp.dll. Pipeline #140 confirmed
+    # saas-windows-medium-amd64 doesn't ship DirectComposition's
+    # dcomp.dll and there's no Microsoft FoD or vendored copy on the
+    # runner that puts it in PATH. Without dcomp.dll, juceaide's
+    # static import resolution at LoadLibrary time fails 0xC0000135
+    # before main() even runs, so juceaide.exe `version` produces
+    # empty output and JUCE's "Testing juceaide" FATAL_ERRORs out.
+    #
+    # juce_graphics.cpp:94 hard-codes `#pragma comment(lib, "DComp.lib")`.
+    # The patch below appends `#pragma comment(linker, "/DELAYLOAD:dcomp.dll")`
+    # plus a delayimp link, which marks dcomp.dll as delay-loaded —
+    # the import table still references it but the loader skips
+    # resolution until something calls a DCompositionXxx function.
+    # `juceaide version` doesn't, so juceaide loads cleanly.
+    # Pedalboard3 itself (which DOES use juce_graphics at runtime)
+    # ships to end-users on real Windows where dcomp.dll is present;
+    # the delay-load is harmless there.
+    #
+    # Two-pass: try patch (no-op if cache cold), run cmake, and on
+    # juceaide failure re-patch (cache is now populated by CPM) and
+    # re-run cmake. Final failure dumps a full diagnostic.
     - |
-      $configureFailed = $false
+      function Patch-JuceForDcomp {
+          $cpmRoot = "$env:CI_PROJECT_DIR\.cpm-cache\juce"
+          if (-not (Test-Path $cpmRoot)) { return $false }
+          $any = $false
+          foreach ($juceDir in (Get-ChildItem -Path $cpmRoot -Directory)) {
+              $cpp = Join-Path $juceDir.FullName "modules\juce_graphics\juce_graphics.cpp"
+              if (-not (Test-Path $cpp)) { continue }
+              $content = Get-Content $cpp -Raw
+              if ($content -match 'DELAYLOAD:dcomp\.dll') { Write-Host "Already patched: $cpp"; continue }
+              $marker = '#pragma comment(lib, "DComp.lib")'
+              $insert = "$marker`r`n  #pragma comment(lib, `"delayimp.lib`")`r`n  #pragma comment(linker, `"/DELAYLOAD:dcomp.dll`")"
+              $new = $content.Replace($marker, $insert)
+              if ($new -ne $content) {
+                  Set-Content -Path $cpp -Value $new -NoNewline
+                  Write-Host "Patched (delay-load dcomp.dll): $cpp"
+                  $any = $true
+              }
+          }
+          return $any
+      }
+
+      Patch-JuceForDcomp | Out-Null
+
       cmake --preset windows-dev -S app-v3
       if ($LASTEXITCODE -ne 0) {
-          $configureFailed = $true
-          Write-Host "=== cmake configure failed (likely juceaide); diagnosing ==="
-          $juceaide = Get-ChildItem -Path "build" -Recurse -Filter "juceaide.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($juceaide) {
-              Write-Host "juceaide path: $($juceaide.FullName)"
-              Write-Host "size: $($juceaide.Length) bytes"
-              Write-Host "lastWrite: $($juceaide.LastWriteTime)"
-              Write-Host "--- file properties ---"
-              try { Get-ItemProperty -Path $juceaide.FullName | Format-List | Out-String | Write-Host } catch {}
-              Write-Host "--- dumpbin /dependents juceaide.exe ---"
-              try { & dumpbin.exe /dependents $juceaide.FullName | Out-String | Write-Host } catch { Write-Host "dumpbin not available: $_" }
-              Write-Host "--- which graphics DLLs are actually present on the runner? ---"
-              @('d2d1.dll', 'd3d11.dll', 'dxgi.dll', 'dcomp.dll', 'dwmapi.dll', 'dbghelp.dll', 'WININET.dll', 'COMDLG32.dll', 'COMCTL32.dll') | ForEach-Object {
-                  $loc = (& where.exe $_ 2>$null) -split "`r?`n" | Select-Object -First 1
-                  if ($loc) { Write-Host "  $_ -> $loc" } else { Write-Host "  $_ -> MISSING" }
-              }
-              Write-Host "--- effective PATH ---"
-              $env:PATH -split ';' | Where-Object { $_ -match 'DebugCRT|ucrt|debug_nonredist|Windows Kits' } | ForEach-Object { Write-Host "  $_" }
-              Write-Host "--- direct invocation: juceaide.exe version ---"
-              $stderrFile = New-TemporaryFile
-              $proc = Start-Process -FilePath $juceaide.FullName -ArgumentList "version" -NoNewWindow -PassThru -Wait `
-                  -RedirectStandardOutput "juceaide_stdout.txt" -RedirectStandardError $stderrFile.FullName
-              Write-Host "exit code: $($proc.ExitCode)"
-              if (Test-Path "juceaide_stdout.txt") {
-                  Write-Host "stdout:"; Get-Content "juceaide_stdout.txt" | Out-String | Write-Host
-              }
-              if (Test-Path $stderrFile.FullName) {
-                  Write-Host "stderr:"; Get-Content $stderrFile.FullName | Out-String | Write-Host
-              }
-              Write-Host "--- last EventLog Application errors (5) ---"
-              try { Get-EventLog -LogName Application -EntryType Error -Newest 5 -ErrorAction SilentlyContinue | Format-List | Out-String | Write-Host } catch {}
-          } else {
-              Write-Host "juceaide.exe not found under build/ — sub-cmake build never produced it"
+          Write-Host "=== first cmake failed; patching JUCE for dcomp delay-load and retrying ==="
+          $applied = Patch-JuceForDcomp
+          if ($applied) {
+              $juceTools = "build\windows-dev\_deps\juce-build\tools"
+              if (Test-Path $juceTools) { Remove-Item -Recurse -Force $juceTools -ErrorAction SilentlyContinue }
+              cmake --preset windows-dev -S app-v3
           }
-          throw "cmake configure failed (see diagnostic above)"
+          if ($LASTEXITCODE -ne 0) {
+              Write-Host "=== cmake configure still failing after delay-load patch; full diagnostic ==="
+              $juceaide = Get-ChildItem -Path "build" -Recurse -Filter "juceaide.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($juceaide) {
+                  Write-Host "juceaide path: $($juceaide.FullName)"
+                  Write-Host "size: $($juceaide.Length) bytes"
+                  Write-Host "lastWrite: $($juceaide.LastWriteTime)"
+                  Write-Host "--- dumpbin /dependents juceaide.exe ---"
+                  try { & dumpbin.exe /dependents $juceaide.FullName | Out-String | Write-Host } catch {}
+                  Write-Host "--- direct invocation ---"
+                  $stderrFile = New-TemporaryFile
+                  $proc = Start-Process -FilePath $juceaide.FullName -ArgumentList "version" -NoNewWindow -PassThru -Wait `
+                      -RedirectStandardOutput "juceaide_stdout.txt" -RedirectStandardError $stderrFile.FullName
+                  Write-Host "exit code: $($proc.ExitCode)"
+                  if (Test-Path "juceaide_stdout.txt") { Write-Host "stdout:"; Get-Content "juceaide_stdout.txt" | Out-String | Write-Host }
+                  if (Test-Path $stderrFile.FullName) { Write-Host "stderr:"; Get-Content $stderrFile.FullName | Out-String | Write-Host }
+              }
+              throw "cmake configure failed even after delay-load patch"
+          }
       }
     - cmake --build --preset windows-dev -- -j $env:NUMBER_OF_PROCESSORS
   artifacts:
