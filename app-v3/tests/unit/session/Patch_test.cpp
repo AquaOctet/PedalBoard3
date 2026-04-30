@@ -1,4 +1,4 @@
-// Tests for pedalboard3::session::Patch — the pure-data topology record
+// Tests for pedalboard3::session::Patch -- the pure-data topology record
 // introduced in Phase 1.D.3. No engine dependencies; these are
 // value-semantic tests over node-id allocation, connection structure,
 // and the validate-on-restore guard.
@@ -46,11 +46,11 @@ TEST_CASE("Patch: nextNodeId returns max+1 even after deletes", "[session][patch
     p.nodes.push_back(makeNode(5));
     REQUIRE(p.nextNodeId() == 6);
 
-    // Erase the middle one — nextNodeId should still be 6 (max+1, no reuse of 2).
+    // Erase the middle one -- nextNodeId should still be 6 (max+1, no reuse of 2).
     p.nodes.erase(p.nodes.begin() + 1);
     REQUIRE(p.nextNodeId() == 6);
 
-    // Erase the highest — nextNodeId now drops to 2.
+    // Erase the highest -- nextNodeId now drops to 2.
     p.nodes.erase(p.nodes.begin() + 1); // was id 5
     REQUIRE(p.nextNodeId() == 2);
 }
@@ -80,13 +80,13 @@ TEST_CASE("Patch: PatchConnection equality", "[session][patch]")
     REQUIRE_FALSE(c1 == c3);
 }
 
-TEST_CASE("Patch: validatePatch — empty patch is OK", "[session][patch][validate]")
+TEST_CASE("Patch: validatePatch -- empty patch is OK", "[session][patch][validate]")
 {
     session::Patch p;
     REQUIRE(session::validatePatch(p) == session::PatchValidation::Ok);
 }
 
-TEST_CASE("Patch: validatePatch — well-formed linear chain is OK", "[session][patch][validate]")
+TEST_CASE("Patch: validatePatch -- well-formed linear chain is OK", "[session][patch][validate]")
 {
     session::Patch p;
     p.nodes.push_back(makeNode(1));
@@ -101,7 +101,7 @@ TEST_CASE("Patch: validatePatch — well-formed linear chain is OK", "[session][
     REQUIRE(session::validatePatch(p) == session::PatchValidation::Ok);
 }
 
-TEST_CASE("Patch: validatePatch — duplicate NodeId rejected", "[session][patch][validate]")
+TEST_CASE("Patch: validatePatch -- duplicate NodeId rejected", "[session][patch][validate]")
 {
     session::Patch p;
     p.nodes.push_back(makeNode(1));
@@ -109,14 +109,14 @@ TEST_CASE("Patch: validatePatch — duplicate NodeId rejected", "[session][patch
     REQUIRE(session::validatePatch(p) == session::PatchValidation::DuplicateNodeId);
 }
 
-TEST_CASE("Patch: validatePatch — graphIO as a node id rejected", "[session][patch][validate]")
+TEST_CASE("Patch: validatePatch -- graphIO as a node id rejected", "[session][patch][validate]")
 {
     session::Patch p;
     p.nodes.push_back(makeNode(session::graphIO));
     REQUIRE(session::validatePatch(p) == session::PatchValidation::DuplicateNodeId);
 }
 
-TEST_CASE("Patch: validatePatch — dangling connection (src) rejected", "[session][patch][validate]")
+TEST_CASE("Patch: validatePatch -- dangling connection (src) rejected", "[session][patch][validate]")
 {
     session::Patch p;
     p.nodes.push_back(makeNode(1));
@@ -124,7 +124,7 @@ TEST_CASE("Patch: validatePatch — dangling connection (src) rejected", "[sessi
     REQUIRE(session::validatePatch(p) == session::PatchValidation::DanglingConnection);
 }
 
-TEST_CASE("Patch: validatePatch — dangling connection (dst) rejected", "[session][patch][validate]")
+TEST_CASE("Patch: validatePatch -- dangling connection (dst) rejected", "[session][patch][validate]")
 {
     session::Patch p;
     p.nodes.push_back(makeNode(1));
@@ -132,7 +132,7 @@ TEST_CASE("Patch: validatePatch — dangling connection (dst) rejected", "[sessi
     REQUIRE(session::validatePatch(p) == session::PatchValidation::DanglingConnection);
 }
 
-TEST_CASE("Patch: validatePatch — negative channel index rejected", "[session][patch][validate]")
+TEST_CASE("Patch: validatePatch -- negative channel index rejected", "[session][patch][validate]")
 {
     session::Patch p;
     p.nodes.push_back(makeNode(1));
@@ -140,7 +140,7 @@ TEST_CASE("Patch: validatePatch — negative channel index rejected", "[session]
     REQUIRE(session::validatePatch(p) == session::PatchValidation::InvalidChannel);
 }
 
-TEST_CASE("Patch: validatePatch — cycle rejected", "[session][patch][validate]")
+TEST_CASE("Patch: validatePatch -- cycle rejected", "[session][patch][validate]")
 {
     session::Patch p;
     p.nodes.push_back(makeNode(1));
@@ -153,7 +153,7 @@ TEST_CASE("Patch: validatePatch — cycle rejected", "[session][patch][validate]
     REQUIRE(session::validatePatch(p) == session::PatchValidation::Cycle);
 }
 
-TEST_CASE("Patch: validatePatch — graphIO -> graphIO is OK (passthrough)", "[session][patch][validate]")
+TEST_CASE("Patch: validatePatch -- graphIO -> graphIO is OK (passthrough)", "[session][patch][validate]")
 {
     session::Patch p;
     p.connections.push_back(conn(session::graphIO, 0, session::graphIO, 0));

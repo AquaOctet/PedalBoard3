@@ -1,4 +1,4 @@
-// Tests for pedalboard3::engine::PluginScanner — the parent-side of the
+// Tests for pedalboard3::engine::PluginScanner -- the parent-side of the
 // out-of-process plugin scanning rig (master plan §4.2.A). The actual
 // subprocess work happens in pb3-scanner-helper; PluginScanner orchestrates
 // helper invocation, timeout handling, and KnownPluginList mutation
@@ -6,11 +6,11 @@
 //
 // Two layers of coverage:
 //
-//   1. Unit-level — no helper binary needed. Verifies the negative
+//   1. Unit-level -- no helper binary needed. Verifies the negative
 //      paths (no helper, bogus helper path) and the blacklist
 //      semantics that protect the user from a re-scan loop.
 //
-//   2. Integration with the real pb3-scanner-helper — gated on the
+//   2. Integration with the real pb3-scanner-helper -- gated on the
 //      helper binary being reachable. Tests target the XML-output
 //      contract (pb3-scanner-helper.cpp emits <PB3_SCAN_RESULT> with
 //      one <PLUGIN> per discovered descriptor; non-plugin paths
@@ -51,7 +51,7 @@ juce::File makeUnreachableHelperFile()
 // (which handles both slash directions), and return it.
 //
 // Absence of the macro means "no helper target was available at build
-// time" → integration cases SKIP.
+// time" -> integration cases SKIP.
 juce::File makeRealHelperFile()
 {
 #ifdef PB3_TEST_SCANNER_HELPER_LOCATOR
@@ -69,7 +69,7 @@ juce::File makeRealHelperFile()
 
 // Drop a 1-line text file under tempDirectory and return its path. Used
 // as a "definitely not a plugin" target the helper can run against
-// without crashing — fileMightContainThisPluginType() in juce
+// without crashing -- fileMightContainThisPluginType() in juce
 // AudioPluginFormat returns false for plain text, so the helper exits
 // 0 with an empty <PB3_SCAN_RESULT/>.
 juce::File makeNonPluginTempFile(const juce::String& nameTag)
@@ -84,7 +84,7 @@ juce::File makeNonPluginTempFile(const juce::String& nameTag)
 } // namespace
 
 // -----------------------------------------------------------------------
-// Unit-level — no helper required
+// Unit-level -- no helper required
 // -----------------------------------------------------------------------
 
 TEST_CASE("PluginScanner: isHelperAvailable false when constructed with empty File", "[engine][plugin-scanner]")
@@ -140,7 +140,7 @@ TEST_CASE("PluginScanner: findHelperBinary doesn't crash on a runner without a s
 {
     // We only assert "no crash + return value matches existsAsFile()
     // when wired into a PluginScanner". Whether the helper happens to
-    // sit alongside the test exe depends on the build layout — both
+    // sit alongside the test exe depends on the build layout -- both
     // present and absent are valid outcomes for this test.
     const auto found = engine::PluginScanner::findHelperBinary();
 
@@ -155,7 +155,7 @@ TEST_CASE("PluginScanner: findHelperBinary doesn't crash on a runner without a s
 
 // CI runners (Linux + macOS) are typically headless and the helper's
 // juce::ScopedJuceInitialiser_GUI may not initialise cleanly without a
-// display — in that case the subprocess exits non-zero and PluginScanner
+// display -- in that case the subprocess exits non-zero and PluginScanner
 // reports helperCrashed=true. We treat that as a SKIP rather than a hard
 // failure: the integration coverage we're after still applies on dev
 // boxes (and Windows runners which have a session). The negative-path
@@ -187,7 +187,7 @@ TEST_CASE("PluginScanner: real helper against a non-plugin file blacklists the p
     auto result = scanner.scanFile(target.getFullPathName());
     PB3_SKIP_IF_HELPER_CRASHED(result);
 
-    // Helper exited 0 with an empty <PB3_SCAN_RESULT/> — no crash,
+    // Helper exited 0 with an empty <PB3_SCAN_RESULT/> -- no crash,
     // no timeout, but also no descriptors. PluginScanner treats
     // "no descriptors" as a failed scan and blacklists the path so
     // we don't re-scan it next launch.
@@ -219,7 +219,7 @@ TEST_CASE("PluginScanner: real helper against a non-existent path still produces
     REQUIRE(host.getKnownPluginList().getBlacklistedFiles().contains("/totally/nonexistent/path/Plugin.vst3"));
 }
 
-TEST_CASE("PluginScanner: real helper — repeat scan of same failing path doesn't double-blacklist",
+TEST_CASE("PluginScanner: real helper -- repeat scan of same failing path doesn't double-blacklist",
           "[engine][plugin-scanner][integration]")
 {
     const auto helper = makeRealHelperFile();
@@ -243,7 +243,7 @@ TEST_CASE("PluginScanner: real helper — repeat scan of same failing path doesn
     const auto sizeAfterSecond = host.getKnownPluginList().getBlacklistedFiles().size();
 
     // PluginScanner has an explicit `!contains(path)` guard before
-    // calling addToBlacklist — both layers must hold this invariant
+    // calling addToBlacklist -- both layers must hold this invariant
     // (the JUCE addToBlacklist guard AND our defensive check) so a
     // future JUCE behaviour change wouldn't introduce duplicates.
     REQUIRE(sizeAfterSecond == sizeAfterFirst);

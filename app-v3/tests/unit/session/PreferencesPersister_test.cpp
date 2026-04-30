@@ -1,4 +1,4 @@
-// Tests for pedalboard3::session::PreferencesPersister — the listener
+// Tests for pedalboard3::session::PreferencesPersister -- the listener
 // fan-out that drives incremental Preferences writes when AudioDeviceManager,
 // KnownPluginList, or Session change.
 //
@@ -62,7 +62,7 @@ struct PrefsScrubber
 
 // True iff the given KnownPluginList XML carries `path` in its
 // <BLACKLISTED id="..."> children. Schema per
-// juce_KnownPluginList.cpp::createXml() — a flat list of
+// juce_KnownPluginList.cpp::createXml() -- a flat list of
 // <BLACKLISTED id="…"/> elements directly under the root, alongside
 // each <PLUGIN/> entry.
 bool xmlContainsBlacklistEntry(const juce::XmlElement& list, const juce::String& path)
@@ -128,7 +128,7 @@ TEST_CASE("PreferencesPersister: change before construction is ignored, change a
     engine::PluginHost host;
     session::Session sess(eng, host);
 
-    // Pre-construction mutation — should not write anything (no listener yet).
+    // Pre-construction mutation -- should not write anything (no listener yet).
     host.getKnownPluginList().addToBlacklist("/test/pb3-pre-listener.vst3");
     host.getKnownPluginList().sendSynchronousChangeMessage();
     REQUIRE(prefs.getKnownPluginList() == nullptr);
@@ -136,7 +136,7 @@ TEST_CASE("PreferencesPersister: change before construction is ignored, change a
     {
         session::PreferencesPersister persister(prefs, eng, host, sess);
 
-        // Post-construction mutation — listener fires, persister writes.
+        // Post-construction mutation -- listener fires, persister writes.
         host.getKnownPluginList().addToBlacklist(kSyntheticBlacklistPath);
         host.getKnownPluginList().sendSynchronousChangeMessage();
 
@@ -160,7 +160,7 @@ TEST_CASE("PreferencesPersister: change before construction is ignored, change a
     REQUIRE(snapshotAfter->getNumChildElements() == countBefore);
 }
 
-TEST_CASE("PreferencesPersister: lifetime — outliving the persister with a Session change is safe",
+TEST_CASE("PreferencesPersister: lifetime -- outliving the persister with a Session change is safe",
           "[session][preferences-persister][lifetime]")
 {
     session::Preferences prefs;

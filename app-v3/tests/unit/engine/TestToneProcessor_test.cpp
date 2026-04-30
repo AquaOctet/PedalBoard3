@@ -1,4 +1,4 @@
-// Tests for pedalboard3::engine::processors::TestToneProcessor — a sine
+// Tests for pedalboard3::engine::processors::TestToneProcessor -- a sine
 // generator used as the first audible signal source when verifying that
 // audio flows end-to-end through the engine on real hardware. Because it
 // is also a useful building block in later integration tests, we treat it
@@ -65,7 +65,7 @@ TEST_CASE("TestToneProcessor: enable ramps smoothly without a click", "[engine][
     t.setFrequency(220.0f);
     t.setAmplitude(0.5f);
 
-    // Disabled, warmed up — silent.
+    // Disabled, warmed up -- silent.
     auto warm = makeTestBuffer(2, kDefaultBlockSize);
     for (int i = 0; i < 4; ++i)
         renderBlocks(t, warm);

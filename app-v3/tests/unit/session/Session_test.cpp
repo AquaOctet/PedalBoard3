@@ -1,4 +1,4 @@
-// Tests for pedalboard3::session::Session — the Phase 1.D.2 patch-switch
+// Tests for pedalboard3::session::Session -- the Phase 1.D.2 patch-switch
 // state machine. Uses the BuildFn-injection ctor so we don't need a real
 // VST3 binary or a running audio device.
 
@@ -154,7 +154,7 @@ session::Patch makeBogusPatch()
     n.id = 1;
     n.desc.name = "Bogus";
     n.desc.pluginFormatName = "VST3";
-    // fileOrIdentifier intentionally empty — triggers FakeBuilder failure path.
+    // fileOrIdentifier intentionally empty -- triggers FakeBuilder failure path.
     p.nodes.push_back(n);
     return p;
 }
@@ -186,7 +186,7 @@ TEST_CASE("Session: starts Idle with no nodes", "[session][state-machine]")
     REQUIRE(s.getStateVersion() == 0);
 }
 
-TEST_CASE("Session: replacePatch with bogus patch walks Idle→Building→Idle, error set", "[session][state-machine]")
+TEST_CASE("Session: replacePatch with bogus patch walks Idle->Building->Idle, error set", "[session][state-machine]")
 {
     engine::AudioEngine eng;
     eng.initialise();
@@ -202,7 +202,7 @@ TEST_CASE("Session: replacePatch with bogus patch walks Idle→Building→Idle, 
     REQUIRE(s.getState() == session::Session::State::Idle);
     REQUIRE(s.getNodeCount() == 0);
     REQUIRE(s.getLastError().isNotEmpty());
-    REQUIRE(s.getStateVersion() >= 2u); // Idle→Building→Idle
+    REQUIRE(s.getStateVersion() >= 2u); // Idle->Building->Idle
 }
 
 TEST_CASE("Session: clearPatch from empty transitions through Idle cleanly", "[session][state-machine]")
@@ -267,9 +267,9 @@ TEST_CASE("Session: state version is monotonic across transitions", "[session][s
     const auto v0 = s.getStateVersion();
     s.replacePatch(makeBogusPatch());
 
-    REQUIRE(waitForVersion(s, v0 + 1)); // → Building
+    REQUIRE(waitForVersion(s, v0 + 1)); // -> Building
     pumpUntilIdle(s);
-    REQUIRE(s.getStateVersion() >= v0 + 2u); // → Idle (with error)
+    REQUIRE(s.getStateVersion() >= v0 + 2u); // -> Idle (with error)
 }
 
 TEST_CASE("Session: synchronous setNodeBypass on absent NodeId is a no-op", "[session][incremental]")
@@ -310,7 +310,7 @@ TEST_CASE("Session: getNodeIdsInOrder returns empty for fresh Session", "[sessio
 // Both commitAddPlugin and applyConnectionsToLiveGraph re-derive
 // liveGraph_ from engine_.getRuntime()->getLiveGraph() before touching
 // it. The tests below drive the second path (applyConnectionsToLiveGraph
-// via moveNode) — commitAddPlugin's rebind branch needs a real plugin
+// via moveNode) -- commitAddPlugin's rebind branch needs a real plugin
 // instance to exercise and is covered by manual smoke until we ship a
 // fake-instance test fixture.
 
@@ -365,7 +365,7 @@ TEST_CASE("Session: removeNode on absent NodeId after external loadGraph(nullptr
 
     const auto v0 = s.getStateVersion();
 
-    // removeNode on a NodeId that was never in the patch is a no-op —
+    // removeNode on a NodeId that was never in the patch is a no-op --
     // but that no-op MUST short-circuit cleanly without dereferencing
     // the stale liveGraph_ pointer Session cached during ctor.
     s.removeNode(99);
@@ -402,7 +402,7 @@ TEST_CASE("Session: moveNode after external loadGraph re-derives liveGraph_ rath
     //    (Session's stale cached pointer); with the fix it re-derives
     //    liveGraph_ from runtime.getLiveGraph() and operates on the
     //    externally-swapped graph instead. We can only assert "no
-    //    crash + version bumped + lastError remains clear" — the
+    //    crash + version bumped + lastError remains clear" -- the
     //    target graph has no matching node IDs so addConnection
     //    silently fails, but Session-side state stays consistent.
     const auto v0 = s.getStateVersion();

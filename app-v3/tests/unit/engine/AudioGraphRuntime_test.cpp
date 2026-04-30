@@ -1,4 +1,4 @@
-// Tests for pedalboard3::engine::AudioGraphRuntime — the atomic graph-swap
+// Tests for pedalboard3::engine::AudioGraphRuntime -- the atomic graph-swap
 // primitive. Phase 1.A scope: null-safety, swap correctness, generation
 // counter, built-in OutputSanitiser pass. The full patch-switch state
 // machine arrives in Phase 1.D.
@@ -25,7 +25,7 @@ namespace
 
 using AudioGraph = juce::AudioProcessorGraph;
 
-// Build a minimal stereo graph: audioInput → gainProc → audioOutput.
+// Build a minimal stereo graph: audioInput -> gainProc -> audioOutput.
 // Return the graph (ownership moves to caller) and the gain node's id so
 // tests can introspect if needed. The graph is NOT prepared yet.
 struct BuiltGraph
@@ -45,14 +45,14 @@ BuiltGraph buildGainGraph(float gain)
         std::make_unique<AudioGraph::AudioGraphIOProcessor>(AudioGraph::AudioGraphIOProcessor::audioOutputNode));
     // midiInputNode is required for the graph to route the input MidiBuffer
     // (passed to processBlock) into nodes that acceptsMidi(). Without it,
-    // AudioProcessorGraph drops incoming MIDI on the floor — which broke the
+    // AudioProcessorGraph drops incoming MIDI on the floor -- which broke the
     // all-notes-off flush test that expected the gain processor to see
     // 16ch × 3 events after a swap.
     auto midiInNode = g->addNode(
         std::make_unique<AudioGraph::AudioGraphIOProcessor>(AudioGraph::AudioGraphIOProcessor::midiInputNode));
     auto gainNode = g->addNode(std::make_unique<TestGainProcessor>(gain));
 
-    // Wire stereo input → gain → output.
+    // Wire stereo input -> gain -> output.
     g->addConnection({{inNode->nodeID, 0}, {gainNode->nodeID, 0}});
     g->addConnection({{inNode->nodeID, 1}, {gainNode->nodeID, 1}});
     g->addConnection({{gainNode->nodeID, 0}, {outNode->nodeID, 0}});
@@ -160,7 +160,7 @@ TEST_CASE("AudioGraphRuntime: swap with no live graph performs no flush, no cras
     auto* graphPtr = next.graph.get();
 
     // Drive processBlock from a separate thread so the audio-thread-side
-    // swap path runs (no audio pump → message-thread-side fallback,
+    // swap path runs (no audio pump -> message-thread-side fallback,
     // which doesn't exercise the flush branch we want to validate).
     std::atomic<bool> stop{false};
     auto buf = makeTestBuffer(2, kDefaultBlockSize);
@@ -189,7 +189,7 @@ TEST_CASE("AudioGraphRuntime: swap flushes all-notes-off on outgoing MIDI receiv
     rt.setPlayConfigDetails(2, 2, kDefaultSampleRate, kDefaultBlockSize);
     rt.prepareToPlay(kDefaultSampleRate, kDefaultBlockSize);
 
-    // First graph — the one that will be swapped OUT and should receive
+    // First graph -- the one that will be swapped OUT and should receive
     // the all-notes-off flush. Hold a pointer to its gain processor so
     // we can inspect its last-seen MIDI count after the swap.
     auto outgoing = buildGainGraph(1.0f);
@@ -237,10 +237,10 @@ TEST_CASE("AudioGraphRuntime: swap flushes all-notes-off on outgoing MIDI receiv
 
     // The outgoing processor should have observed the full 16ch × 3-event
     // flush in its final block. After that, live_ pointed to incoming, so
-    // outgoingProc was never called again — its count is sticky at 48.
+    // outgoingProc was never called again -- its count is sticky at 48.
     REQUIRE(outgoingProc->lastMidiEventCount.load() == 16 * 3);
 
-    // prev is the graph we built into outgoing — drop it on the message
+    // prev is the graph we built into outgoing -- drop it on the message
     // thread (this thread) so plugin dtors run here.
     prev.reset();
 }

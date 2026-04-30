@@ -1,4 +1,4 @@
-// Tests for pedalboard3::engine::AudioEngine — the orchestrator that owns
+// Tests for pedalboard3::engine::AudioEngine -- the orchestrator that owns
 // the AudioDeviceManager, AudioProcessorPlayer, and AudioGraphRuntime and
 // wires the three together.
 //
@@ -66,5 +66,5 @@ TEST_CASE("AudioEngine: shutdown is idempotent and destructor is safe after it",
     eng.initialise();
     eng.shutdown();
     eng.shutdown(); // must not crash
-    // Destructor runs at end of scope — should not double-shutdown.
+    // Destructor runs at end of scope -- should not double-shutdown.
 }
