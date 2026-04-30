@@ -274,7 +274,47 @@ build:windows:
   <<: *cache-windows
   before_script: *windows-setup
   script:
-    - cmake --preset windows-dev -S app-v3
+    # Wrap cmake configure so that on the recurring "Testing juceaide
+    # failed" path (#131-#135) we get a real diagnostic dump rather
+    # than just CMake's empty-output FATAL_ERROR. Defender is already
+    # ruled out (whoami confirms admin, Get-MpPreference confirms
+    # RTP=disabled + ExclusionProcess=juceaide.exe, yet juceaide still
+    # produces empty stdout + non-zero exit). The only way to learn
+    # what's actually killing it is to run the just-built juceaide.exe
+    # ourselves, outside JUCE's execute_process, and inspect what
+    # happens. Once we know the cause we can fix it and the wrapper
+    # can be removed.
+    - |
+      $configureFailed = $false
+      cmake --preset windows-dev -S app-v3
+      if ($LASTEXITCODE -ne 0) {
+          $configureFailed = $true
+          Write-Host "=== cmake configure failed (likely juceaide); diagnosing ==="
+          $juceaide = Get-ChildItem -Path "build" -Recurse -Filter "juceaide.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($juceaide) {
+              Write-Host "juceaide path: $($juceaide.FullName)"
+              Write-Host "size: $($juceaide.Length) bytes"
+              Write-Host "lastWrite: $($juceaide.LastWriteTime)"
+              Write-Host "--- file properties ---"
+              try { Get-ItemProperty -Path $juceaide.FullName | Format-List | Out-String | Write-Host } catch {}
+              Write-Host "--- direct invocation: juceaide.exe version ---"
+              $stderrFile = New-TemporaryFile
+              $proc = Start-Process -FilePath $juceaide.FullName -ArgumentList "version" -NoNewWindow -PassThru -Wait `
+                  -RedirectStandardOutput "juceaide_stdout.txt" -RedirectStandardError $stderrFile.FullName
+              Write-Host "exit code: $($proc.ExitCode)"
+              if (Test-Path "juceaide_stdout.txt") {
+                  Write-Host "stdout:"; Get-Content "juceaide_stdout.txt" | Out-String | Write-Host
+              }
+              if (Test-Path $stderrFile.FullName) {
+                  Write-Host "stderr:"; Get-Content $stderrFile.FullName | Out-String | Write-Host
+              }
+              Write-Host "--- last EventLog Application errors (5) ---"
+              try { Get-EventLog -LogName Application -EntryType Error -Newest 5 -ErrorAction SilentlyContinue | Format-List | Out-String | Write-Host } catch {}
+          } else {
+              Write-Host "juceaide.exe not found under build/ — sub-cmake build never produced it"
+          }
+          throw "cmake configure failed (see diagnostic above)"
+      }
     - cmake --build --preset windows-dev -- -j $env:NUMBER_OF_PROCESSORS
   artifacts:
     paths:
