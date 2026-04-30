@@ -187,6 +187,21 @@ default:
   - 'Write-Host "Windows SDK root: $sdkRoot"'
   - '$ucrtDebug = Get-ChildItem -Path "$sdkRoot\bin" -Directory -ErrorAction SilentlyContinue | Where-Object { Test-Path "$($_.FullName)\x64\ucrt\ucrtbased.dll" } | Sort-Object Name -Descending | Select-Object -First 1'
   - 'if ($ucrtDebug) { $ucrtDir = "$($ucrtDebug.FullName)\x64\ucrt"; $env:PATH = "$ucrtDir;$env:PATH"; Write-Host "Added UCRT debug: $ucrtDir" } else { Write-Host "WARNING: ucrtbased.dll not found under $sdkRoot\bin — juceaide will STATUS_DLL_NOT_FOUND" }'
+  # DirectComposition (dcomp.dll) is missing on saas-windows-medium-amd64
+  # — it's a Server Core SKU that ships D3D/D2D/DXGI but not dcomp.dll
+  # (Pipeline #139 where.exe probe confirmed dcomp.dll -> MISSING). JUCE 8
+  # statically imports dcomp.dll via juce_graphics → Direct2D, and juceaide
+  # pulls juce_graphics through juce_build_tools. The fix in two passes:
+  #   1. Install the Server Core App Compatibility Feature on Demand,
+  #      which drops dcomp.dll + other GUI shims into System32.
+  #   2. If the FoD path didn't work (or already installed), search the
+  #      VS / SDK install for a vendored dcomp.dll and add its dir to
+  #      PATH as a fallback.
+  # Both are tried; whichever satisfies juceaide's loader wins.
+  - 'try { Add-WindowsCapability -Online -Name "ServerCore.AppCompatibility~~~~0.0.1.0" -ErrorAction SilentlyContinue | Out-Null; Write-Host "ServerCore.AppCompatibility install attempted" } catch { Write-Host "AppCompatibility install threw: $_" }'
+  - 'if (Test-Path "C:\Windows\System32\dcomp.dll") { Write-Host "dcomp.dll now present in System32" } else { Write-Host "dcomp.dll still missing from System32; searching VS/SDK trees" }'
+  - '$dcomp = Get-ChildItem -Path "$installRoot","$sdkRoot" -Recurse -Filter "dcomp.dll" -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch "arm" } | Select-Object -First 1'
+  - 'if ($dcomp) { $env:PATH = "$($dcomp.DirectoryName);$env:PATH"; Write-Host "Found dcomp.dll at: $($dcomp.FullName)" } else { Write-Host "WARNING: dcomp.dll still not found; juceaide will STATUS_DLL_NOT_FOUND" }'
   - cmake --version
   - ninja --version
 
