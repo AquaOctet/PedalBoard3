@@ -172,12 +172,21 @@ default:
   - 'if (-not (Test-Path $devShell)) { throw "VS dev shell not found at $devShell" }'
   - '& $devShell -Arch amd64 -SkipAutomaticLocation'
   # MSVC Debug runtime DLLs — required by anything cmake builds with
-  # /MDd. Search for the most recent Microsoft.VCXXX.DebugCRT directory
-  # under the VS install (BuildTools layout: VC\Redist\MSVC\<ver>\debug_nonredist\x64\).
-  # Pick the most recent by directory name (toolset version sort order).
-  - '$debugCrt = Get-ChildItem -Path "$installRoot\VC\Redist\MSVC" -Recurse -Filter "Microsoft.VC*.DebugCRT" -Directory -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*\debug_nonredist\x64\*" } | Sort-Object Name -Descending | Select-Object -First 1'
+  # /MDd. Pipeline #137 identified that the BuildTools install only ships
+  # the OneCore subset under VC\Redist\MSVC\<ver>\onecore\debug_nonredist\x64\,
+  # which is missing ucrtbased.dll. UCRT (Universal C Runtime) debug
+  # ships separately under the Windows 10 SDK at
+  # Windows Kits\10\bin\<sdk-version>\x64\ucrt\. Both directories must
+  # be on PATH for juceaide.exe to load.
+  - '$debugCrt = Get-ChildItem -Path "$installRoot\VC\Redist\MSVC" -Recurse -Filter "Microsoft.VC*.DebugCRT" -Directory -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*\debug_nonredist\x64\*" } | Sort-Object @{Expression={$_.FullName -like "*\onecore\*"}; Ascending=$true}, @{Expression={$_.Name}; Descending=$true} | Select-Object -First 1'
   - 'if ($debugCrt) { $env:PATH = "$($debugCrt.FullName);$env:PATH"; Write-Host "Added MSVC DebugCRT: $($debugCrt.FullName)" } else { Write-Host "WARNING: Microsoft.VC*.DebugCRT not found under $installRoot — juceaide may STATUS_DLL_NOT_FOUND" }'
-  - 'Get-ChildItem -Path $debugCrt.FullName -Filter "*.dll" -ErrorAction SilentlyContinue | Select-Object Name | Format-Table | Out-String | Write-Host'
+  # Windows SDK debug UCRT (ucrtbased.dll). Picks the most recent SDK by
+  # bin\<version> dir name. WindowsSdkDir is set by Launch-VsDevShell;
+  # fall back to the canonical Program Files location if not.
+  - '$sdkRoot = if ($env:WindowsSdkDir) { $env:WindowsSdkDir } else { "C:\Program Files (x86)\Windows Kits\10" }'
+  - 'Write-Host "Windows SDK root: $sdkRoot"'
+  - '$ucrtDebug = Get-ChildItem -Path "$sdkRoot\bin" -Directory -ErrorAction SilentlyContinue | Where-Object { Test-Path "$($_.FullName)\x64\ucrt\ucrtbased.dll" } | Sort-Object Name -Descending | Select-Object -First 1'
+  - 'if ($ucrtDebug) { $ucrtDir = "$($ucrtDebug.FullName)\x64\ucrt"; $env:PATH = "$ucrtDir;$env:PATH"; Write-Host "Added UCRT debug: $ucrtDir" } else { Write-Host "WARNING: ucrtbased.dll not found under $sdkRoot\bin — juceaide will STATUS_DLL_NOT_FOUND" }'
   - cmake --version
   - ninja --version
 
@@ -289,6 +298,10 @@ build:windows:
               Write-Host "lastWrite: $($juceaide.LastWriteTime)"
               Write-Host "--- file properties ---"
               try { Get-ItemProperty -Path $juceaide.FullName | Format-List | Out-String | Write-Host } catch {}
+              Write-Host "--- dumpbin /dependents juceaide.exe ---"
+              try { & dumpbin.exe /dependents $juceaide.FullName | Out-String | Write-Host } catch { Write-Host "dumpbin not available: $_" }
+              Write-Host "--- effective PATH ---"
+              $env:PATH -split ';' | Where-Object { $_ -match 'DebugCRT|ucrt|debug_nonredist|Windows Kits' } | ForEach-Object { Write-Host "  $_" }
               Write-Host "--- direct invocation: juceaide.exe version ---"
               $stderrFile = New-TemporaryFile
               $proc = Start-Process -FilePath $juceaide.FullName -ArgumentList "version" -NoNewWindow -PassThru -Wait `
