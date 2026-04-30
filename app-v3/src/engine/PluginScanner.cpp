@@ -96,14 +96,19 @@ bool PluginScanner::runHelper(const juce::String& pluginPath, ScanResult& result
     if (exitCode != 0)
     {
         result.helperCrashed = true;
-        result.error = "helper exited with code " + juce::String(exitCode);
+        // Include up to 256 chars of merged stdout+stderr so a UI
+        // surfacing this error has something diagnosable beyond the
+        // exit code (and so test failures on CI tell us *why* the
+        // helper died rather than just that it did).
+        result.error =
+            "helper exited with code " + juce::String(exitCode) + "; output: " + stdoutText.substring(0, 256).trim();
         return false;
     }
 
     auto root = juce::parseXML(stdoutText);
     if (root == nullptr || !root->hasTagName("PB3_SCAN_RESULT"))
     {
-        result.error = "helper produced unparseable output";
+        result.error = "helper produced unparseable output: " + stdoutText.substring(0, 256).trim();
         result.helperCrashed = true;
         return false;
     }
