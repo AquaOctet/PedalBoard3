@@ -147,37 +147,22 @@ default:
 # -First 1 is safer than the bare -property form (avoids parsing edge
 # cases when multiple installs are present).
 .windows-setup: &windows-setup
-  # Defender / juceaide workaround. Pipelines #131-#134 all failed at
-  # CMake configure on `Testing juceaide failed: output:` (empty stdout +
-  # stderr, non-zero exit) — JUCE builds juceaide.exe successfully but
-  # the post-build `juceaide version` invocation gets terminated before
-  # writing anything. Classic Windows Defender Real-Time Protection
-  # behaviour on freshly-built unsigned executables.
+  # juceaide failure — root cause finally identified in pipeline #136's
+  # diagnostic dump. Direct `juceaide.exe version` invocation returned
+  # exit code -1073741515 (0xC0000135 / STATUS_DLL_NOT_FOUND), not the
+  # Defender termination we initially suspected. JUCE's sub-cmake builds
+  # juceaide with CMake's default MSVC runtime selection, which on
+  # CMake 3.27 without CMP0091 NEW resolves to /MDd (dynamic debug
+  # runtime). The Debug runtime DLLs (ucrtbased.dll, msvcp140d.dll,
+  # vcruntime140d.dll) ship with VS but live under VC\Redist\..\debug_nonredist
+  # — Launch-VsDevShell.ps1 -Arch amd64 only adds the Release runtime
+  # paths. juceaide.exe loads those debug DLLs, can't find them on PATH,
+  # exits 0xC0000135 with no console output.
   #
-  # Pipeline #132 added Add-MpPreference -ExclusionPath alone; that
-  # didn't fix it. Either the SaaS runner's gitlab-runner user lacks
-  # admin (silently denying the Add) or the path-based exclusion isn't
-  # enough by itself.
-  #
-  # Strategy here:
-  #  1. Log `whoami /all` so we can see our privilege level in the next
-  #     pipeline (admin = SID S-1-5-32-544 in the output).
-  #  2. Disable Real-Time Monitoring entirely for the runner duration —
-  #     more aggressive than path exclusion. Tamper Protection on a
-  #     fresh runner image rarely blocks this; if it does, fall through.
-  #  3. Add the project dir AND the helper exe basenames to ExclusionPath
-  #     and ExclusionProcess as belt-and-braces.
-  #  4. Read back via Get-MpPreference so we can see in the log whether
-  #     the changes actually took.
-  # All Defender calls use SilentlyContinue so a permission denial
-  # doesn't sink the pipeline — we want the build to try, then fail with
-  # a diagnostic-rich log if Defender still wins.
-  - 'whoami /all | Select-String -Pattern "User Name|S-1-5-32-544|S-1-16-" | Select-Object -First 5'
+  # Fix: after VsDevShell, locate Microsoft.VC*.DebugCRT under the VS
+  # install and prepend it to PATH so juceaide can resolve its imports.
+  # Defender disable is kept (cheap, does no harm).
   - 'Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue'
-  - 'Add-MpPreference -ExclusionPath "$env:CI_PROJECT_DIR" -ErrorAction SilentlyContinue'
-  - 'Add-MpPreference -ExclusionProcess "juceaide.exe" -ErrorAction SilentlyContinue'
-  - 'Add-MpPreference -ExclusionProcess "pb3-scanner-helper.exe" -ErrorAction SilentlyContinue'
-  - '$mp = Get-MpPreference -ErrorAction SilentlyContinue; Write-Host "Defender RTP disabled: $($mp.DisableRealtimeMonitoring)"; Write-Host "ExclusionPath count: $($mp.ExclusionPath.Count)"; Write-Host "ExclusionProcess: $($mp.ExclusionProcess -join '', '')"'
   - '$vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"'
   - 'if (-not (Test-Path $vswhere)) { throw "vswhere not found at $vswhere" }'
   - '$installRoot = & $vswhere -latest -prerelease -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath'
@@ -186,6 +171,13 @@ default:
   - '$devShell = Join-Path $installRoot ''Common7\Tools\Launch-VsDevShell.ps1'''
   - 'if (-not (Test-Path $devShell)) { throw "VS dev shell not found at $devShell" }'
   - '& $devShell -Arch amd64 -SkipAutomaticLocation'
+  # MSVC Debug runtime DLLs — required by anything cmake builds with
+  # /MDd. Search for the most recent Microsoft.VCXXX.DebugCRT directory
+  # under the VS install (BuildTools layout: VC\Redist\MSVC\<ver>\debug_nonredist\x64\).
+  # Pick the most recent by directory name (toolset version sort order).
+  - '$debugCrt = Get-ChildItem -Path "$installRoot\VC\Redist\MSVC" -Recurse -Filter "Microsoft.VC*.DebugCRT" -Directory -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*\debug_nonredist\x64\*" } | Sort-Object Name -Descending | Select-Object -First 1'
+  - 'if ($debugCrt) { $env:PATH = "$($debugCrt.FullName);$env:PATH"; Write-Host "Added MSVC DebugCRT: $($debugCrt.FullName)" } else { Write-Host "WARNING: Microsoft.VC*.DebugCRT not found under $installRoot — juceaide may STATUS_DLL_NOT_FOUND" }'
+  - 'Get-ChildItem -Path $debugCrt.FullName -Filter "*.dll" -ErrorAction SilentlyContinue | Select-Object Name | Format-Table | Out-String | Write-Host'
   - cmake --version
   - ninja --version
 
