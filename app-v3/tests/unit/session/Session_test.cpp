@@ -347,8 +347,7 @@ session::Patch makeTwoNodePatch()
 
 } // namespace
 
-TEST_CASE("Session: removeNode on absent NodeId after external loadGraph(nullptr) is safe",
-          "[session][rebind]")
+TEST_CASE("Session: removeNode on absent NodeId after external loadGraph(nullptr) is safe", "[session][rebind]")
 {
     engine::AudioEngine eng;
     eng.initialise();
@@ -374,8 +373,7 @@ TEST_CASE("Session: removeNode on absent NodeId after external loadGraph(nullptr
     REQUIRE(s.getNodeCount() == 0);
 }
 
-TEST_CASE("Session: moveNode after external loadGraph re-derives liveGraph_ rather than crashing",
-          "[session][rebind]")
+TEST_CASE("Session: moveNode after external loadGraph re-derives liveGraph_ rather than crashing", "[session][rebind]")
 {
     engine::AudioEngine eng;
     eng.initialise();

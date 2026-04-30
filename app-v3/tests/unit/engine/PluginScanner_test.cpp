@@ -74,9 +74,9 @@ juce::File makeRealHelperFile()
 // 0 with an empty <PB3_SCAN_RESULT/>.
 juce::File makeNonPluginTempFile(const juce::String& nameTag)
 {
-    auto f = juce::File::getSpecialLocation(juce::File::tempDirectory)
-                 .getChildFile("pb3-scanner-test-" + nameTag + "-" + juce::String(juce::Time::currentTimeMillis())
-                               + ".txt");
+    auto f =
+        juce::File::getSpecialLocation(juce::File::tempDirectory)
+            .getChildFile("pb3-scanner-test-" + nameTag + "-" + juce::String(juce::Time::currentTimeMillis()) + ".txt");
     f.replaceWithText("not a plugin");
     return f;
 }
@@ -123,15 +123,13 @@ TEST_CASE("PluginScanner: scanFile without a helper sets helperCrashed and an er
     REQUIRE(host.getKnownPluginList().getBlacklistedFiles().isEmpty());
 }
 
-TEST_CASE("PluginScanner: scanAllDefaultPaths returns 0 when no helper is available",
-          "[engine][plugin-scanner]")
+TEST_CASE("PluginScanner: scanAllDefaultPaths returns 0 when no helper is available", "[engine][plugin-scanner]")
 {
     engine::PluginHost host;
     engine::PluginScanner scanner(host, juce::File{});
 
     int progressCalls = 0;
-    const int added = scanner.scanAllDefaultPaths(
-        [&progressCalls](int, int, const juce::String&) { ++progressCalls; });
+    const int added = scanner.scanAllDefaultPaths([&progressCalls](int, int, const juce::String&) { ++progressCalls; });
 
     REQUIRE(added == 0);
     REQUIRE(progressCalls == 0); // no scan loop runs without helper

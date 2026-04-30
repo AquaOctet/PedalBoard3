@@ -207,9 +207,9 @@ class SidechainProcessor : public juce::AudioProcessor
 public:
     SidechainProcessor()
         : juce::AudioProcessor(BusesProperties()
-                                   .withInput("Input",     juce::AudioChannelSet::stereo(), true)
+                                   .withInput("Input", juce::AudioChannelSet::stereo(), true)
                                    .withInput("Sidechain", juce::AudioChannelSet::stereo(), true)
-                                   .withOutput("Output",   juce::AudioChannelSet::stereo(), true))
+                                   .withOutput("Output", juce::AudioChannelSet::stereo(), true))
     {
     }
 
@@ -221,14 +221,14 @@ public:
 
     void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override {}
 
-    bool acceptsMidi() const override  { return false; }
+    bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 0.0; }
 
     juce::AudioProcessorEditor* createEditor() override { return nullptr; }
     bool hasEditor() const override { return false; }
-    int getNumPrograms() override   { return 1; }
+    int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
     void setCurrentProgram(int) override {}
     const juce::String getProgramName(int) override { return {}; }
@@ -248,7 +248,7 @@ class MonoTolerantProcessor : public juce::AudioProcessor
 public:
     MonoTolerantProcessor()
         : juce::AudioProcessor(BusesProperties()
-                                   .withInput("Input",   juce::AudioChannelSet::mono(), true)
+                                   .withInput("Input", juce::AudioChannelSet::mono(), true)
                                    .withOutput("Output", juce::AudioChannelSet::mono(), true))
     {
     }
@@ -266,14 +266,14 @@ public:
 
     void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override {}
 
-    bool acceptsMidi() const override  { return false; }
+    bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 0.0; }
 
     juce::AudioProcessorEditor* createEditor() override { return nullptr; }
     bool hasEditor() const override { return false; }
-    int getNumPrograms() override   { return 1; }
+    int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
     void setCurrentProgram(int) override {}
     const juce::String getProgramName(int) override { return {}; }
@@ -310,28 +310,27 @@ TEST_CASE("BypassableInstance: ctor pins a permissive main bus to stereo", "[eng
     auto* innerRaw = inner.get();
 
     // Pre-condition: starts mono.
-    REQUIRE(innerRaw->getBus(true, 0)->getCurrentLayout()  == juce::AudioChannelSet::mono());
+    REQUIRE(innerRaw->getBus(true, 0)->getCurrentLayout() == juce::AudioChannelSet::mono());
     REQUIRE(innerRaw->getBus(false, 0)->getCurrentLayout() == juce::AudioChannelSet::mono());
 
     engine::BypassableInstance wrapper(std::move(inner));
 
     // Post-condition: now stereo (because checkBusesLayoutSupported
     // returns true and ctor calls setBusesLayout(stereo)).
-    REQUIRE(innerRaw->getBus(true, 0)->getCurrentLayout()  == juce::AudioChannelSet::stereo());
+    REQUIRE(innerRaw->getBus(true, 0)->getCurrentLayout() == juce::AudioChannelSet::stereo());
     REQUIRE(innerRaw->getBus(false, 0)->getCurrentLayout() == juce::AudioChannelSet::stereo());
 }
 
-TEST_CASE("BypassableInstance: ctor leaves an already-stereo main bus untouched",
-          "[engine][bypassable][bus-topology]")
+TEST_CASE("BypassableInstance: ctor leaves an already-stereo main bus untouched", "[engine][bypassable][bus-topology]")
 {
     auto inner = std::make_unique<TestGainProcessor>();
     auto* innerRaw = inner.get();
 
-    REQUIRE(innerRaw->getBus(true, 0)->getCurrentLayout()  == juce::AudioChannelSet::stereo());
+    REQUIRE(innerRaw->getBus(true, 0)->getCurrentLayout() == juce::AudioChannelSet::stereo());
     REQUIRE(innerRaw->getBus(false, 0)->getCurrentLayout() == juce::AudioChannelSet::stereo());
 
     engine::BypassableInstance wrapper(std::move(inner));
 
-    REQUIRE(innerRaw->getBus(true, 0)->getCurrentLayout()  == juce::AudioChannelSet::stereo());
+    REQUIRE(innerRaw->getBus(true, 0)->getCurrentLayout() == juce::AudioChannelSet::stereo());
     REQUIRE(innerRaw->getBus(false, 0)->getCurrentLayout() == juce::AudioChannelSet::stereo());
 }
