@@ -300,6 +300,11 @@ build:windows:
               try { Get-ItemProperty -Path $juceaide.FullName | Format-List | Out-String | Write-Host } catch {}
               Write-Host "--- dumpbin /dependents juceaide.exe ---"
               try { & dumpbin.exe /dependents $juceaide.FullName | Out-String | Write-Host } catch { Write-Host "dumpbin not available: $_" }
+              Write-Host "--- which graphics DLLs are actually present on the runner? ---"
+              @('d2d1.dll', 'd3d11.dll', 'dxgi.dll', 'dcomp.dll', 'dwmapi.dll', 'dbghelp.dll', 'WININET.dll', 'COMDLG32.dll', 'COMCTL32.dll') | ForEach-Object {
+                  $loc = (& where.exe $_ 2>$null) -split "`r?`n" | Select-Object -First 1
+                  if ($loc) { Write-Host "  $_ -> $loc" } else { Write-Host "  $_ -> MISSING" }
+              }
               Write-Host "--- effective PATH ---"
               $env:PATH -split ';' | Where-Object { $_ -match 'DebugCRT|ucrt|debug_nonredist|Windows Kits' } | ForEach-Object { Write-Host "  $_" }
               Write-Host "--- direct invocation: juceaide.exe version ---"
