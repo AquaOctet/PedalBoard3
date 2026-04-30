@@ -313,21 +313,46 @@ build:windows:
     # re-run cmake. Final failure dumps a full diagnostic.
     - |
       function Patch-JuceForDcomp {
+          # Two patches, applied together:
+          #   1. juce_graphics.cpp: pragma fallback (best-effort).
+          #   2. extras/Build/juceaide/CMakeLists.txt: explicit
+          #      target_link_options + delayimp link. THIS is the
+          #      load-bearing one — pragmas in source proved
+          #      unreliable at making /DELAYLOAD stick (pipeline #141).
           $cpmRoot = "$env:CI_PROJECT_DIR\.cpm-cache\juce"
           if (-not (Test-Path $cpmRoot)) { return $false }
           $any = $false
           foreach ($juceDir in (Get-ChildItem -Path $cpmRoot -Directory)) {
               $cpp = Join-Path $juceDir.FullName "modules\juce_graphics\juce_graphics.cpp"
-              if (-not (Test-Path $cpp)) { continue }
-              $content = Get-Content $cpp -Raw
-              if ($content -match 'DELAYLOAD:dcomp\.dll') { Write-Host "Already patched: $cpp"; continue }
-              $marker = '#pragma comment(lib, "DComp.lib")'
-              $insert = "$marker`r`n  #pragma comment(lib, `"delayimp.lib`")`r`n  #pragma comment(linker, `"/DELAYLOAD:dcomp.dll`")"
-              $new = $content.Replace($marker, $insert)
-              if ($new -ne $content) {
-                  Set-Content -Path $cpp -Value $new -NoNewline
-                  Write-Host "Patched (delay-load dcomp.dll): $cpp"
-                  $any = $true
+              if (Test-Path $cpp) {
+                  $content = Get-Content $cpp -Raw
+                  if ($content -notmatch 'DELAYLOAD:dcomp\.dll') {
+                      $marker = '#pragma comment(lib, "DComp.lib")'
+                      $insert = "$marker`r`n  #pragma comment(lib, `"delayimp.lib`")`r`n  #pragma comment(linker, `"/DELAYLOAD:dcomp.dll`")"
+                      $new = $content.Replace($marker, $insert)
+                      if ($new -ne $content) {
+                          Set-Content -Path $cpp -Value $new -NoNewline
+                          Write-Host "Patched source pragma: $cpp"
+                          $any = $true
+                      }
+                  }
+              }
+
+              $cml = Join-Path $juceDir.FullName "extras\Build\juceaide\CMakeLists.txt"
+              if (Test-Path $cml) {
+                  $cmlContent = Get-Content $cml -Raw
+                  if ($cmlContent -notmatch 'PB3_DELAYLOAD_DCOMP') {
+                      $cmlMarker = 'juce::juce_recommended_warning_flags)'
+                      $cmlInsert = "$cmlMarker`r`n`r`n# PB3_DELAYLOAD_DCOMP — delay-load dcomp.dll so juceaide loads on`r`n# Server Core runners that lack DirectComposition.`r`nif(MSVC)`r`n    target_link_options(juceaide PRIVATE `"/DELAYLOAD:dcomp.dll`")`r`n    target_link_libraries(juceaide PRIVATE delayimp)`r`nendif()"
+                      $cmlNew = $cmlContent.Replace($cmlMarker, $cmlInsert)
+                      if ($cmlNew -ne $cmlContent) {
+                          Set-Content -Path $cml -Value $cmlNew -NoNewline
+                          Write-Host "Patched juceaide CMakeLists: $cml"
+                          $any = $true
+                      }
+                  } else {
+                      Write-Host "Already patched: $cml"
+                  }
               }
           }
           return $any
