@@ -147,16 +147,37 @@ default:
 # -First 1 is safer than the bare -property form (avoids parsing edge
 # cases when multiple installs are present).
 .windows-setup: &windows-setup
-  # Add the GitLab build dir to Windows Defender's exclusion list. Without
-  # this, Defender's Real-Time Protection scans every freshly-built
-  # executable on first run; juceaide.exe (which JUCE configures + invokes
-  # via execute_process during cmake configure) gets quarantined or
-  # delayed, producing the empty-output / non-zero-exit failure that
-  # surfaces as "Testing juceaide failed". Add-MpPreference requires
-  # admin; saas-windows-medium-amd64 runs as LocalSystem which has it.
-  # SilentlyContinue so a permission denial doesn't sink the pipeline
-  # — if the exclusion can't be added we still want the build to try.
+  # Defender / juceaide workaround. Pipelines #131-#134 all failed at
+  # CMake configure on `Testing juceaide failed: output:` (empty stdout +
+  # stderr, non-zero exit) — JUCE builds juceaide.exe successfully but
+  # the post-build `juceaide version` invocation gets terminated before
+  # writing anything. Classic Windows Defender Real-Time Protection
+  # behaviour on freshly-built unsigned executables.
+  #
+  # Pipeline #132 added Add-MpPreference -ExclusionPath alone; that
+  # didn't fix it. Either the SaaS runner's gitlab-runner user lacks
+  # admin (silently denying the Add) or the path-based exclusion isn't
+  # enough by itself.
+  #
+  # Strategy here:
+  #  1. Log `whoami /all` so we can see our privilege level in the next
+  #     pipeline (admin = SID S-1-5-32-544 in the output).
+  #  2. Disable Real-Time Monitoring entirely for the runner duration —
+  #     more aggressive than path exclusion. Tamper Protection on a
+  #     fresh runner image rarely blocks this; if it does, fall through.
+  #  3. Add the project dir AND the helper exe basenames to ExclusionPath
+  #     and ExclusionProcess as belt-and-braces.
+  #  4. Read back via Get-MpPreference so we can see in the log whether
+  #     the changes actually took.
+  # All Defender calls use SilentlyContinue so a permission denial
+  # doesn't sink the pipeline — we want the build to try, then fail with
+  # a diagnostic-rich log if Defender still wins.
+  - 'whoami /all | Select-String -Pattern "User Name|S-1-5-32-544|S-1-16-" | Select-Object -First 5'
+  - 'Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue'
   - 'Add-MpPreference -ExclusionPath "$env:CI_PROJECT_DIR" -ErrorAction SilentlyContinue'
+  - 'Add-MpPreference -ExclusionProcess "juceaide.exe" -ErrorAction SilentlyContinue'
+  - 'Add-MpPreference -ExclusionProcess "pb3-scanner-helper.exe" -ErrorAction SilentlyContinue'
+  - '$mp = Get-MpPreference -ErrorAction SilentlyContinue; Write-Host "Defender RTP disabled: $($mp.DisableRealtimeMonitoring)"; Write-Host "ExclusionPath count: $($mp.ExclusionPath.Count)"; Write-Host "ExclusionProcess: $($mp.ExclusionProcess -join '', '')"'
   - '$vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"'
   - 'if (-not (Test-Path $vswhere)) { throw "vswhere not found at $vswhere" }'
   - '$installRoot = & $vswhere -latest -prerelease -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath'
