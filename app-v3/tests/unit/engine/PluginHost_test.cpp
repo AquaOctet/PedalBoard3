@@ -177,3 +177,110 @@ TEST_CASE("PluginHost: scanDefaultPaths runs without crashing on a bare runner",
     REQUIRE(added >= 0);
     REQUIRE(host.getKnownPlugins().size() == added);
 }
+
+// -----------------------------------------------------------------------
+// getKnownEffects — filter instruments out of the chain-add path
+// -----------------------------------------------------------------------
+
+namespace
+{
+juce::PluginDescription makeFakePluginDesc(const juce::String& name, bool isInstrument)
+{
+    juce::PluginDescription d;
+    d.name = name;
+    d.manufacturerName = "Pedalboard 3 Tests";
+    d.pluginFormatName = "VST3";
+    d.fileOrIdentifier = "/fake/" + name + ".vst3";
+    d.uniqueId = juce::String(name).hashCode();
+    d.deprecatedUid = d.uniqueId;
+    d.numInputChannels = 2;
+    d.numOutputChannels = 2;
+    d.isInstrument = isInstrument;
+    return d;
+}
+} // namespace
+
+TEST_CASE("PluginHost: getKnownEffects returns empty when the list is empty", "[engine][plugin-host][effects]")
+{
+    engine::PluginHost host;
+    REQUIRE(host.getKnownEffects().isEmpty());
+}
+
+TEST_CASE("PluginHost: getKnownEffects filters out PluginDescription::isInstrument", "[engine][plugin-host][effects]")
+{
+    engine::PluginHost host;
+
+    auto& list = host.getKnownPluginList();
+    list.addType(makeFakePluginDesc("FakeReverb", /*isInstrument*/ false));
+    list.addType(makeFakePluginDesc("FakeSynth", /*isInstrument*/ true));
+    list.addType(makeFakePluginDesc("FakeDelay", /*isInstrument*/ false));
+
+    const auto all = host.getKnownPlugins();
+    REQUIRE(all.size() == 3);
+
+    const auto effects = host.getKnownEffects();
+    REQUIRE(effects.size() == 2);
+    for (const auto& d : effects)
+    {
+        REQUIRE_FALSE(d.isInstrument);
+        REQUIRE((d.name == "FakeReverb" || d.name == "FakeDelay"));
+    }
+}
+
+// -----------------------------------------------------------------------
+// applyKnownProblemBlacklist — KnownProblemPlugins.h floor list
+// -----------------------------------------------------------------------
+
+TEST_CASE("PluginHost: applyKnownProblemBlacklist returns false on a bare runner", "[engine][plugin-host][blacklist]")
+{
+    engine::PluginHost host;
+
+    // Same precaution as scanDefaultPaths above: skip on a dev box with
+    // populated plugin dirs. Here we only need *known-problem* basenames
+    // (Current.vst3 / Kontakt.vst3 / Kontakt 7.vst3) — but we can't tell
+    // those apart from arbitrary VSTs without reading the OS plugin
+    // dirs, and reading them is what we're testing. Skip if any default
+    // path is populated; that keeps CI green on a bare runner where the
+    // floor list legitimately matches nothing.
+    for (const auto& name : host.getFormatNames())
+    {
+        const auto path = host.getDefaultSearchPathForFormat(name);
+        for (int i = 0; i < path.getNumPaths(); ++i)
+        {
+            if (!path[i].isDirectory())
+                continue;
+            const auto children = path[i].findChildFiles(juce::File::findFiles, /*recursive*/ true);
+            if (!children.isEmpty())
+                SKIP("default plugin path is populated; floor-list outcome is host-specific");
+        }
+    }
+
+    const bool added = host.applyKnownProblemBlacklist();
+    REQUIRE_FALSE(added);
+    REQUIRE(host.getKnownPluginList().getBlacklistedFiles().isEmpty());
+}
+
+TEST_CASE("PluginHost: applyKnownProblemBlacklist is idempotent", "[engine][plugin-host][blacklist]")
+{
+    engine::PluginHost host;
+
+    // Pre-seed the blacklist with one of the floor-list basenames at a
+    // synthetic path the host can't possibly already know. The second
+    // applyKnownProblemBlacklist call must NOT re-add this path (the
+    // contract: addToBlacklist short-circuits duplicates → returns
+    // false).
+    auto& list = host.getKnownPluginList();
+    const juce::String synthetic{"/synthetic/Current.vst3"};
+    list.addToBlacklist(synthetic);
+    REQUIRE(list.getBlacklistedFiles().contains(synthetic));
+
+    // Calling on a bare runner won't add anything new, but the seeded
+    // entry must survive (the blacklist is monotone).
+    host.applyKnownProblemBlacklist();
+    REQUIRE(list.getBlacklistedFiles().contains(synthetic));
+
+    // Second call is a pure no-op on the bare-runner path.
+    const bool added = host.applyKnownProblemBlacklist();
+    REQUIRE_FALSE(added);
+    REQUIRE(list.getBlacklistedFiles().contains(synthetic));
+}
