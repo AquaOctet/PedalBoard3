@@ -30,16 +30,15 @@ void PluginHost::changeListenerCallback(juce::ChangeBroadcaster* source)
     const juce::ScopedWriteLock sl(listLock_);
     sweepingInstruments_ = true;
 
-    // Walk backwards so removeType(i) doesn't shift the unread tail.
-    // getType returns const-ref into the array so we copy by value before
-    // calling removeType — descriptor stays valid across the removal.
-    for (int i = knownList_.getNumTypes() - 1; i >= 0; --i)
+    // Snapshot getTypes() (returns juce::Array<PluginDescription> by value)
+    // so iteration stays stable while removeType mutates the live list.
+    // removeType matches by uniqueId; copying descriptors by value is cheap.
+    for (const auto& desc : knownList_.getTypes())
     {
-        const auto desc = knownList_.getType(i);
         if (!desc.isInstrument)
             continue;
 
-        knownList_.removeType(i);
+        knownList_.removeType(desc);
 
         // Blacklist the file so future scans (juce::PluginDirectoryScanner
         // honours the blacklist) skip it entirely. addToBlacklist is a
