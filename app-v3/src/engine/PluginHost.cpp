@@ -8,9 +8,49 @@ namespace pedalboard3::engine
 PluginHost::PluginHost()
 {
     formats_.addDefaultFormats();
+
+    // Wire the instrument-filter listener BEFORE any code path can mutate
+    // knownList_. App::initialise calls loadKnownList right after PluginHost
+    // construction; that fires a change message and we sweep any saved
+    // instruments out of the persisted list on the very first launch after
+    // upgrade.
+    knownList_.addChangeListener(this);
 }
 
-PluginHost::~PluginHost() = default;
+PluginHost::~PluginHost()
+{
+    knownList_.removeChangeListener(this);
+}
+
+void PluginHost::changeListenerCallback(juce::ChangeBroadcaster* source)
+{
+    if (source != &knownList_ || sweepingInstruments_)
+        return;
+
+    const juce::ScopedWriteLock sl(listLock_);
+    sweepingInstruments_ = true;
+
+    // Walk backwards so removeType(i) doesn't shift the unread tail.
+    // getType returns const-ref into the array so we copy by value before
+    // calling removeType — descriptor stays valid across the removal.
+    for (int i = knownList_.getNumTypes() - 1; i >= 0; --i)
+    {
+        const auto desc = knownList_.getType(i);
+        if (!desc.isInstrument)
+            continue;
+
+        knownList_.removeType(i);
+
+        // Blacklist the file so future scans (juce::PluginDirectoryScanner
+        // honours the blacklist) skip it entirely. addToBlacklist is a
+        // no-op if the path is already present; the !contains guard is
+        // belt-and-braces and avoids an extra change-message round trip.
+        if (!knownList_.getBlacklistedFiles().contains(desc.fileOrIdentifier))
+            knownList_.addToBlacklist(desc.fileOrIdentifier);
+    }
+
+    sweepingInstruments_ = false;
+}
 
 int PluginHost::getNumFormats() const noexcept
 {

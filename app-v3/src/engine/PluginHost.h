@@ -26,11 +26,11 @@ namespace pedalboard3::engine
 // duration; readers block briefly during a scan. The audio thread never
 // touches this object directly — it calls into live plugin instances
 // that PluginHost returned.
-class PluginHost
+class PluginHost : private juce::ChangeListener
 {
 public:
     PluginHost();
-    ~PluginHost();
+    ~PluginHost() override;
 
     // How many AudioPluginFormat subclasses are currently registered.
     // After construction this is always > 0 on every supported platform.
@@ -146,9 +146,25 @@ public:
     bool applyKnownProblemBlacklist();
 
 private:
+    // ChangeListener — fires on every KnownPluginList mutation. Acts as a
+    // catch-all instrument filter: any isInstrument descriptor that lands
+    // in the list (from our subprocess scanner, JUCE's in-process scanner
+    // inside PluginListComponent, scanDirectory, or loadKnownList from
+    // saved XML) gets removed and its file added to the blacklist so
+    // subsequent scans skip it. v3.0 ships as effects-only (master plan
+    // §4.2.D); v3.1 will lift this filter and start hosting instruments.
+    void changeListenerCallback(juce::ChangeBroadcaster* source) override;
+
     juce::AudioPluginFormatManager formats_;
     juce::KnownPluginList knownList_;
     mutable juce::ReadWriteLock listLock_;
+
+    // Re-entrancy guard for the instrument-filter listener. KnownPluginList's
+    // change message is async (juce::AsyncUpdater) so the flag is mostly
+    // belt-and-braces, but it also avoids redundant sweeps when our own
+    // removeType + addToBlacklist calls echo a follow-up change message
+    // back through us.
+    bool sweepingInstruments_{false};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginHost)
 };

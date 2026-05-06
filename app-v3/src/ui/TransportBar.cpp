@@ -284,24 +284,17 @@ void TransportBar::openPluginList()
         }
     }
 
-    // Effects-only host (master plan §4.2.D — see PluginHost::getKnownEffects
-    // for the rationale): instruments in v3.0 are exactly the plugins most
-    // likely to crash during scan / destruction (Kontakt's analytics worker
-    // throws from BusinessAnalytics::deInit on a background thread after
-    // scanAndAddFile already returned, so the dead-man's-pedal file no
-    // longer points at Kontakt by the time the abort fires). Auto-blacklist
-    // every isInstrument plugin we know about so re-scans skip them. The
-    // user can still see them in the Plugin List dialog as blacklisted
-    // entries, and can manually un-blacklist if v3.1 adds instrument
-    // hosting.
-    for (const auto& desc : list.getTypes())
-    {
-        if (desc.isInstrument && !list.getBlacklistedFiles().contains(desc.fileOrIdentifier))
-        {
-            list.addToBlacklist(desc.fileOrIdentifier);
-            blacklistChanged = true;
-        }
-    }
+    // Instrument removal + blacklist now happens centrally in PluginHost's
+    // ChangeListener (see PluginHost::changeListenerCallback). It fires on
+    // every KnownPluginList mutation regardless of source — our subprocess
+    // scanner, juce::PluginDirectoryScanner used internally by JUCE's
+    // PluginListComponent, scanDirectory, or loadKnownList. By the time
+    // this dialog opens, isInstrument descriptors have already been
+    // stripped and their files blacklisted, so the dialog renders a
+    // clean list and the dialog's own Scan button benefits from the
+    // listener too (any new instrument JUCE adds during in-dialog
+    // scanning gets removed and blacklisted on the very next message
+    // loop tick).
 
     if (blacklistChanged)
     {
