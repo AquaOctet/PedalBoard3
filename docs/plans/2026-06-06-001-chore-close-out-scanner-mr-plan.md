@@ -1,7 +1,7 @@
 ---
 title: "chore: close out the out-of-process plugin scanner (MR !14)"
 type: chore
-status: active
+status: completed
 date: 2026-06-06
 origin: docs/plans/2026-04-12-001-feat-pedalboard-3-rewrite-plan.md
 ---
