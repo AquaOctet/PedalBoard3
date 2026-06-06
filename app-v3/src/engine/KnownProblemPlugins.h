@@ -9,23 +9,36 @@ namespace pedalboard3::engine
 
 // Plugins that crash the host on scan / construction / destruction.
 //
-// JUCE's PluginListComponent scans plugins in-process: each .vst3 in
-// the user's search path is dlopen'd and its factory's createInstance()
-// is called to read the descriptor. Some plugins crash during their
-// own construction (license-check threads, online-analytics modules,
-// pure-virtual calls in their refresh paths) and there's nothing we
-// can do once that crash fires — it kills our process.
+// Any scan must construct the plugin to read its descriptor: the .vst3
+// is dlopen'd and its factory's createInstance() is called. Some plugins
+// crash during that construction (license-check threads, online-analytics
+// modules, pure-virtual calls in their refresh paths) and there's nothing
+// we can do once that crash fires — it kills the process doing the load.
 //
-// Until v3.1's out-of-process PluginScanner (master plan §4.2.A) lands,
-// the only way to keep the host alive is to NEVER open these plugins.
-// This list is consulted by PluginHost::applyKnownProblemBlacklist
-// at app launch — every VST3 path matching one of these basenames is
-// added to the KnownPluginList blacklist before the scanner ever sees
-// it. JUCE's scanAndAddFile checks the blacklist and skips matches.
+// This list is the launch-time, pre-construction, PATH-based floor and it
+// is NOT made redundant by the out-of-process PluginScanner (master plan
+// §4.2.A), which shipped in v3.0. The two cover different failure windows:
+//   * The OOP scanner protects against crashes that happen *inside a
+//     subprocess we can lose* — but it only runs on the Rescan path and it
+//     SKIPS already-blacklisted paths (PluginScanner::scanAllDefaultPaths).
+//   * This floor protects against crashes that fire *before any descriptor
+//     exists at all*: Current.vst3 aborts during createInstance, so no
+//     descriptor is ever added and no post-add safety net (the instrument
+//     sweep in PluginHost::changeListenerCallback, JUCE's dead-man's-pedal)
+//     can run. The only defence is to never open the path. It is consulted
+//     by PluginHost::applyKnownProblemBlacklist at launch, before any scan
+//     — in-process (Plugin List dialog) or out-of-process (Rescan) — adds
+//     every matching path to the blacklist. JUCE's scanAndAddFile and our
+//     scanAllDefaultPaths both honour the blacklist and skip matches.
 //
-// Each entry carries the reason it's listed so future maintainers
-// know whether the plugin can be removed (e.g. when a fixed version
-// ships, or after we move to out-of-process scanning).
+// NOTE: entries here need not be instruments. The current three happen to
+// be, so the effects-only instrument sweep double-covers them, but that is
+// incidental — a crashing *effect* would be caught only by this path-based
+// launch floor. Do not assume the instrument filter makes this list safe
+// to delete.
+//
+// Each entry carries the reason it's listed so future maintainers know
+// whether the plugin can be removed (e.g. when a fixed version ships).
 //
 // Adding entries: only add plugins that *crash the entire host* during
 // scan, not plugins that merely fail to load (those are JUCE's failedFiles

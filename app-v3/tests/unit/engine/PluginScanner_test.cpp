@@ -150,6 +150,56 @@ TEST_CASE("PluginScanner: findHelperBinary doesn't crash on a runner without a s
 }
 
 // -----------------------------------------------------------------------
+// Effects-only filter -- no helper required
+// -----------------------------------------------------------------------
+
+// Pins the effects-only invariant (master plan §4.2.D) on the EXACT code
+// path runHelper uses: the filter lives in engine::effectDescriptionsFromScanXml,
+// so deleting or inverting it breaks this test. (A copied predicate in the
+// test would silently survive a refactor -- this calls the real function.)
+TEST_CASE("effectDescriptionsFromScanXml keeps effects and drops instruments", "[engine][plugin-scanner]")
+{
+    juce::PluginDescription effect;
+    effect.name = "DemoEQ";
+    effect.pluginFormatName = "VST3";
+    effect.fileOrIdentifier = "/plugins/DemoEQ.vst3";
+    effect.isInstrument = false;
+
+    juce::PluginDescription instrument;
+    instrument.name = "DemoSynth";
+    instrument.pluginFormatName = "VST3";
+    instrument.fileOrIdentifier = "/plugins/DemoSynth.vst3";
+    instrument.isInstrument = true;
+
+    SECTION("a bundle exposing both effect and instrument keeps only the effect")
+    {
+        juce::XmlElement root("PB3_SCAN_RESULT");
+        root.addChildElement(effect.createXml().release());
+        root.addChildElement(instrument.createXml().release());
+
+        const auto kept = engine::effectDescriptionsFromScanXml(root);
+
+        REQUIRE(kept.size() == 1);
+        CHECK_FALSE(kept[0].isInstrument);
+        CHECK(kept[0].name == "DemoEQ");
+    }
+
+    SECTION("an instrument-only bundle yields an empty array (scanFile then blacklists)")
+    {
+        juce::XmlElement root("PB3_SCAN_RESULT");
+        root.addChildElement(instrument.createXml().release());
+
+        REQUIRE(engine::effectDescriptionsFromScanXml(root).isEmpty());
+    }
+
+    SECTION("an empty <PB3_SCAN_RESULT/> yields an empty array")
+    {
+        juce::XmlElement root("PB3_SCAN_RESULT");
+        REQUIRE(engine::effectDescriptionsFromScanXml(root).isEmpty());
+    }
+}
+
+// -----------------------------------------------------------------------
 // Integration with the real pb3-scanner-helper binary
 // -----------------------------------------------------------------------
 

@@ -55,6 +55,28 @@ juce::File locateHelper()
 
 } // namespace
 
+juce::Array<juce::PluginDescription> effectDescriptionsFromScanXml(const juce::XmlElement& scanResult)
+{
+    juce::Array<juce::PluginDescription> descriptions;
+
+    // Edge case: a single .vst3 bundle that exposes BOTH effect AND
+    // instrument types (rare but legal in the VST3 spec) keeps the
+    // effect descriptor and drops only the instrument one.
+    //
+    // Edge case: a bundle that exposes ONLY instrument types ends up
+    // with an empty array — scanFile then blacklists the path so future
+    // rescans skip it. v3.1 instrument support would un-blacklist via the
+    // Plugin List dialog if added later.
+    for (auto* desc : scanResult.getChildIterator())
+    {
+        juce::PluginDescription d;
+        if (d.loadFromXml(*desc) && !d.isInstrument)
+            descriptions.add(d);
+    }
+
+    return descriptions;
+}
+
 PluginScanner::PluginScanner(PluginHost& host, juce::File helperBinary)
     : host_(host), helperBinary_(std::move(helperBinary))
 {
@@ -113,30 +135,10 @@ bool PluginScanner::runHelper(const juce::String& pluginPath, ScanResult& result
         return false;
     }
 
-    // Drop instrument plugins at the source. v3.0 ships as an effects-
-    // only host (master plan §4.2.D); the Add-to-chain picker already
-    // filters via PluginHost::getKnownEffects() and TransportBar's
-    // openPluginList auto-blacklists isInstrument entries on first
-    // open. Filtering here makes the simpler invariant true: KnownPluginList
-    // never carries an instrument descriptor at all, so the Plugin List
-    // dialog is consistent with the Add Plugin picker (neither shows
-    // instruments) and the user isn't confronted with a list full of
-    // greyed-out blacklist rows after every rescan.
-    //
-    // Edge case: a single .vst3 bundle that exposes BOTH effect AND
-    // instrument types (rare but legal in the VST3 spec) keeps the
-    // effect descriptor and drops only the instrument one.
-    //
-    // Edge case: a bundle that exposes ONLY instrument types ends up
-    // with result.descriptions.isEmpty() — scanFile then blacklists
-    // the path so future rescans skip it. v3.1 instrument support
-    // would un-blacklist via the Plugin List dialog if added later.
-    for (auto* desc : root->getChildIterator())
-    {
-        juce::PluginDescription d;
-        if (d.loadFromXml(*desc) && !d.isInstrument)
-            result.descriptions.add(d);
-    }
+    // Drop instrument plugins at the source — v3.0 is an effects-only
+    // host (master plan §4.2.D). Extracted to a free function so the
+    // filtering invariant is unit-testable without spawning the helper.
+    result.descriptions = effectDescriptionsFromScanXml(*root);
 
     return true;
 }

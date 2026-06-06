@@ -141,8 +141,11 @@ public:
     // true if any new entries were added (caller can flush prefs to
     // persist).
     //
-    // Replaced by an out-of-process subprocess scanner in v3.1
-    // (master plan §4.2.A) — at that point this list goes away.
+    // NOT replaced by the out-of-process PluginScanner (master plan
+    // §4.2.A, shipped v3.0): this is the launch-time, pre-construction,
+    // path-based floor for plugins that crash before any descriptor
+    // exists (which neither scanner can observe). It stays. See
+    // engine/KnownProblemPlugins.h for the full rationale.
     bool applyKnownProblemBlacklist();
 
 private:

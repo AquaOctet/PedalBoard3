@@ -10,6 +10,23 @@
 namespace pedalboard3::engine
 {
 
+// Parse a <PB3_SCAN_RESULT> XML tree (the helper's stdout contract: one
+// <PLUGIN> child per discovered descriptor) into effect-only descriptions.
+//
+// Drops isInstrument entries at the source. v3.0 ships as an effects-only
+// host (master plan §4.2.D): the Add-to-chain picker filters via
+// PluginHost::getKnownEffects() and the instrument sweep in
+// PluginHost::changeListenerCallback blacklists any instrument that lands
+// in the list. Filtering here keeps the simpler invariant true —
+// KnownPluginList never carries an instrument descriptor at all. A bundle
+// exposing BOTH effect and instrument types (legal but rare) keeps only
+// the effect; a bundle of ONLY instruments yields an empty array, which
+// PluginScanner::scanFile treats as a failed scan and blacklists.
+//
+// Free function (not a private method) so it is unit-testable without
+// spawning the helper subprocess — runHelper calls it on the parsed root.
+juce::Array<juce::PluginDescription> effectDescriptionsFromScanXml(const juce::XmlElement& scanResult);
+
 // Out-of-process plugin scanner (master plan §4.2.A).
 //
 // Each plugin file is scanned in its own subprocess (the
@@ -20,9 +37,12 @@ namespace pedalboard3::engine
 // observes the non-zero exit code, blacklists the path, and moves on.
 //
 // This is what production hosts (Reaper, Bitwig, Logic, Live) do.
-// Replaces the in-process juce::PluginListComponent scan path AND
-// the engine/KnownProblemPlugins.h floor list (which becomes
-// redundant once this is wired in).
+// It is the primary path for plugin scanning. It does NOT subsume
+// engine/KnownProblemPlugins.h: that floor is a launch-time,
+// pre-construction, path-based blacklist for plugins that crash before
+// any descriptor exists, and scanAllDefaultPaths skips already-blacklisted
+// paths — so the scanner never even runs on them. The two are
+// complementary, not redundant.
 //
 // Threading: scanFile / scanDirectory run on the message thread by
 // design. The helper is the part that may block (waitForProcessToFinish)
