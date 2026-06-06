@@ -1,4 +1,4 @@
-// Tests for pedalboard3::session::Session — the Phase 1.D.2 patch-switch
+// Tests for pedalboard3::session::Session -- the Phase 1.D.2 patch-switch
 // state machine. Uses the BuildFn-injection ctor so we don't need a real
 // VST3 binary or a running audio device.
 
@@ -9,6 +9,7 @@
 #include "session/Patch.h"
 #include "session/PreparedGraph.h"
 #include "session/Session.h"
+#include "support/OfflineRender.h"
 #include "support/TestGainProcessor.h"
 
 #include <atomic>
@@ -153,7 +154,7 @@ session::Patch makeBogusPatch()
     n.id = 1;
     n.desc.name = "Bogus";
     n.desc.pluginFormatName = "VST3";
-    // fileOrIdentifier intentionally empty — triggers FakeBuilder failure path.
+    // fileOrIdentifier intentionally empty -- triggers FakeBuilder failure path.
     p.nodes.push_back(n);
     return p;
 }
@@ -185,7 +186,7 @@ TEST_CASE("Session: starts Idle with no nodes", "[session][state-machine]")
     REQUIRE(s.getStateVersion() == 0);
 }
 
-TEST_CASE("Session: replacePatch with bogus patch walks Idle→Building→Idle, error set", "[session][state-machine]")
+TEST_CASE("Session: replacePatch with bogus patch walks Idle->Building->Idle, error set", "[session][state-machine]")
 {
     engine::AudioEngine eng;
     eng.initialise();
@@ -201,7 +202,7 @@ TEST_CASE("Session: replacePatch with bogus patch walks Idle→Building→Idle, 
     REQUIRE(s.getState() == session::Session::State::Idle);
     REQUIRE(s.getNodeCount() == 0);
     REQUIRE(s.getLastError().isNotEmpty());
-    REQUIRE(s.getStateVersion() >= 2u); // Idle→Building→Idle
+    REQUIRE(s.getStateVersion() >= 2u); // Idle->Building->Idle
 }
 
 TEST_CASE("Session: clearPatch from empty transitions through Idle cleanly", "[session][state-machine]")
@@ -266,9 +267,9 @@ TEST_CASE("Session: state version is monotonic across transitions", "[session][s
     const auto v0 = s.getStateVersion();
     s.replacePatch(makeBogusPatch());
 
-    REQUIRE(waitForVersion(s, v0 + 1)); // → Building
+    REQUIRE(waitForVersion(s, v0 + 1)); // -> Building
     pumpUntilIdle(s);
-    REQUIRE(s.getStateVersion() >= v0 + 2u); // → Idle (with error)
+    REQUIRE(s.getStateVersion() >= v0 + 2u); // -> Idle (with error)
 }
 
 TEST_CASE("Session: synchronous setNodeBypass on absent NodeId is a no-op", "[session][incremental]")
@@ -293,4 +294,122 @@ TEST_CASE("Session: getNodeIdsInOrder returns empty for fresh Session", "[sessio
     session::Session s(eng, host, builder.fn());
     REQUIRE(s.getNodeIdsInOrder().empty());
     REQUIRE(s.getNodeSnapshots().empty());
+}
+
+// -----------------------------------------------------------------------
+// liveGraph_ staleness defence (Session.cpp commitAddPlugin +
+// applyConnectionsToLiveGraph)
+// -----------------------------------------------------------------------
+//
+// Scenario: anything outside Session that calls AudioEngine::loadGraph
+// (the Test Tone diagnostic in TransportBar is the production case)
+// invalidates Session's cached liveGraph_ pointer. Without the re-fetch
+// fix, the next incremental mutation dereferences a freed graph and
+// crashes the audio thread on commit.
+//
+// Both commitAddPlugin and applyConnectionsToLiveGraph re-derive
+// liveGraph_ from engine_.getRuntime()->getLiveGraph() before touching
+// it. The tests below drive the second path (applyConnectionsToLiveGraph
+// via moveNode) -- commitAddPlugin's rebind branch needs a real plugin
+// instance to exercise and is covered by manual smoke until we ship a
+// fake-instance test fixture.
+
+namespace
+{
+
+// Build a stand-alone graph the test can hand to engine_.loadGraph
+// directly, bypassing Session entirely. Mirrors what TransportBar's Test
+// Tone path does in production.
+std::unique_ptr<juce::AudioProcessorGraph> buildExternalPassthroughGraph(double sr, int bs)
+{
+    auto g = std::make_unique<juce::AudioProcessorGraph>();
+    g->setPlayConfigDetails(2, 2, sr, bs);
+    g->addNode(std::make_unique<juce::AudioProcessorGraph::AudioGraphIOProcessor>(
+        juce::AudioProcessorGraph::AudioGraphIOProcessor::audioInputNode));
+    g->addNode(std::make_unique<juce::AudioProcessorGraph::AudioGraphIOProcessor>(
+        juce::AudioProcessorGraph::AudioGraphIOProcessor::audioOutputNode));
+    g->prepareToPlay(sr, bs);
+    return g;
+}
+
+session::Patch makeTwoNodePatch()
+{
+    session::Patch p;
+    session::PatchNode a;
+    a.id = 1;
+    a.desc = makeDesc("A");
+    session::PatchNode b;
+    b.id = 2;
+    b.desc = makeDesc("B");
+    p.nodes.push_back(a);
+    p.nodes.push_back(b);
+    return p;
+}
+
+} // namespace
+
+TEST_CASE("Session: removeNode on absent NodeId after external loadGraph(nullptr) is safe", "[session][rebind]")
+{
+    engine::AudioEngine eng;
+    eng.initialise();
+    engine::PluginHost host;
+    FakeBuilder builder;
+
+    session::Session s(eng, host, builder.fn());
+
+    // Drop the runtime's live graph from underneath Session. Production
+    // analogue: TransportBar's Test Tone toggle-off path calls
+    // engine.loadGraph(nullptr).
+    auto previous = eng.loadGraph(nullptr);
+    (void)previous;
+
+    const auto v0 = s.getStateVersion();
+
+    // removeNode on a NodeId that was never in the patch is a no-op --
+    // but that no-op MUST short-circuit cleanly without dereferencing
+    // the stale liveGraph_ pointer Session cached during ctor.
+    s.removeNode(99);
+
+    REQUIRE(s.getStateVersion() == v0); // genuine no-op, no version bump
+    REQUIRE(s.getNodeCount() == 0);
+}
+
+TEST_CASE("Session: moveNode after external loadGraph re-derives liveGraph_ rather than crashing", "[session][rebind]")
+{
+    engine::AudioEngine eng;
+    eng.initialise();
+    engine::PluginHost host;
+    FakeBuilder builder;
+
+    session::Session s(eng, host, builder.fn());
+
+    // 1. Build a 2-node patch through the FakeBuilder. After this,
+    //    Session's cached liveGraph_ points at FakeBuilder's prepared
+    //    graph that engine.loadGraph just installed.
+    s.replacePatch(makeTwoNodePatch());
+    pumpUntilIdle(s);
+    REQUIRE(s.getNodeCount() == 2);
+
+    // 2. Externally swap the runtime to a different graph. Hold the
+    //    returned previous graph on the stack so Session's cached
+    //    pointer still references valid memory (we want to test the
+    //    re-fetch logic, not a use-after-free symptom).
+    auto external = buildExternalPassthroughGraph(kDefaultSampleRate, kDefaultBlockSize);
+    auto previous = eng.loadGraph(std::move(external));
+
+    // 3. moveNode triggers applyConnectionsToLiveGraph on the message
+    //    thread. Without the rebind fix it would mutate `previous`
+    //    (Session's stale cached pointer); with the fix it re-derives
+    //    liveGraph_ from runtime.getLiveGraph() and operates on the
+    //    externally-swapped graph instead. We can only assert "no
+    //    crash + version bumped + lastError remains clear" -- the
+    //    target graph has no matching node IDs so addConnection
+    //    silently fails, but Session-side state stays consistent.
+    const auto v0 = s.getStateVersion();
+    s.moveNode(1, 1);
+    REQUIRE(s.getStateVersion() > v0);
+    REQUIRE(s.getLastError().isEmpty());
+    REQUIRE(s.getNodeCount() == 2);
+
+    (void)previous;
 }

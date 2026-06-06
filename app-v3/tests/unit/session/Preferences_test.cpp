@@ -1,4 +1,4 @@
-// Tests for pedalboard3::session::Preferences — the per-user persistence
+// Tests for pedalboard3::session::Preferences -- the per-user persistence
 // store backed by juce::ApplicationProperties.
 //
 // We can't easily redirect JUCE's storage path inside a unit test (the
@@ -207,7 +207,7 @@ TEST_CASE("Preferences: malformed ActivePluginDescription XML returns nullptr (n
 {
     session::Preferences prefs;
 
-    // Write something that is *not* a <PLUGIN> root — loadFromXml should
+    // Write something that is *not* a <PLUGIN> root -- loadFromXml should
     // refuse it and the getter should return nullptr instead of UB.
     juce::XmlElement bogus("NOT_A_PLUGIN");
     bogus.setAttribute("garbage", "yes");
@@ -242,7 +242,7 @@ TEST_CASE("Preferences: ActivePluginDescription is XXE-safe (AC-1.D.2-K)", "[ses
         REQUIRE_FALSE(desc->fileOrIdentifier.startsWith("root:"));
         REQUIRE_FALSE(desc->fileOrIdentifier.contains("/bin/bash"));
     }
-    // If desc is null, that's also acceptable — a strict parser refused
+    // If desc is null, that's also acceptable -- a strict parser refused
     // the payload outright, which is the safest outcome.
 
     prefs.clearActivePluginDescription();

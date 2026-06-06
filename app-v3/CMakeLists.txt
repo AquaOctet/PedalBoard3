@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.28)
+cmake_minimum_required(VERSION 3.25)
 
 # -----------------------------------------------------------------------------
 # Pedalboard 3 — root CMake project.
@@ -201,6 +201,34 @@ target_compile_definitions(pb3_juce_config INTERFACE
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
 )
+
+# -----------------------------------------------------------------------------
+# Windows: delay-load dcomp.dll
+# -----------------------------------------------------------------------------
+# JUCE 8's juce_graphics statically imports dcomp.dll (DirectComposition)
+# via its juce_graphics.cpp:94 `#pragma comment(lib, "DComp.lib")`. On
+# saas-windows-medium-amd64 (Server Core variant) dcomp.dll is missing
+# from System32, and the loader fails 0xC0000135 (STATUS_DLL_NOT_FOUND)
+# on every binary that pulls juce_graphics — including our test exe
+# which Catch2's catch_discover_tests invokes at build time.
+#
+# Marking dcomp.dll as delay-loaded keeps the import in the table but
+# defers resolution until something actually calls a DCompositionXxx
+# function. juceaide / pb3_smoke_tests / pb3-scanner-helper / Pedalboard3
+# all run their startup code (including Catch2 test-list enumeration)
+# without needing dcomp.dll. Real Windows desktops have dcomp.dll
+# present, so the delay-load is a no-op there — the same DCompositionXxx
+# call resolves on first invocation as it would have at static-import
+# time.
+#
+# Applied at directory scope so it propagates to every executable
+# defined under src/ and tests/. JUCE's juceaide is patched separately
+# in .gitlab-ci.yml's windows-setup since it's built by JUCE's recursive
+# sub-cmake outside our project.
+if(MSVC)
+    add_link_options("/DELAYLOAD:dcomp.dll")
+    link_libraries(delayimp)
+endif()
 
 # -----------------------------------------------------------------------------
 # Subdirectories

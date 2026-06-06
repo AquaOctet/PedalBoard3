@@ -27,12 +27,16 @@ void App::initialise(const juce::String& /*commandLine*/)
     if (auto savedList = preferences->getKnownPluginList())
         pluginHost->loadKnownList(*savedList);
 
-    // Apply the shipping known-problem blacklist BEFORE any user-driven
-    // scan can happen. These plugins crash the host on scan / ctor /
-    // dtor and the only protection until v3.1's out-of-process scanner
-    // is to never open them. See engine/KnownProblemPlugins.h for the
-    // list and reasons. Persist immediately if any new entries were
-    // added so a fresh crash later in this session doesn't lose them.
+    // Apply the shipping known-problem blacklist BEFORE any scan can
+    // happen — in-process (Plugin List dialog) OR out-of-process (Rescan).
+    // These plugins crash the host during construction (e.g. Current's
+    // pure-virtual license-refresh call) BEFORE any descriptor is ever
+    // added, so the only protection is to never open them, by file path,
+    // at launch. The out-of-process scanner does NOT replace this: it
+    // skips already-blacklisted paths, and a pre-construction crash gives
+    // neither scanner a result to act on. See engine/KnownProblemPlugins.h.
+    // Persist immediately if any new entries were added so a fresh crash
+    // later in this session doesn't lose them.
     if (pluginHost->applyKnownProblemBlacklist())
     {
         if (auto xml = pluginHost->createKnownListXml())

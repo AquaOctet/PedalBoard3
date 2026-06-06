@@ -19,7 +19,9 @@ set(PB3_TEST_SOURCES
     unit/engine/TestToneProcessor_test.cpp
     unit/engine/AudioEngine_test.cpp
     unit/engine/PluginHost_test.cpp
+    unit/engine/PluginScanner_test.cpp
     unit/session/Preferences_test.cpp
+    unit/session/PreferencesPersister_test.cpp
     unit/session/PreparedGraph_test.cpp
     unit/session/Session_test.cpp
     unit/session/Patch_test.cpp
@@ -46,5 +48,31 @@ pb3_apply_strict_warnings(pb3_smoke_tests ${PB3_TEST_SOURCES})
 target_compile_definitions(pb3_smoke_tests PRIVATE
     JUCE_STANDALONE_APPLICATION=1
 )
+
+# Wire the pb3-scanner-helper binary into the test target so PluginScanner
+# integration cases can invoke a real subprocess. We can't pass the helper
+# path directly via target_compile_definitions: $<TARGET_FILE:...> resolves
+# at build time and on Windows yields backslashes, which then collide with
+# C++ string-escape parsing if embedded in a string literal (e.g. "\p" is
+# undefined, "\b" becomes 0x08).
+#
+# Indirection: file(GENERATE) writes a tiny text file containing the
+# resolved helper path; the test reads it at runtime via juce::File which
+# handles both slash directions on every platform. The locator file's own
+# path is set at CMake configure time using CMAKE_CURRENT_BINARY_DIR
+# (always forward slashes), so the macro embedded in source is safe.
+#
+# Tests gate the integration cases on the helper existing — a build with
+# PB3_LINT_ONLY (no helper target) still compiles and gated cases SKIP.
+if(TARGET pb3-scanner-helper)
+    add_dependencies(pb3_smoke_tests pb3-scanner-helper)
+    file(GENERATE
+        OUTPUT  "${CMAKE_CURRENT_BINARY_DIR}/scanner_helper_path.txt"
+        CONTENT "$<TARGET_FILE:pb3-scanner-helper>"
+    )
+    target_compile_definitions(pb3_smoke_tests PRIVATE
+        "PB3_TEST_SCANNER_HELPER_LOCATOR=\"${CMAKE_CURRENT_BINARY_DIR}/scanner_helper_path.txt\""
+    )
+endif()
 
 catch_discover_tests(pb3_smoke_tests)

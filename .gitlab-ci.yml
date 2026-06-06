@@ -14,12 +14,14 @@
 # settles; once the cluster is stable, flip these tags back to
 # weeb-cluster to win on the ninja compile step. (See AGENTS.md notes
 # on Phase-6 self-hosting.)
-# macOS: build + unit tests on GitLab.com's saas-macos-large-m2pro
-# (Apple Silicon, brew preinstalled). Auto on default branch, manual on
-# MRs because saas-macos queue waits are long. `allow_failure: true`
-# while it stabilises — flip to mandatory once it's green twice in a row.
-# Windows: still a manual stub awaiting signing-cert provisioning
-# (Phase 6).
+# macOS: build + unit tests on GitLab.com's saas-macos-medium-m1 (Apple
+# Silicon, brew preinstalled). Auto on default branch + MRs.
+# `allow_failure: true` while it stabilises — flip to mandatory once
+# it's green twice in a row.
+# Windows: build + unit tests on GitLab.com's saas-windows-medium-amd64
+# (Windows Server 2022, VS 2022 Build Tools + CMake preinstalled). Same
+# auto-on-MR posture as macOS, same `allow_failure: true` until two
+# green runs. Installer signing for releases is still Phase 6 work.
 #
 # Full multi-platform + signing pipeline lives in the plan at
 # docs/plans/2026-04-12-001-feat-pedalboard-3-rewrite-plan.md (Appendix C).
@@ -63,6 +65,16 @@ default:
   - if: '$CI_COMMIT_BRANCH == "v3-rewrite"'
   - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
 
+# Windows jobs run on saas-windows-medium-amd64 (GitLab.com SaaS Windows
+# runner). Same trigger conditions as macOS — MR pushes + default/v3-rewrite
+# branches — and same `allow_failure: true` posture below until the runs
+# stabilise. Signing-cert provisioning for installer builds remains Phase 6
+# work and is not required by these CI jobs (we build + test only).
+.rules-windows: &rules-windows
+  - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+  - if: '$CI_COMMIT_BRANCH == "v3-rewrite"'
+  - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
 # Image build runs only when the recipe (Dockerfile) or pipeline that
 # consumes it changes. NO `when: manual` catch-all: a manual-pending job
 # in pre-build blocks downstream stages even with `optional: true` on
@@ -91,6 +103,15 @@ default:
       paths: [ .ccache/ ]
       policy: pull-push
 
+# Windows runner has no ccache (sccache is the analog but not yet wired).
+# CPM cache alone is the big-ticket item — it saves the JUCE source tarball
+# fetch (+ Catch2 etc.) per pipeline. ~50 MB cache, ~30 s saved on rerun.
+.cache-windows: &cache-windows
+  cache:
+    - key: "cpm-${CI_PROJECT_PATH_SLUG}"
+      paths: [ .cpm-cache/ ]
+      policy: pull-push
+
 # Lint-only setup: clang-format + just. Skips the heavy build toolchain
 # that ci-linux:latest carries. Lint runs on saas-linux on a stock
 # ubuntu:24.04 image to avoid blocking on cluster state for a check
@@ -109,6 +130,80 @@ default:
   - cmake --version
   - ninja --version
   - just --version
+
+# saas-windows-medium-amd64 ships Visual Studio 2022 Build Tools, CMake,
+# git, and PowerShell 7 preinstalled. We use Ninja as our generator (per
+# windows-dev preset), so we need to enter the VS dev shell before any
+# cmake call so MSVC's cl.exe / link.exe are on PATH. vswhere finds the
+# installation root; Launch-VsDevShell sets up the environment in-process.
+# Ninja is bundled with VS Build Tools at <VS>\Common7\IDE\CommonExtensions\
+# Microsoft\CMake\Ninja\ninja.exe — Launch-VsDevShell adds it to PATH too.
+#
+# vswhere flags: `-latest -prerelease -products *` is the broadest match;
+# the SaaS runner has Build Tools (not "regular" VS), and a default
+# `-latest -property installationPath` returns empty without the
+# -prerelease + -products * combo. -requires VC.Tools narrows to installs
+# that actually have the C++ compiler. -format json + Select-Object
+# -First 1 is safer than the bare -property form (avoids parsing edge
+# cases when multiple installs are present).
+.windows-setup: &windows-setup
+  # juceaide failure — root cause finally identified in pipeline #136's
+  # diagnostic dump. Direct `juceaide.exe version` invocation returned
+  # exit code -1073741515 (0xC0000135 / STATUS_DLL_NOT_FOUND), not the
+  # Defender termination we initially suspected. JUCE's sub-cmake builds
+  # juceaide with CMake's default MSVC runtime selection, which on
+  # CMake 3.27 without CMP0091 NEW resolves to /MDd (dynamic debug
+  # runtime). The Debug runtime DLLs (ucrtbased.dll, msvcp140d.dll,
+  # vcruntime140d.dll) ship with VS but live under VC\Redist\..\debug_nonredist
+  # — Launch-VsDevShell.ps1 -Arch amd64 only adds the Release runtime
+  # paths. juceaide.exe loads those debug DLLs, can't find them on PATH,
+  # exits 0xC0000135 with no console output.
+  #
+  # Fix: after VsDevShell, locate Microsoft.VC*.DebugCRT under the VS
+  # install and prepend it to PATH so juceaide can resolve its imports.
+  # Defender disable is kept (cheap, does no harm).
+  - 'Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue'
+  - '$vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"'
+  - 'if (-not (Test-Path $vswhere)) { throw "vswhere not found at $vswhere" }'
+  - '$installRoot = & $vswhere -latest -prerelease -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath'
+  - 'if (-not $installRoot) { throw "No Visual Studio install with C++ tools found by vswhere." }'
+  - 'Write-Host "VS install root: $installRoot"'
+  - '$devShell = Join-Path $installRoot ''Common7\Tools\Launch-VsDevShell.ps1'''
+  - 'if (-not (Test-Path $devShell)) { throw "VS dev shell not found at $devShell" }'
+  - '& $devShell -Arch amd64 -SkipAutomaticLocation'
+  # MSVC Debug runtime DLLs — required by anything cmake builds with
+  # /MDd. Pipeline #137 identified that the BuildTools install only ships
+  # the OneCore subset under VC\Redist\MSVC\<ver>\onecore\debug_nonredist\x64\,
+  # which is missing ucrtbased.dll. UCRT (Universal C Runtime) debug
+  # ships separately under the Windows 10 SDK at
+  # Windows Kits\10\bin\<sdk-version>\x64\ucrt\. Both directories must
+  # be on PATH for juceaide.exe to load.
+  - '$debugCrt = Get-ChildItem -Path "$installRoot\VC\Redist\MSVC" -Recurse -Filter "Microsoft.VC*.DebugCRT" -Directory -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*\debug_nonredist\x64\*" } | Sort-Object @{Expression={$_.FullName -like "*\onecore\*"}; Ascending=$true}, @{Expression={$_.Name}; Descending=$true} | Select-Object -First 1'
+  - 'if ($debugCrt) { $env:PATH = "$($debugCrt.FullName);$env:PATH"; Write-Host "Added MSVC DebugCRT: $($debugCrt.FullName)" } else { Write-Host "WARNING: Microsoft.VC*.DebugCRT not found under $installRoot — juceaide may STATUS_DLL_NOT_FOUND" }'
+  # Windows SDK debug UCRT (ucrtbased.dll). Picks the most recent SDK by
+  # bin\<version> dir name. WindowsSdkDir is set by Launch-VsDevShell;
+  # fall back to the canonical Program Files location if not.
+  - '$sdkRoot = if ($env:WindowsSdkDir) { $env:WindowsSdkDir } else { "C:\Program Files (x86)\Windows Kits\10" }'
+  - 'Write-Host "Windows SDK root: $sdkRoot"'
+  - '$ucrtDebug = Get-ChildItem -Path "$sdkRoot\bin" -Directory -ErrorAction SilentlyContinue | Where-Object { Test-Path "$($_.FullName)\x64\ucrt\ucrtbased.dll" } | Sort-Object Name -Descending | Select-Object -First 1'
+  - 'if ($ucrtDebug) { $ucrtDir = "$($ucrtDebug.FullName)\x64\ucrt"; $env:PATH = "$ucrtDir;$env:PATH"; Write-Host "Added UCRT debug: $ucrtDir" } else { Write-Host "WARNING: ucrtbased.dll not found under $sdkRoot\bin — juceaide will STATUS_DLL_NOT_FOUND" }'
+  # DirectComposition (dcomp.dll) is missing on saas-windows-medium-amd64
+  # — it's a Server Core SKU that ships D3D/D2D/DXGI but not dcomp.dll
+  # (Pipeline #139 where.exe probe confirmed dcomp.dll -> MISSING). JUCE 8
+  # statically imports dcomp.dll via juce_graphics → Direct2D, and juceaide
+  # pulls juce_graphics through juce_build_tools. The fix in two passes:
+  #   1. Install the Server Core App Compatibility Feature on Demand,
+  #      which drops dcomp.dll + other GUI shims into System32.
+  #   2. If the FoD path didn't work (or already installed), search the
+  #      VS / SDK install for a vendored dcomp.dll and add its dir to
+  #      PATH as a fallback.
+  # Both are tried; whichever satisfies juceaide's loader wins.
+  - 'try { Add-WindowsCapability -Online -Name "ServerCore.AppCompatibility~~~~0.0.1.0" -ErrorAction SilentlyContinue | Out-Null; Write-Host "ServerCore.AppCompatibility install attempted" } catch { Write-Host "AppCompatibility install threw: $_" }'
+  - 'if (Test-Path "C:\Windows\System32\dcomp.dll") { Write-Host "dcomp.dll now present in System32" } else { Write-Host "dcomp.dll still missing from System32; searching VS/SDK trees" }'
+  - '$dcomp = Get-ChildItem -Path "$installRoot","$sdkRoot" -Recurse -Filter "dcomp.dll" -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch "arm" } | Select-Object -First 1'
+  - 'if ($dcomp) { $env:PATH = "$($dcomp.DirectoryName);$env:PATH"; Write-Host "Found dcomp.dll at: $($dcomp.FullName)" } else { Write-Host "WARNING: dcomp.dll still not found; juceaide will STATUS_DLL_NOT_FOUND" }'
+  - cmake --version
+  - ninja --version
 
 # ===========================================================================
 # LINT
@@ -181,16 +276,125 @@ build:linux:
     expire_in: 1 day
     when: on_success
 
-# Windows is still a manual stub: signing-cert provisioning is Phase 6 work.
+# Windows Debug build on saas-windows-medium-amd64 (GitLab.com SaaS).
+# Same posture as build:macos — auto on default/v3-rewrite/MR pushes,
+# `allow_failure: true` while it stabilises. Flip mandatory once the
+# job is green twice in a row. PowerShell shell (default on the SaaS
+# Windows runner). Installer signing-cert provisioning is still Phase
+# 6 work and is unrelated to this build+test pair.
 build:windows:
   stage: build
   tags: [ saas-windows-medium-amd64 ]
-  rules:
-    - when: manual
+  rules: *rules-windows
   allow_failure: true
+  <<: *cache-windows
+  before_script: *windows-setup
   script:
-    - echo "Phase 6 stub — waiting on self-hosted Windows runner + signing creds."
-    - exit 1
+    # Patch JUCE to delay-load dcomp.dll. Pipeline #140 confirmed
+    # saas-windows-medium-amd64 doesn't ship DirectComposition's
+    # dcomp.dll and there's no Microsoft FoD or vendored copy on the
+    # runner that puts it in PATH. Without dcomp.dll, juceaide's
+    # static import resolution at LoadLibrary time fails 0xC0000135
+    # before main() even runs, so juceaide.exe `version` produces
+    # empty output and JUCE's "Testing juceaide" FATAL_ERRORs out.
+    #
+    # juce_graphics.cpp:94 hard-codes `#pragma comment(lib, "DComp.lib")`.
+    # The patch below appends `#pragma comment(linker, "/DELAYLOAD:dcomp.dll")`
+    # plus a delayimp link, which marks dcomp.dll as delay-loaded —
+    # the import table still references it but the loader skips
+    # resolution until something calls a DCompositionXxx function.
+    # `juceaide version` doesn't, so juceaide loads cleanly.
+    # Pedalboard3 itself (which DOES use juce_graphics at runtime)
+    # ships to end-users on real Windows where dcomp.dll is present;
+    # the delay-load is harmless there.
+    #
+    # Two-pass: try patch (no-op if cache cold), run cmake, and on
+    # juceaide failure re-patch (cache is now populated by CPM) and
+    # re-run cmake. Final failure dumps a full diagnostic.
+    - |
+      function Patch-JuceForDcomp {
+          # Two patches, applied together:
+          #   1. juce_graphics.cpp: pragma fallback (best-effort).
+          #   2. extras/Build/juceaide/CMakeLists.txt: explicit
+          #      target_link_options + delayimp link. THIS is the
+          #      load-bearing one — pragmas in source proved
+          #      unreliable at making /DELAYLOAD stick (pipeline #141).
+          $cpmRoot = "$env:CI_PROJECT_DIR\.cpm-cache\juce"
+          if (-not (Test-Path $cpmRoot)) { return $false }
+          $any = $false
+          foreach ($juceDir in (Get-ChildItem -Path $cpmRoot -Directory)) {
+              $cpp = Join-Path $juceDir.FullName "modules\juce_graphics\juce_graphics.cpp"
+              if (Test-Path $cpp) {
+                  $content = Get-Content $cpp -Raw
+                  if ($content -notmatch 'DELAYLOAD:dcomp\.dll') {
+                      $marker = '#pragma comment(lib, "DComp.lib")'
+                      $insert = "$marker`r`n  #pragma comment(lib, `"delayimp.lib`")`r`n  #pragma comment(linker, `"/DELAYLOAD:dcomp.dll`")"
+                      $new = $content.Replace($marker, $insert)
+                      if ($new -ne $content) {
+                          Set-Content -Path $cpp -Value $new -NoNewline
+                          Write-Host "Patched source pragma: $cpp"
+                          $any = $true
+                      }
+                  }
+              }
+
+              $cml = Join-Path $juceDir.FullName "extras\Build\juceaide\CMakeLists.txt"
+              if (Test-Path $cml) {
+                  $cmlContent = Get-Content $cml -Raw
+                  if ($cmlContent -notmatch 'PB3_DELAYLOAD_DCOMP') {
+                      $cmlMarker = 'juce::juce_recommended_warning_flags)'
+                      $cmlInsert = "$cmlMarker`r`n`r`n# PB3_DELAYLOAD_DCOMP — delay-load dcomp.dll so juceaide loads on`r`n# Server Core runners that lack DirectComposition.`r`nif(MSVC)`r`n    target_link_options(juceaide PRIVATE `"/DELAYLOAD:dcomp.dll`")`r`n    target_link_libraries(juceaide PRIVATE delayimp)`r`nendif()"
+                      $cmlNew = $cmlContent.Replace($cmlMarker, $cmlInsert)
+                      if ($cmlNew -ne $cmlContent) {
+                          Set-Content -Path $cml -Value $cmlNew -NoNewline
+                          Write-Host "Patched juceaide CMakeLists: $cml"
+                          $any = $true
+                      }
+                  } else {
+                      Write-Host "Already patched: $cml"
+                  }
+              }
+          }
+          return $any
+      }
+
+      Patch-JuceForDcomp | Out-Null
+
+      cmake --preset windows-dev -S app-v3
+      if ($LASTEXITCODE -ne 0) {
+          Write-Host "=== first cmake failed; patching JUCE for dcomp delay-load and retrying ==="
+          $applied = Patch-JuceForDcomp
+          if ($applied) {
+              $juceTools = "build\windows-dev\_deps\juce-build\tools"
+              if (Test-Path $juceTools) { Remove-Item -Recurse -Force $juceTools -ErrorAction SilentlyContinue }
+              cmake --preset windows-dev -S app-v3
+          }
+          if ($LASTEXITCODE -ne 0) {
+              Write-Host "=== cmake configure still failing after delay-load patch; full diagnostic ==="
+              $juceaide = Get-ChildItem -Path "build" -Recurse -Filter "juceaide.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($juceaide) {
+                  Write-Host "juceaide path: $($juceaide.FullName)"
+                  Write-Host "size: $($juceaide.Length) bytes"
+                  Write-Host "lastWrite: $($juceaide.LastWriteTime)"
+                  Write-Host "--- dumpbin /dependents juceaide.exe ---"
+                  try { & dumpbin.exe /dependents $juceaide.FullName | Out-String | Write-Host } catch {}
+                  Write-Host "--- direct invocation ---"
+                  $stderrFile = New-TemporaryFile
+                  $proc = Start-Process -FilePath $juceaide.FullName -ArgumentList "version" -NoNewWindow -PassThru -Wait `
+                      -RedirectStandardOutput "juceaide_stdout.txt" -RedirectStandardError $stderrFile.FullName
+                  Write-Host "exit code: $($proc.ExitCode)"
+                  if (Test-Path "juceaide_stdout.txt") { Write-Host "stdout:"; Get-Content "juceaide_stdout.txt" | Out-String | Write-Host }
+                  if (Test-Path $stderrFile.FullName) { Write-Host "stderr:"; Get-Content $stderrFile.FullName | Out-String | Write-Host }
+              }
+              throw "cmake configure failed even after delay-load patch"
+          }
+      }
+    - cmake --build --preset windows-dev -- -j $env:NUMBER_OF_PROCESSORS
+  artifacts:
+    paths:
+      - build/windows-dev/
+    expire_in: 1 day
+    when: on_success
 
 # macOS Debug build on GitLab.com's saas-macos-large-m2pro (Apple Silicon).
 # `allow_failure: true` while the job stabilises — flip to mandatory once
@@ -232,3 +436,14 @@ test:macos:unit:
   before_script: *macos-setup
   script:
     - ctest --preset macos-dev
+
+test:windows:unit:
+  stage: test
+  tags: [ saas-windows-medium-amd64 ]
+  rules: *rules-windows
+  needs: [ build:windows ]
+  allow_failure: true
+  <<: *cache-windows
+  before_script: *windows-setup
+  script:
+    - ctest --preset windows-dev

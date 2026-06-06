@@ -3,6 +3,7 @@
 #include "ColourScheme.h"
 #include "engine/AudioEngine.h"
 #include "engine/PluginHost.h"
+#include "engine/PluginScanner.h"
 #include "engine/processors/TestToneProcessor.h"
 #include "session/Preferences.h"
 #include "session/Session.h"
@@ -23,8 +24,9 @@ constexpr int kBarPadding = 12;
 constexpr int kButtonGap = 6;
 constexpr int kAddButtonWidth = 130;
 constexpr int kSettingsButtonWidth = 140;
-constexpr int kToneButtonWidth = 110;
-constexpr int kPluginListButtonWidth = 130;
+constexpr int kToneButtonWidth = 100;
+constexpr int kRescanButtonWidth = 130;
+constexpr int kPluginListButtonWidth = 110;
 
 // Build a minimal graph that routes a TestToneProcessor straight to
 // the master output. Lifted from the previous MainWindow.cpp (the
@@ -72,6 +74,7 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas) : ctx_(ctx), c
 
     addPluginButton_.onClick = [this] { openAddPluginMenu(); };
     settingsButton_.onClick = [this] { openAudioSettings(); };
+    rescanButton_.onClick = [this] { rescanPlugins(); };
     pluginListButton_.onClick = [this] { openPluginList(); };
 
     toneButton_.setClickingTogglesState(true);
@@ -80,6 +83,7 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas) : ctx_(ctx), c
     addAndMakeVisible(addPluginButton_);
     addAndMakeVisible(settingsButton_);
     addAndMakeVisible(toneButton_);
+    addAndMakeVisible(rescanButton_);
     addAndMakeVisible(pluginListButton_);
 
     titleLabel_.setText("Pedalboard 3", juce::dontSendNotification);
@@ -124,12 +128,14 @@ void TransportBar::resized()
 {
     auto bounds = getLocalBounds().reduced(kBarPadding, 6);
 
-    // Right cluster: Plugin List | Test Tone | Audio Settings.
-    auto right =
-        bounds.removeFromRight(kPluginListButtonWidth + kToneButtonWidth + kSettingsButtonWidth + 2 * kButtonGap);
+    // Right cluster: Audio Settings | Test Tone | Rescan | Plugin List.
+    auto right = bounds.removeFromRight(kSettingsButtonWidth + kToneButtonWidth + kRescanButtonWidth +
+                                        kPluginListButtonWidth + 3 * kButtonGap);
     settingsButton_.setBounds(right.removeFromLeft(kSettingsButtonWidth));
     right.removeFromLeft(kButtonGap);
     toneButton_.setBounds(right.removeFromLeft(kToneButtonWidth));
+    right.removeFromLeft(kButtonGap);
+    rescanButton_.setBounds(right.removeFromLeft(kRescanButtonWidth));
     right.removeFromLeft(kButtonGap);
     pluginListButton_.setBounds(right.removeFromLeft(kPluginListButtonWidth));
 
@@ -278,24 +284,17 @@ void TransportBar::openPluginList()
         }
     }
 
-    // Effects-only host (master plan §4.2.D — see PluginHost::getKnownEffects
-    // for the rationale): instruments in v3.0 are exactly the plugins most
-    // likely to crash during scan / destruction (Kontakt's analytics worker
-    // throws from BusinessAnalytics::deInit on a background thread after
-    // scanAndAddFile already returned, so the dead-man's-pedal file no
-    // longer points at Kontakt by the time the abort fires). Auto-blacklist
-    // every isInstrument plugin we know about so re-scans skip them. The
-    // user can still see them in the Plugin List dialog as blacklisted
-    // entries, and can manually un-blacklist if v3.1 adds instrument
-    // hosting.
-    for (const auto& desc : list.getTypes())
-    {
-        if (desc.isInstrument && !list.getBlacklistedFiles().contains(desc.fileOrIdentifier))
-        {
-            list.addToBlacklist(desc.fileOrIdentifier);
-            blacklistChanged = true;
-        }
-    }
+    // Instrument removal + blacklist now happens centrally in PluginHost's
+    // ChangeListener (see PluginHost::changeListenerCallback). It fires on
+    // every KnownPluginList mutation regardless of source — our subprocess
+    // scanner, juce::PluginDirectoryScanner used internally by JUCE's
+    // PluginListComponent, scanDirectory, or loadKnownList. By the time
+    // this dialog opens, isInstrument descriptors have already been
+    // stripped and their files blacklisted, so the dialog renders a
+    // clean list and the dialog's own Scan button benefits from the
+    // listener too (any new instrument JUCE adds during in-dialog
+    // scanning gets removed and blacklisted on the very next message
+    // loop tick).
 
     if (blacklistChanged)
     {
@@ -323,6 +322,102 @@ void TransportBar::openPluginList()
     options.useNativeTitleBar = true;
     options.resizable = true;
     options.launchAsync();
+}
+
+namespace
+{
+
+// Self-deleting ThreadWithProgressWindow that owns its own PluginScanner
+// and posts the post-scan summary on the message thread. We can't use
+// ThreadWithProgressWindow::runThread() — that's gated by
+// JUCE_MODAL_LOOPS_PERMITTED, which Pedalboard 3 disables (modal
+// loops on the message thread are forbidden in a real-time audio app).
+// launchThread() is non-blocking; threadComplete() fires on the
+// message thread when the worker exits, and that's where we persist
+// preferences, surface results to the user, and self-delete.
+class PluginRescanThread : public juce::ThreadWithProgressWindow
+{
+public:
+    PluginRescanThread(AppContext& ctx, juce::File helperBinary)
+        : juce::ThreadWithProgressWindow("Scanning plugins…", /*hasProgressBar*/ true, /*hasCancelButton*/ true),
+          ctx_(ctx), scanner_(ctx_.pluginHost, std::move(helperBinary))
+    {
+        setStatusMessage("Enumerating plugin search paths…");
+    }
+
+    void run() override
+    {
+        added_ = scanner_.scanAllDefaultPaths(
+            [this](int idx, int total, const juce::String& path)
+            {
+                if (threadShouldExit() || total == 0)
+                    return;
+                setProgress(static_cast<double>(idx) / static_cast<double>(total));
+                setStatusMessage("Scanning: " + juce::File(path).getFileName());
+            });
+    }
+
+    void threadComplete(bool userPressedCancel) override
+    {
+        // Message thread. Persist + summarise + self-delete.
+        if (auto xml = ctx_.pluginHost.createKnownListXml())
+            ctx_.preferences.setKnownPluginList(*xml);
+        ctx_.preferences.flush();
+
+        const auto& blacklist = ctx_.pluginHost.getKnownPluginList().getBlacklistedFiles();
+        juce::String summary;
+        if (userPressedCancel)
+            summary = "Scan cancelled. Partial results saved.\n\n";
+        summary += "Plugins found: " + juce::String(added_) + "\n";
+        summary += "Plugins skipped (blacklist): " + juce::String(blacklist.size());
+
+        const auto opts = juce::MessageBoxOptions{}
+                              .withIconType(juce::MessageBoxIconType::InfoIcon)
+                              .withTitle(userPressedCancel ? "Scan cancelled" : "Scan complete")
+                              .withMessage(summary)
+                              .withButton("OK");
+        juce::AlertWindow::showAsync(opts, nullptr);
+
+        delete this;
+    }
+
+private:
+    AppContext& ctx_;
+    engine::PluginScanner scanner_;
+    int added_{0};
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginRescanThread)
+};
+
+} // namespace
+
+void TransportBar::rescanPlugins()
+{
+    auto helper = engine::PluginScanner::findHelperBinary();
+    if (!helper.existsAsFile())
+    {
+        // Helper missing — happens on dev builds where POST_BUILD copy
+        // hasn't run, or installs missing the bundled helper. Fall
+        // back to the existing JUCE-driven scan via Plugin List dialog
+        // (which still has the in-process scanner + our shipping
+        // KnownProblemPlugins.h floor list as best-effort protection).
+        const auto opts = juce::MessageBoxOptions{}
+                              .withIconType(juce::MessageBoxIconType::WarningIcon)
+                              .withTitle("Out-of-process scanner unavailable")
+                              .withMessage("pb3-scanner-helper binary was not found next to the host executable. "
+                                           "Falling back to the in-process scan via Plugin List → Options. "
+                                           "Known-problem plugins are still skipped via the shipping floor list.")
+                              .withButton("OK");
+        juce::AlertWindow::showAsync(opts, nullptr);
+        return;
+    }
+
+    // Heap-allocated; deletes itself in threadComplete on the message
+    // thread after the user dismisses the result alert. launchThread
+    // returns immediately — TransportBar message-thread responsiveness
+    // is preserved while the scan walks the user's plugin paths.
+    auto* runner = new PluginRescanThread(ctx_, std::move(helper));
+    runner->launchThread();
 }
 
 void TransportBar::onTestToneToggled()

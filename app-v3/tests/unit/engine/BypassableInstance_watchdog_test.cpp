@@ -44,7 +44,7 @@ TEST_CASE("BypassableInstance watchdog: default budget is derived from sample ra
 {
     auto h = makeHarness();
     // Budget defaults to 75% of one block's wall-clock time. At 48k/256
-    // that's ~4 ms; exact value not tested here (implementation detail) —
+    // that's ~4 ms; exact value not tested here (implementation detail) --
     // we just assert "budget > 0" and the fields are reachable.
     REQUIRE(h.wrapper->getBlockBudgetNanos() > 0);
     REQUIRE_FALSE(h.wrapper->isDead());
@@ -53,7 +53,7 @@ TEST_CASE("BypassableInstance watchdog: default budget is derived from sample ra
 TEST_CASE("BypassableInstance watchdog: healthy plugin never gets marked dead", "[engine][bypassable][watchdog]")
 {
     auto h = makeHarness();
-    // Zero-sleep inner — trivially under budget.
+    // Zero-sleep inner -- trivially under budget.
     h.inner->sleepNanos.store(0);
 
     auto buf = makeTestBuffer(2, kDefaultBlockSize * 20);
@@ -75,7 +75,7 @@ TEST_CASE("BypassableInstance watchdog: a single overrun does NOT mark the plugi
     // First block: overrun. Second + third blocks: restore healthy budget.
     h.inner->sleepNanos.store(0);
     auto buf = makeTestBuffer(2, kDefaultBlockSize);
-    renderBlocks(*h.wrapper, buf); // 1st block — overrun (budget 0)
+    renderBlocks(*h.wrapper, buf); // 1st block -- overrun (budget 0)
 
     REQUIRE_FALSE(h.wrapper->isDead());
 
@@ -106,7 +106,7 @@ TEST_CASE("BypassableInstance watchdog: a healthy block resets the consecutive-o
     auto h = makeHarness();
     h.wrapper->setBlockBudgetNanos(0);
 
-    // 2 overruns — not dead yet.
+    // 2 overruns -- not dead yet.
     auto two = makeTestBuffer(2, kDefaultBlockSize * 2);
     renderBlocks(*h.wrapper, two);
     REQUIRE_FALSE(h.wrapper->isDead());
@@ -117,11 +117,11 @@ TEST_CASE("BypassableInstance watchdog: a healthy block resets the consecutive-o
     renderBlocks(*h.wrapper, one);
     REQUIRE_FALSE(h.wrapper->isDead());
 
-    // Back to overrun — need 3 fresh in a row.
+    // Back to overrun -- need 3 fresh in a row.
     h.wrapper->setBlockBudgetNanos(0);
     auto two2 = makeTestBuffer(2, kDefaultBlockSize * 2);
     renderBlocks(*h.wrapper, two2);
-    REQUIRE_FALSE(h.wrapper->isDead()); // only 2 — still alive
+    REQUIRE_FALSE(h.wrapper->isDead()); // only 2 -- still alive
 
     auto one2 = makeTestBuffer(2, kDefaultBlockSize);
     renderBlocks(*h.wrapper, one2);

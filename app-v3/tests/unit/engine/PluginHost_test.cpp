@@ -1,4 +1,4 @@
-// Tests for pedalboard3::engine::PluginHost — the thin facade over
+// Tests for pedalboard3::engine::PluginHost -- the thin facade over
 // juce::AudioPluginFormatManager + KnownPluginList that future subsystems
 // (Phase 1.D patch-switch state machine, Phase 3 UI plugin-list dialog)
 // call into.
@@ -39,7 +39,7 @@ TEST_CASE("PluginHost: scanning a non-existent directory adds nothing and does n
     juce::FileSearchPath path;
     path.add(juce::File("/tmp/pedalboard3-nonexistent-dir-for-test-42"));
     // Scope to VST3 only. AU's scanner ignores the FileSearchPath and would
-    // enumerate every installed AudioComponent on the runner — fine on a
+    // enumerate every installed AudioComponent on the runner -- fine on a
     // bare CI runner, fatal on a dev Mac with a buggy AU plugin installed.
     const int added = host.scanDirectory(path, juce::StringArray{"VST3"});
 
@@ -100,7 +100,7 @@ TEST_CASE("PluginHost: createInstance with a bogus description returns nullptr +
 }
 
 // -----------------------------------------------------------------------
-// Phase 1.C.5 — format introspection + default-path enumeration
+// Phase 1.C.5 -- format introspection + default-path enumeration
 // -----------------------------------------------------------------------
 
 TEST_CASE("PluginHost: getFormatNames reports at least as many entries as getNumFormats",
@@ -111,7 +111,7 @@ TEST_CASE("PluginHost: getFormatNames reports at least as many entries as getNum
     REQUIRE(names.size() == host.getNumFormats());
     REQUIRE(names.size() > 0);
 
-    // Every reported name must be non-empty — a blank format name would
+    // Every reported name must be non-empty -- a blank format name would
     // mean a UI list couldn't distinguish registered formats from each other.
     for (const auto& n : names)
         REQUIRE(n.isNotEmpty());
@@ -156,7 +156,7 @@ TEST_CASE("PluginHost: scanDefaultPaths runs without crashing on a bare runner",
     // We can only verify non-crash + sane-state semantics when the
     // filesystem actually IS bare. On a developer machine with installed
     // VST3 / LV2 plugins, JUCE's PluginDirectoryScanner instantiates each
-    // plugin to introspect its metadata — and a single buggy plugin in
+    // plugin to introspect its metadata -- and a single buggy plugin in
     // that set will SIGABRT the test process. The proper fix is Phase 1.C.4
     // (out-of-process sandbox scanning); until then, skip when any default
     // path contains a plugin candidate.
@@ -176,4 +176,159 @@ TEST_CASE("PluginHost: scanDefaultPaths runs without crashing on a bare runner",
     const int added = host.scanDefaultPaths();
     REQUIRE(added >= 0);
     REQUIRE(host.getKnownPlugins().size() == added);
+}
+
+// -----------------------------------------------------------------------
+// getKnownEffects -- filter instruments out of the chain-add path
+// -----------------------------------------------------------------------
+
+namespace
+{
+juce::PluginDescription makeFakePluginDesc(const juce::String& name, bool isInstrument)
+{
+    juce::PluginDescription d;
+    d.name = name;
+    d.manufacturerName = "Pedalboard 3 Tests";
+    d.pluginFormatName = "VST3";
+    d.fileOrIdentifier = "/fake/" + name + ".vst3";
+    d.uniqueId = juce::String(name).hashCode();
+    d.deprecatedUid = d.uniqueId;
+    d.numInputChannels = 2;
+    d.numOutputChannels = 2;
+    d.isInstrument = isInstrument;
+    return d;
+}
+} // namespace
+
+TEST_CASE("PluginHost: getKnownEffects returns empty when the list is empty", "[engine][plugin-host][effects]")
+{
+    engine::PluginHost host;
+    REQUIRE(host.getKnownEffects().isEmpty());
+}
+
+TEST_CASE("PluginHost: getKnownEffects filters out PluginDescription::isInstrument", "[engine][plugin-host][effects]")
+{
+    engine::PluginHost host;
+
+    auto& list = host.getKnownPluginList();
+    list.addType(makeFakePluginDesc("FakeReverb", /*isInstrument*/ false));
+    list.addType(makeFakePluginDesc("FakeSynth", /*isInstrument*/ true));
+    list.addType(makeFakePluginDesc("FakeDelay", /*isInstrument*/ false));
+
+    // Three entries pre-listener: KnownPluginList::sendChangeMessage is async
+    // and tests don't pump a MessageManager loop, so the instrument-filter
+    // listener hasn't fired yet. getKnownEffects still filters at read time.
+    const auto all = host.getKnownPlugins();
+    REQUIRE(all.size() == 3);
+
+    const auto effects = host.getKnownEffects();
+    REQUIRE(effects.size() == 2);
+    for (const auto& d : effects)
+    {
+        REQUIRE_FALSE(d.isInstrument);
+        REQUIRE((d.name == "FakeReverb" || d.name == "FakeDelay"));
+    }
+}
+
+TEST_CASE("PluginHost: ChangeListener strips instruments and blacklists their files", "[engine][plugin-host][effects]")
+{
+    engine::PluginHost host;
+
+    auto& list = host.getKnownPluginList();
+    list.addType(makeFakePluginDesc("FakeReverb", /*isInstrument*/ false));
+    list.addType(makeFakePluginDesc("FakeSynth", /*isInstrument*/ true));
+    list.addType(makeFakePluginDesc("FakeDelay", /*isInstrument*/ false));
+
+    // Drive the listener synchronously. In production, the listener fires on
+    // the message loop tick after KnownPluginList::sendChangeMessage; here
+    // we bypass the loop. This is what the production app does on every
+    // scan path (subprocess scanner, juce::PluginListComponent's internal
+    // Scan button, scanDirectory, scanDefaultPaths, loadKnownList).
+    list.sendSynchronousChangeMessage();
+
+    const auto remaining = host.getKnownPlugins();
+    REQUIRE(remaining.size() == 2);
+    for (const auto& d : remaining)
+        REQUIRE_FALSE(d.isInstrument);
+
+    REQUIRE(list.getBlacklistedFiles().contains("/fake/FakeSynth.vst3"));
+    REQUIRE_FALSE(list.getBlacklistedFiles().contains("/fake/FakeReverb.vst3"));
+    REQUIRE_FALSE(list.getBlacklistedFiles().contains("/fake/FakeDelay.vst3"));
+}
+
+TEST_CASE("PluginHost: ChangeListener is idempotent across repeated triggers", "[engine][plugin-host][effects]")
+{
+    engine::PluginHost host;
+
+    auto& list = host.getKnownPluginList();
+    list.addType(makeFakePluginDesc("Synth1", /*isInstrument*/ true));
+    list.addType(makeFakePluginDesc("Effect1", /*isInstrument*/ false));
+
+    list.sendSynchronousChangeMessage();
+    REQUIRE(host.getKnownPlugins().size() == 1);
+    REQUIRE(list.getBlacklistedFiles().contains("/fake/Synth1.vst3"));
+
+    // Firing the listener again with no instruments left must be a no-op
+    // -- not loop, not double-blacklist, not throw.
+    list.sendSynchronousChangeMessage();
+    REQUIRE(host.getKnownPlugins().size() == 1);
+    REQUIRE(list.getBlacklistedFiles().size() == 1);
+}
+
+// -----------------------------------------------------------------------
+// applyKnownProblemBlacklist -- KnownProblemPlugins.h floor list
+// -----------------------------------------------------------------------
+
+TEST_CASE("PluginHost: applyKnownProblemBlacklist returns false on a bare runner", "[engine][plugin-host][blacklist]")
+{
+    engine::PluginHost host;
+
+    // Same precaution as scanDefaultPaths above: skip on a dev box with
+    // populated plugin dirs. Here we only need *known-problem* basenames
+    // (Current.vst3 / Kontakt.vst3 / Kontakt 7.vst3) -- but we can't tell
+    // those apart from arbitrary VSTs without reading the OS plugin
+    // dirs, and reading them is what we're testing. Skip if any default
+    // path is populated; that keeps CI green on a bare runner where the
+    // floor list legitimately matches nothing.
+    for (const auto& name : host.getFormatNames())
+    {
+        const auto path = host.getDefaultSearchPathForFormat(name);
+        for (int i = 0; i < path.getNumPaths(); ++i)
+        {
+            if (!path[i].isDirectory())
+                continue;
+            const auto children = path[i].findChildFiles(juce::File::findFiles, /*recursive*/ true);
+            if (!children.isEmpty())
+                SKIP("default plugin path is populated; floor-list outcome is host-specific");
+        }
+    }
+
+    const bool added = host.applyKnownProblemBlacklist();
+    REQUIRE_FALSE(added);
+    REQUIRE(host.getKnownPluginList().getBlacklistedFiles().isEmpty());
+}
+
+TEST_CASE("PluginHost: applyKnownProblemBlacklist is idempotent", "[engine][plugin-host][blacklist]")
+{
+    engine::PluginHost host;
+
+    // Pre-seed the blacklist with one of the floor-list basenames at a
+    // synthetic path the host can't possibly already know. The second
+    // applyKnownProblemBlacklist call must NOT re-add this path (the
+    // contract: addToBlacklist short-circuits duplicates -> returns
+    // false).
+    auto& list = host.getKnownPluginList();
+    const juce::String synthetic{"/synthetic/Current.vst3"};
+    list.addToBlacklist(synthetic);
+    REQUIRE(list.getBlacklistedFiles().contains(synthetic));
+
+    // Calling on a bare runner won't add anything new, but the seeded
+    // entry must survive (the blacklist is monotone).
+    host.applyKnownProblemBlacklist();
+    REQUIRE(list.getBlacklistedFiles().contains(synthetic));
+
+    // Second call is a pure no-op on the bare-runner path.
+    const bool added = host.applyKnownProblemBlacklist();
+    REQUIRE_FALSE(added);
+    REQUIRE(list.getBlacklistedFiles().contains(synthetic));
 }

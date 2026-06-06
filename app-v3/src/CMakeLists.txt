@@ -112,3 +112,74 @@ if(PB3_ENABLE_CLAP)
     target_link_libraries(Pedalboard3 PRIVATE juce_clap_hosting)
     target_compile_definitions(Pedalboard3 PRIVATE PB3_HAS_CLAP=1)
 endif()
+
+# -----------------------------------------------------------------------------
+# pb3-scanner-helper — out-of-process plugin descriptor extractor
+# -----------------------------------------------------------------------------
+# Master plan §4.2.A: each plugin scan runs in its own subprocess so
+# crashing plugins cannot kill the host. The parent (engine::PluginScanner)
+# spawns this binary per plugin file via juce::ChildProcess, reads the
+# resulting <PB3_SCAN_RESULT> XML from stdout, and adds descriptors to
+# KnownPluginList. A non-zero exit code (signal, abort, throw) tells the
+# parent to blacklist the plugin.
+#
+# Console app — no GUI dependency. Same plugin-format set as the host.
+juce_add_console_app(pb3-scanner-helper
+    VERSION             "${PROJECT_VERSION}"
+    BUNDLE_ID           "com.pedalboard3.scanner-helper"
+    NEEDS_CURL          FALSE
+    NEEDS_WEB_BROWSER   FALSE
+)
+
+target_sources(pb3-scanner-helper PRIVATE tools/pb3-scanner-helper.cpp)
+
+# juce_gui_basics is required even for the "console" helper because
+# AudioUnit plugin scans on macOS need an NSApplication / NSAutoreleasePool
+# alive (ScopedJuceInitialiser_GUI handles this). juce_audio_utils pulls
+# in the AudioUnit-aware bits — without it, juce_audio_processors.mm
+# references AUGenericView from AudioUnit.framework, which the linker
+# can't resolve unless something downstream pulls it in. (Linux + Windows
+# don't have AudioUnit so the dep is no-op there.)
+target_link_libraries(pb3-scanner-helper PRIVATE
+    juce::juce_audio_processors
+    juce::juce_audio_utils
+    juce::juce_gui_basics
+    pb3_juce_config
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags
+    juce::juce_recommended_lto_flags
+)
+
+pb3_apply_strict_warnings(pb3-scanner-helper tools/pb3-scanner-helper.cpp)
+
+if(PB3_ENABLE_CLAP)
+    target_link_libraries(pb3-scanner-helper PRIVATE juce_clap_hosting)
+    target_compile_definitions(pb3-scanner-helper PRIVATE PB3_HAS_CLAP=1)
+endif()
+
+# -----------------------------------------------------------------------------
+# macOS: copy pb3-scanner-helper into the Pedalboard3.app bundle
+# -----------------------------------------------------------------------------
+# juce_add_gui_app produces Pedalboard3.app; juce_add_console_app produces
+# pb3-scanner-helper as a loose binary in its own _artefacts tree. At
+# runtime PluginScanner::findHelperBinary() looks for the helper as a
+# sibling of the host's currentExecutableFile, which on macOS is
+# Pedalboard3.app/Contents/MacOS/Pedalboard 3 — so the helper has to live
+# right next to it for an installed .app to find it. (On Linux/Windows
+# the artefact tree layout already puts both binaries at sibling paths
+# in dev builds, and Phase 6 install rules will put them under the same
+# install prefix on those platforms.)
+#
+# add_dependencies makes the helper build first so the POST_BUILD copy
+# always sees a fresh binary. copy_if_different is a no-op when the
+# helper is unchanged, so incremental builds aren't penalised.
+if(APPLE)
+    add_dependencies(Pedalboard3 pb3-scanner-helper)
+    add_custom_command(TARGET Pedalboard3 POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:pb3-scanner-helper>
+            $<TARGET_BUNDLE_CONTENT_DIR:Pedalboard3>/MacOS/$<TARGET_FILE_NAME:pb3-scanner-helper>
+        COMMENT "Embedding pb3-scanner-helper in Pedalboard3.app/Contents/MacOS/"
+        VERBATIM
+    )
+endif()

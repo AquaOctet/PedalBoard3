@@ -1,4 +1,4 @@
-// Tests for pedalboard3::engine::OutputSanitiser — the final-stage guard
+// Tests for pedalboard3::engine::OutputSanitiser -- the final-stage guard
 // that prevents NaN / Inf / |x|>1.5 from reaching the audio device.
 
 #include <catch2/catch_test_macros.hpp>
@@ -101,7 +101,7 @@ TEST_CASE("OutputSanitiser: samples with |x| > 1.5 are zeroed", "[engine][saniti
     engine::processors::OutputSanitiser sanitiser;
     prepare(sanitiser);
 
-    // Signal amplitude 2.0 — exceeds the ±1.5 ceiling everywhere above 0.75 sin.
+    // Signal amplitude 2.0 -- exceeds the ±1.5 ceiling everywhere above 0.75 sin.
     auto buf = makeTestBuffer(2, kDefaultBlockSize);
     fillDC(buf, 2.0f);
 
@@ -125,7 +125,7 @@ TEST_CASE("OutputSanitiser: samples just inside the ceiling pass through", "[eng
     REQUIRE_FALSE(sanitiser.consumeBadSampleFlag());
 }
 
-TEST_CASE("OutputSanitiser: mixed good and bad samples — bad zeroed, good preserved", "[engine][sanitiser]")
+TEST_CASE("OutputSanitiser: mixed good and bad samples -- bad zeroed, good preserved", "[engine][sanitiser]")
 {
     engine::processors::OutputSanitiser sanitiser;
     prepare(sanitiser);
@@ -135,7 +135,7 @@ TEST_CASE("OutputSanitiser: mixed good and bad samples — bad zeroed, good pres
 
     // Poison specific sample indices with NaN on channel 0 and Inf on channel 1.
     buf.getWritePointer(0)[10] = std::numeric_limits<float>::quiet_NaN();
-    buf.getWritePointer(0)[200] = 3.14f; // exceeds 1.5 — sorry, Pi
+    buf.getWritePointer(0)[200] = 3.14f; // exceeds 1.5 -- sorry, Pi
     buf.getWritePointer(1)[42] = std::numeric_limits<float>::infinity();
     buf.getWritePointer(1)[77] = -2.0f;
 
