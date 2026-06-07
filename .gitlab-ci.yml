@@ -103,20 +103,13 @@ default:
       paths: [ .ccache/ ]
       policy: pull-push
 
-# Windows: CPM cache (JUCE source tarball) + sccache (MSVC object cache,
-# the ccache analog). Without an object cache the Windows job recompiled
-# all of JUCE from scratch every pipeline (~28 min); sccache makes warm
-# reruns reuse objects like build:linux's ccache does. sccache only caches
-# MSVC when debug info is embedded (/Z7) — build:windows forces that via
-# CMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded. The cache populates on the
-# first run (still a full compile) and pays off from the second run on.
+# Windows runner has no ccache (sccache is the analog but not yet wired).
+# CPM cache alone is the big-ticket item — it saves the JUCE source tarball
+# fetch (+ Catch2 etc.) per pipeline. ~50 MB cache, ~30 s saved on rerun.
 .cache-windows: &cache-windows
   cache:
     - key: "cpm-${CI_PROJECT_PATH_SLUG}"
       paths: [ .cpm-cache/ ]
-      policy: pull-push
-    - key: "sccache-${CI_JOB_NAME_SLUG}"
-      paths: [ .sccache/ ]
       policy: pull-push
 
 # Lint-only setup: clang-format + just. Skips the heavy build toolchain
@@ -305,30 +298,6 @@ build:windows:
   <<: *cache-windows
   before_script: *windows-setup
   script:
-    # Install sccache (MSVC object cache) so warm reruns skip recompiling
-    # all of JUCE. Defensive: if the download/extract fails we log a
-    # warning and build WITHOUT the launcher rather than breaking the job —
-    # the compiler-launcher env vars are only set on success. The cache
-    # dir lives under CI_PROJECT_DIR so GitLab's .sccache/ cache picks it up.
-    - |
-      $sccacheVer = "v0.8.2"
-      $sccacheName = "sccache-$sccacheVer-x86_64-pc-windows-msvc"
-      try {
-          Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/mozilla/sccache/releases/download/$sccacheVer/$sccacheName.zip" -OutFile sccache.zip
-          Expand-Archive -Path sccache.zip -DestinationPath sccache-bin -Force
-          $sccacheExe = (Get-ChildItem -Path sccache-bin -Recurse -Filter sccache.exe | Select-Object -First 1).FullName
-          if (-not $sccacheExe) { throw "sccache.exe not found after extract" }
-          $env:PATH = "$(Split-Path $sccacheExe);$env:PATH"
-          $env:SCCACHE_DIR = "$env:CI_PROJECT_DIR\.sccache"
-          $env:SCCACHE_IDLE_TIMEOUT = "0"
-          & $sccacheExe --start-server
-          & $sccacheExe --zero-stats | Out-Null
-          $env:CMAKE_C_COMPILER_LAUNCHER = "sccache"
-          $env:CMAKE_CXX_COMPILER_LAUNCHER = "sccache"
-          Write-Host "sccache enabled: $sccacheExe (SCCACHE_DIR=$env:SCCACHE_DIR)"
-      } catch {
-          Write-Host "WARNING: sccache setup failed ($_); building without compiler cache"
-      }
     # Patch JUCE to delay-load dcomp.dll. Pipeline #140 confirmed
     # saas-windows-medium-amd64 doesn't ship DirectComposition's
     # dcomp.dll and there's no Microsoft FoD or vendored copy on the
@@ -399,14 +368,14 @@ build:windows:
 
       Patch-JuceForDcomp | Out-Null
 
-      cmake --preset windows-dev -S app-v3 -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
+      cmake --preset windows-dev -S app-v3
       if ($LASTEXITCODE -ne 0) {
           Write-Host "=== first cmake failed; patching JUCE for dcomp delay-load and retrying ==="
           $applied = Patch-JuceForDcomp
           if ($applied) {
               $juceTools = "build\windows-dev\_deps\juce-build\tools"
               if (Test-Path $juceTools) { Remove-Item -Recurse -Force $juceTools -ErrorAction SilentlyContinue }
-              cmake --preset windows-dev -S app-v3 -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
+              cmake --preset windows-dev -S app-v3
           }
           if ($LASTEXITCODE -ne 0) {
               Write-Host "=== cmake configure still failing after delay-load patch; full diagnostic ==="
@@ -429,8 +398,6 @@ build:windows:
           }
       }
     - cmake --build --preset windows-dev -- -j $env:NUMBER_OF_PROCESSORS
-    # Surface cache effectiveness (hits climb from the second run onward).
-    - if (Get-Command sccache -ErrorAction SilentlyContinue) { sccache --show-stats }
   artifacts:
     paths:
       - build/windows-dev/
