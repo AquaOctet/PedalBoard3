@@ -76,12 +76,19 @@ public:
     AudioGraphRuntime* getRuntime() noexcept { return runtime_.get(); }
     juce::AudioDeviceManager* getDeviceManager() noexcept { return &deviceManager_; }
 
+    // The error message from the most recent initialise() call (empty when
+    // the device opened cleanly). Retained so the UI can tell the user WHY
+    // there's no sound — otherwise a failed device open is silent except
+    // for a log line. Matches the last initialise() Result's message.
+    const juce::String& getLastInitError() const noexcept { return lastInitError_; }
+
 private:
     juce::AudioDeviceManager deviceManager_;
     juce::AudioProcessorPlayer player_;
     std::unique_ptr<AudioGraphRuntime> runtime_;
 
     bool initialised_{false};
+    juce::String lastInitError_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioEngine)
 };
