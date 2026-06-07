@@ -306,10 +306,10 @@ build:windows:
   before_script: *windows-setup
   script:
     # Install sccache (MSVC object cache) so warm reruns skip recompiling
-    # all of JUCE. Defensive: if the download/extract fails we log a
-    # warning and build WITHOUT the launcher rather than breaking the job —
-    # the compiler-launcher env vars are only set on success. The cache
-    # dir lives under CI_PROJECT_DIR so GitLab's .sccache/ cache picks it up.
+    # all of JUCE. Defensive: if the download/extract fails we log a warning
+    # and build WITHOUT the launcher rather than breaking the job — the
+    # launcher -D is only added on success (gated on PB3_SCCACHE_OK). The
+    # cache dir lives under CI_PROJECT_DIR so GitLab's .sccache/ picks it up.
     - |
       $sccacheVer = "v0.8.2"
       $sccacheName = "sccache-$sccacheVer-x86_64-pc-windows-msvc"
@@ -323,8 +323,13 @@ build:windows:
           $env:SCCACHE_IDLE_TIMEOUT = "0"
           & $sccacheExe --start-server
           & $sccacheExe --zero-stats | Out-Null
-          $env:CMAKE_C_COMPILER_LAUNCHER = "sccache"
-          $env:CMAKE_CXX_COMPILER_LAUNCHER = "sccache"
+          # Flag success only. The launcher is passed via -D on our configure
+          # (below), NOT as an env var: an env CMAKE_CXX_COMPILER_LAUNCHER
+          # leaks into JUCE's nested juceaide host-tool build, which compiles
+          # with /Zi and fails under sccache (C1041 "cannot open program
+          # database"). A -D cache var stays in OUR build and never reaches
+          # juceaide's separate cmake invocation.
+          $env:PB3_SCCACHE_OK = "1"
           Write-Host "sccache enabled: $sccacheExe (SCCACHE_DIR=$env:SCCACHE_DIR)"
       } catch {
           Write-Host "WARNING: sccache setup failed ($_); building without compiler cache"
@@ -399,14 +404,19 @@ build:windows:
 
       Patch-JuceForDcomp | Out-Null
 
-      cmake --preset windows-dev -S app-v3 -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
+      # Pass the sccache launcher via -D (not env) so it scopes to OUR build
+      # and never reaches JUCE's nested juceaide build (which uses /Zi and
+      # would fail under sccache). Empty when sccache setup failed.
+      $pb3Launcher = if ($env:PB3_SCCACHE_OK -eq "1") { @("-DCMAKE_C_COMPILER_LAUNCHER=sccache", "-DCMAKE_CXX_COMPILER_LAUNCHER=sccache") } else { @() }
+
+      cmake --preset windows-dev -S app-v3 @pb3Launcher -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
       if ($LASTEXITCODE -ne 0) {
           Write-Host "=== first cmake failed; patching JUCE for dcomp delay-load and retrying ==="
           $applied = Patch-JuceForDcomp
           if ($applied) {
               $juceTools = "build\windows-dev\_deps\juce-build\tools"
               if (Test-Path $juceTools) { Remove-Item -Recurse -Force $juceTools -ErrorAction SilentlyContinue }
-              cmake --preset windows-dev -S app-v3 -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
+              cmake --preset windows-dev -S app-v3 @pb3Launcher -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
           }
           if ($LASTEXITCODE -ne 0) {
               Write-Host "=== cmake configure still failing after delay-load patch; full diagnostic ==="
