@@ -5,20 +5,27 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_core/juce_core.h>
 
+#include <memory>
 #include <vector>
 
 namespace pedalboard3::session
 {
 
-// One slot in a Patch — a plugin description plus per-instance UI state
-// (bypass + custom display name). Phase 2 will add a state blob and an
-// (x,y) position for the canvas.
+// One slot in a Patch — a plugin description plus per-instance state
+// (bypass + custom display name + the plugin's own opaque state blob).
+// Phase 3 will add an (x,y) position for the canvas.
 struct PatchNode
 {
     NodeId id{0};
     juce::PluginDescription desc;
     bool bypass{false};
     juce::String customName;
+
+    // The plugin's getStateInformation() blob (knob settings, presets,
+    // etc.). Empty for a freshly-added plugin or a patch built before
+    // state capture. buildPreparedGraph applies it via setStateInformation
+    // after instantiation; getActivePatchWithState() captures it on save.
+    juce::MemoryBlock state;
 };
 
 // Directed connection between two pins. `src == graphIO` means the
@@ -83,5 +90,15 @@ PatchValidation validatePatch(const Patch&) noexcept;
 // into a stable identity string suitable for hashing into the
 // crash-loop marker. Order-sensitive (matches the user's chain shape).
 juce::String patchIdentityString(const Patch&);
+
+// Patch <-> XML. Produces a <PATCH> element carrying NODES (each with an
+// <IDENTITY> and, when non-empty, a base64 <STATE>) and CONNECTIONS.
+// Shared by Preferences (auto-restore) and PdlSerializer (.pdl files) so
+// both round-trip plugin state identically. patchFromXml also accepts the
+// legacy <ACTIVE_PATCH> tag written by pre-Phase-2 builds. Returns nullptr
+// if the element is not a recognised patch root or an <IDENTITY> fails to
+// parse. Neither validates topology — call validatePatch() afterwards.
+std::unique_ptr<juce::XmlElement> patchToXml(const Patch&);
+std::unique_ptr<Patch> patchFromXml(const juce::XmlElement&);
 
 } // namespace pedalboard3::session

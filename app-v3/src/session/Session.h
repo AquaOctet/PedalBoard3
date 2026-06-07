@@ -139,6 +139,13 @@ public:
     // ---- Snapshot accessors (message thread) -------------------------------
 
     Patch getActivePatch() const;                  // heavyweight copy
+
+    // Like getActivePatch(), but also captures each live plugin's current
+    // state blob (getStateInformation) into PatchNode.state — the snapshot
+    // used when saving to a .pdl so a later load restores knob settings.
+    // Message-thread only; calls getStateInformation under the status lock.
+    Patch getActivePatchWithState() const;
+
     std::vector<NodeId> getNodeIdsInOrder() const; // cheap polling
     std::vector<NodeSnapshot> getNodeSnapshots() const;
 

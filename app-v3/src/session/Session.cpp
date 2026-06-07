@@ -371,6 +371,31 @@ Patch Session::getActivePatch() const
     return activePatch_;
 }
 
+Patch Session::getActivePatchWithState() const
+{
+    std::lock_guard<std::mutex> lk(statusMutex_);
+    Patch snapshot = activePatch_;
+
+    // Capture each live plugin's current state into the snapshot so the
+    // saved .pdl restores knob settings on the next load. nodes_ keys are
+    // kept in sync with activePatch_.nodes ids by every mutation, so a
+    // missing entry (e.g. mid-build) just leaves that node's state empty.
+    for (auto& node : snapshot.nodes)
+    {
+        auto it = nodes_.find(node.id);
+        if (it != nodes_.end() && it->second.hosted != nullptr)
+        {
+            // Clear any blob carried over from a loaded .pdl first —
+            // getStateInformation appends via MemoryOutputStream in many
+            // plugins, which would otherwise concatenate onto stale bytes.
+            node.state.setSize(0);
+            it->second.hosted->getStateInformation(node.state);
+        }
+    }
+
+    return snapshot;
+}
+
 std::vector<NodeId> Session::getNodeIdsInOrder() const
 {
     std::lock_guard<std::mutex> lk(statusMutex_);
