@@ -42,6 +42,19 @@ TEST_CASE("AudioEngine: initialise with default devices is safe on headless syst
     }
 }
 
+TEST_CASE("AudioEngine: getLastInitError mirrors the initialise result", "[engine][audioengine]")
+{
+    engine::AudioEngine eng;
+    const auto result = eng.initialise();
+
+    // The retained error must mirror the returned Result exactly, so the UI
+    // can surface WHY audio is silent after callers have dropped the Result.
+    if (result.isOk())
+        REQUIRE(eng.getLastInitError().isEmpty());
+    else
+        REQUIRE(eng.getLastInitError() == result.getErrorMessage());
+}
+
 TEST_CASE("AudioEngine: loadGraph(nullptr) clears the runtime", "[engine][audioengine]")
 {
     engine::AudioEngine eng;

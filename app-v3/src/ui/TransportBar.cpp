@@ -169,7 +169,13 @@ void TransportBar::refreshDeviceInfo()
     auto* dev = dm->getCurrentAudioDevice();
     if (dev == nullptr)
     {
-        deviceInfoLabel_.setText("(no audio device — open Audio Settings)", juce::dontSendNotification);
+        // Surface the actual reason audio is silent (e.g. a driver that
+        // failed to open) rather than a generic placeholder — otherwise
+        // the failure is invisible except for a log line.
+        const auto& err = ctx_.audioEngine.getLastInitError();
+        deviceInfoLabel_.setText(err.isNotEmpty() ? ("Audio device error: " + err + " — open Audio Settings")
+                                                  : "(no audio device — open Audio Settings)",
+                                 juce::dontSendNotification);
         return;
     }
 

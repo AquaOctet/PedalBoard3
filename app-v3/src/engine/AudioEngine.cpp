@@ -29,6 +29,10 @@ AudioEngine::Result AudioEngine::initialise(const juce::XmlElement* savedState)
     deviceManager_.addAudioCallback(&player_);
     initialised_ = true;
 
+    // Retain the message so the UI can surface WHY audio is silent; the
+    // returned Result is otherwise the only carrier and callers drop it.
+    lastInitError_ = err;
+
     if (err.isNotEmpty())
         return Result::fail(err);
 
