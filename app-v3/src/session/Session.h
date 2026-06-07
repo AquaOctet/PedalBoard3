@@ -138,7 +138,7 @@ public:
 
     // ---- Snapshot accessors (message thread) -------------------------------
 
-    Patch getActivePatch() const;                  // heavyweight copy
+    Patch getActivePatch() const; // heavyweight copy
 
     // Like getActivePatch(), but also captures each live plugin's current
     // state blob (getStateInformation) into PatchNode.state — the snapshot

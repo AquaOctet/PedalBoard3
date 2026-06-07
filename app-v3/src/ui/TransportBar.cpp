@@ -454,28 +454,28 @@ void TransportBar::savePatch()
     const auto flags = juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles |
                        juce::FileBrowserComponent::warnAboutOverwriting;
 
-    fileChooser_->launchAsync(flags,
-                              [this, snapshot](const juce::FileChooser& fc)
-                              {
-                                  auto file = fc.getResult();
-                                  if (file == juce::File())
-                                      return; // cancelled
+    fileChooser_->launchAsync(
+        flags,
+        [this, snapshot](const juce::FileChooser& fc)
+        {
+            auto file = fc.getResult();
+            if (file == juce::File())
+                return; // cancelled
 
-                                  if (!file.hasFileExtension("pdl"))
-                                      file = file.withFileExtension("pdl");
+            if (!file.hasFileExtension("pdl"))
+                file = file.withFileExtension("pdl");
 
-                                  const auto result = session::pdl::writePatch(snapshot, file);
-                                  const bool ok = result.wasOk();
+            const auto result = session::pdl::writePatch(snapshot, file);
+            const bool ok = result.wasOk();
 
-                                  const auto opts = juce::MessageBoxOptions{}
-                                                        .withIconType(ok ? juce::MessageBoxIconType::InfoIcon
-                                                                         : juce::MessageBoxIconType::WarningIcon)
-                                                        .withTitle(ok ? "Patch saved" : "Couldn't save patch")
-                                                        .withMessage(ok ? ("Saved to " + file.getFullPathName())
-                                                                        : result.getErrorMessage())
-                                                        .withButton("OK");
-                                  juce::AlertWindow::showAsync(opts, nullptr);
-                              });
+            const auto opts =
+                juce::MessageBoxOptions{}
+                    .withIconType(ok ? juce::MessageBoxIconType::InfoIcon : juce::MessageBoxIconType::WarningIcon)
+                    .withTitle(ok ? "Patch saved" : "Couldn't save patch")
+                    .withMessage(ok ? ("Saved to " + file.getFullPathName()) : result.getErrorMessage())
+                    .withButton("OK");
+            juce::AlertWindow::showAsync(opts, nullptr);
+        });
 }
 
 void TransportBar::openPatch()

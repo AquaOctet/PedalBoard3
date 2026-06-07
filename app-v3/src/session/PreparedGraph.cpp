@@ -78,8 +78,7 @@ PreparedGraph buildPreparedGraph(
         // prepareToPlay. Best-effort — a plugin that rejects a stale blob
         // simply starts at its defaults; we don't fail the whole load.
         if (patchNode.state.getSize() > 0)
-            plugin->setStateInformation(patchNode.state.getData(),
-                                        static_cast<int>(patchNode.state.getSize()));
+            plugin->setStateInformation(patchNode.state.getData(), static_cast<int>(patchNode.state.getSize()));
 
         auto* hostedPtr = plugin.get();
         auto wrapped = std::make_unique<engine::BypassableInstance>(std::move(plugin));
