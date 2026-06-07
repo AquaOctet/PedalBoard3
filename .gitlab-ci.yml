@@ -281,6 +281,10 @@ build:linux:
     # to a few MB.
     exclude:
       - "build/linux-dev/_deps/**/*"
+      # Our own intermediate objects + CMake internals — not needed once the
+      # binaries are linked; this is the bulk of the remaining Debug artifact.
+      - "build/linux-dev/**/CMakeFiles/**"
+      - "build/linux-dev/**/*.o"
     expire_in: 1 day
     when: on_success
 
@@ -405,6 +409,9 @@ build:windows:
     # rationale (tests need our binaries, not the JUCE sources).
     exclude:
       - "build/windows-dev/_deps/**/*"
+      # Intermediate objects + CMake internals — see build:linux.
+      - "build/windows-dev/**/CMakeFiles/**"
+      - "build/windows-dev/**/*.obj"
     expire_in: 1 day
     when: on_success
 
@@ -428,6 +435,9 @@ build:macos:
     # rationale (tests need our binaries, not the JUCE sources).
     exclude:
       - "build/macos-dev/_deps/**/*"
+      # Intermediate objects + CMake internals — see build:linux.
+      - "build/macos-dev/**/CMakeFiles/**"
+      - "build/macos-dev/**/*.o"
     expire_in: 1 day
     when: on_success
 
