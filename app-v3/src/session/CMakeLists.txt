@@ -18,6 +18,8 @@ add_library(pb3_session_core STATIC
     PreferencesPersister.h
     Patch.cpp
     Patch.h
+    PdlSerializer.cpp
+    PdlSerializer.h
     NodeId.h
 )
 
@@ -53,4 +55,5 @@ pb3_apply_strict_warnings(pb3_session_core
     Session.cpp
     PreferencesPersister.cpp
     Patch.cpp
+    PdlSerializer.cpp
 )

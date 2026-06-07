@@ -5,6 +5,7 @@
 #include "engine/PluginHost.h"
 #include "engine/PluginScanner.h"
 #include "engine/processors/TestToneProcessor.h"
+#include "session/PdlSerializer.h"
 #include "session/Preferences.h"
 #include "session/Session.h"
 #include "SignalCanvas.h"
@@ -22,6 +23,7 @@ namespace
 {
 constexpr int kBarPadding = 12;
 constexpr int kButtonGap = 6;
+constexpr int kFileButtonWidth = 64;
 constexpr int kAddButtonWidth = 130;
 constexpr int kSettingsButtonWidth = 140;
 constexpr int kToneButtonWidth = 100;
@@ -72,6 +74,7 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas) : ctx_(ctx), c
 {
     setOpaque(true);
 
+    fileButton_.onClick = [this] { openFileMenu(); };
     addPluginButton_.onClick = [this] { openAddPluginMenu(); };
     settingsButton_.onClick = [this] { openAudioSettings(); };
     rescanButton_.onClick = [this] { rescanPlugins(); };
@@ -80,6 +83,7 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas) : ctx_(ctx), c
     toneButton_.setClickingTogglesState(true);
     toneButton_.onClick = [this] { onTestToneToggled(); };
 
+    addAndMakeVisible(fileButton_);
     addAndMakeVisible(addPluginButton_);
     addAndMakeVisible(settingsButton_);
     addAndMakeVisible(toneButton_);
@@ -141,9 +145,11 @@ void TransportBar::resized()
 
     bounds.removeFromRight(kBarPadding);
 
-    // Left cluster: title text + Add Plugin button.
-    auto left = bounds.removeFromLeft(120 + kAddButtonWidth + kButtonGap);
+    // Left cluster: title text + File + Add Plugin buttons.
+    auto left = bounds.removeFromLeft(120 + kFileButtonWidth + kAddButtonWidth + 2 * kButtonGap);
     titleLabel_.setBounds(left.removeFromLeft(120));
+    left.removeFromLeft(kButtonGap);
+    fileButton_.setBounds(left.removeFromLeft(kFileButtonWidth));
     left.removeFromLeft(kButtonGap);
     addPluginButton_.setBounds(left.removeFromLeft(kAddButtonWidth));
 
@@ -418,6 +424,97 @@ void TransportBar::rescanPlugins()
     // is preserved while the scan walks the user's plugin paths.
     auto* runner = new PluginRescanThread(ctx_, std::move(helper));
     runner->launchThread();
+}
+
+void TransportBar::openFileMenu()
+{
+    juce::PopupMenu menu;
+    menu.addItem(1, "Open Patch...");
+    menu.addItem(2, "Save Patch As...");
+    menu.showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(fileButton_),
+                       [this](int choice)
+                       {
+                           if (choice == 1)
+                               openPatch();
+                           else if (choice == 2)
+                               savePatch();
+                       });
+}
+
+void TransportBar::savePatch()
+{
+    // Snapshot the chain WITH live plugin state so a later load restores
+    // knob settings (master plan §4.5 / §4.2.B).
+    auto snapshot = ctx_.session.getActivePatchWithState();
+
+    const auto dir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("Pedalboard 3");
+    fileChooser_ =
+        std::make_unique<juce::FileChooser>("Save Pedalboard Patch", dir.getChildFile("Untitled.pdl"), "*.pdl");
+
+    const auto flags = juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles |
+                       juce::FileBrowserComponent::warnAboutOverwriting;
+
+    fileChooser_->launchAsync(
+        flags,
+        [this, snapshot](const juce::FileChooser& fc)
+        {
+            auto file = fc.getResult();
+            if (file == juce::File())
+                return; // cancelled
+
+            if (!file.hasFileExtension("pdl"))
+                file = file.withFileExtension("pdl");
+
+            const auto result = session::pdl::writePatch(snapshot, file);
+            const bool ok = result.wasOk();
+
+            const auto opts =
+                juce::MessageBoxOptions{}
+                    .withIconType(ok ? juce::MessageBoxIconType::InfoIcon : juce::MessageBoxIconType::WarningIcon)
+                    .withTitle(ok ? "Patch saved" : "Couldn't save patch")
+                    .withMessage(ok ? ("Saved to " + file.getFullPathName()) : result.getErrorMessage())
+                    .withButton("OK");
+            juce::AlertWindow::showAsync(opts, nullptr);
+        });
+}
+
+void TransportBar::openPatch()
+{
+    const auto dir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("Pedalboard 3");
+    fileChooser_ = std::make_unique<juce::FileChooser>("Open Pedalboard Patch", dir, "*.pdl");
+
+    const auto flags = juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles;
+
+    fileChooser_->launchAsync(flags,
+                              [this](const juce::FileChooser& fc)
+                              {
+                                  const auto file = fc.getResult();
+                                  if (file == juce::File())
+                                      return; // cancelled
+
+                                  auto loaded = session::pdl::readPatch(file);
+                                  if (loaded.patch == nullptr)
+                                  {
+                                      const auto opts = juce::MessageBoxOptions{}
+                                                            .withIconType(juce::MessageBoxIconType::WarningIcon)
+                                                            .withTitle("Couldn't open patch")
+                                                            .withMessage(loaded.error)
+                                                            .withButton("OK");
+                                      juce::AlertWindow::showAsync(opts, nullptr);
+                                      return;
+                                  }
+
+                                  // If Test Tone is on, drop it: the loaded patch becomes the
+                                  // live graph via Session. Clear the toggle so the UI agrees.
+                                  if (toneButton_.getToggleState())
+                                      toneButton_.setToggleState(false, juce::dontSendNotification);
+
+                                  // CALLER-MANAGED EDITOR LIFECYCLE (D1b / AC-UI-P): close every
+                                  // open editor BEFORE replacePatch destroys the live instances.
+                                  canvas_.closeAllEditors();
+                                  ctx_.session.replacePatch(std::move(*loaded.patch));
+                                  updateAddPluginEnabled();
+                              });
 }
 
 void TransportBar::onTestToneToggled()

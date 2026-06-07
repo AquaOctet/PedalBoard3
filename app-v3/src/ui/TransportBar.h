@@ -4,6 +4,8 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <memory>
+
 namespace pedalboard3::ui
 {
 
@@ -55,6 +57,9 @@ private:
     void changeListenerCallback(juce::ChangeBroadcaster*) override;
 
     void openAddPluginMenu();
+    void openFileMenu();
+    void savePatch();
+    void openPatch();
     void openAudioSettings();
     void openPluginList();
     void rescanPlugins();
@@ -64,6 +69,7 @@ private:
     AppContext& ctx_;
     SignalCanvas& canvas_;
 
+    juce::TextButton fileButton_{"File"};
     juce::TextButton addPluginButton_{"+ Add Plugin"};
     juce::TextButton settingsButton_{"Audio Settings..."};
     juce::ToggleButton toneButton_{"Test Tone"};
@@ -72,6 +78,9 @@ private:
 
     juce::Label titleLabel_;
     juce::Label deviceInfoLabel_;
+
+    // Held as a member so it outlives the async launchAsync callback.
+    std::unique_ptr<juce::FileChooser> fileChooser_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TransportBar)
 };

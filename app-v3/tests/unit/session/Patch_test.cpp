@@ -180,3 +180,61 @@ TEST_CASE("Patch: patchIdentityString is order-sensitive + stable", "[session][p
     p3.nodes.push_back(makeNode(2, "A"));
     REQUIRE(session::patchIdentityString(p1) != session::patchIdentityString(p3));
 }
+
+TEST_CASE("Patch: patchToXml/patchFromXml round-trips nodes, connections, and state", "[session][patch][xml]")
+{
+    session::Patch p;
+    p.name = "My Board";
+
+    auto a = makeNode(1, "Comp");
+    a.bypass = true;
+    a.customName = "Punch";
+    a.state.append("hello-state", 11); // non-empty plugin state blob
+    p.nodes.push_back(a);
+    p.nodes.push_back(makeNode(2, "Reverb"));
+
+    p.connections.push_back(conn(session::graphIO, 0, 1, 0));
+    p.connections.push_back(conn(1, 0, 2, 0));
+
+    auto xml = session::patchToXml(p);
+    REQUIRE(xml != nullptr);
+    REQUIRE(xml->hasTagName("PATCH"));
+
+    auto rt = session::patchFromXml(*xml);
+    REQUIRE(rt != nullptr);
+    REQUIRE(rt->name == "My Board");
+    REQUIRE(rt->nodes.size() == 2);
+    REQUIRE(rt->connections.size() == 2);
+
+    const auto& n0 = rt->nodes[0];
+    REQUIRE(n0.id == 1);
+    REQUIRE(n0.bypass);
+    REQUIRE(n0.customName == "Punch");
+    REQUIRE(n0.desc.name == "Comp");
+    REQUIRE(n0.state.getSize() == 11);
+    REQUIRE(n0.state.toString() == "hello-state");
+
+    // The node that had no state stays empty after the round-trip.
+    REQUIRE(rt->nodes[1].state.getSize() == 0);
+}
+
+TEST_CASE("Patch: patchFromXml accepts the legacy <ACTIVE_PATCH> tag", "[session][patch][xml]")
+{
+    session::Patch p;
+    p.nodes.push_back(makeNode(1, "Legacy"));
+
+    auto xml = session::patchToXml(p);
+    REQUIRE(xml != nullptr);
+    xml->setTagName("ACTIVE_PATCH"); // simulate a pre-Phase-2 Preferences file
+
+    auto rt = session::patchFromXml(*xml);
+    REQUIRE(rt != nullptr);
+    REQUIRE(rt->nodes.size() == 1);
+    REQUIRE(rt->nodes[0].desc.name == "Legacy");
+}
+
+TEST_CASE("Patch: patchFromXml rejects an unrelated element", "[session][patch][xml]")
+{
+    juce::XmlElement bogus("SOMETHING_ELSE");
+    REQUIRE(session::patchFromXml(bogus) == nullptr);
+}

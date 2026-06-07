@@ -116,4 +116,103 @@ juce::String patchIdentityString(const Patch& p)
     return result;
 }
 
+std::unique_ptr<juce::XmlElement> patchToXml(const Patch& p)
+{
+    auto root = std::make_unique<juce::XmlElement>("PATCH");
+    root->setAttribute("name", p.name);
+
+    auto* nodesEl = root->createNewChildElement("NODES");
+    for (const auto& n : p.nodes)
+    {
+        auto* nodeEl = nodesEl->createNewChildElement("NODE");
+        nodeEl->setAttribute("id", n.id);
+        nodeEl->setAttribute("bypass", n.bypass);
+        nodeEl->setAttribute("customName", n.customName);
+
+        if (auto descXml = n.desc.createXml())
+        {
+            // Re-tag from <PLUGIN> to <IDENTITY> so the schema reads
+            // cleanly (master plan §4.5 idiom).
+            descXml->setTagName("IDENTITY");
+            nodeEl->addChildElement(descXml.release());
+        }
+
+        if (n.state.getSize() > 0)
+        {
+            auto* stateEl = nodeEl->createNewChildElement("STATE");
+            stateEl->setAttribute("encoding", "base64");
+            stateEl->addTextElement(n.state.toBase64Encoding());
+        }
+    }
+
+    auto* connsEl = root->createNewChildElement("CONNECTIONS");
+    for (const auto& c : p.connections)
+    {
+        auto* connEl = connsEl->createNewChildElement("CONN");
+        connEl->setAttribute("src", c.src);
+        connEl->setAttribute("srcChan", juce::String(c.srcChannel));
+        connEl->setAttribute("dst", c.dst);
+        connEl->setAttribute("dstChan", juce::String(c.dstChannel));
+    }
+
+    return root;
+}
+
+std::unique_ptr<Patch> patchFromXml(const juce::XmlElement& root)
+{
+    // Accept the current <PATCH> tag and the legacy <ACTIVE_PATCH> tag
+    // that pre-Phase-2 builds wrote into Preferences.
+    if (!root.hasTagName("PATCH") && !root.hasTagName("ACTIVE_PATCH"))
+        return nullptr;
+
+    auto patch = std::make_unique<Patch>();
+    patch->name = root.getStringAttribute("name", "Untitled");
+
+    if (auto* nodesEl = root.getChildByName("NODES"))
+    {
+        for (auto* nodeEl : nodesEl->getChildIterator())
+        {
+            if (!nodeEl->hasTagName("NODE"))
+                continue;
+
+            PatchNode n;
+            n.id = nodeEl->getIntAttribute("id");
+            n.bypass = nodeEl->getBoolAttribute("bypass");
+            n.customName = nodeEl->getStringAttribute("customName");
+
+            if (auto* identityEl = nodeEl->getChildByName("IDENTITY"))
+            {
+                // loadFromXml expects a <PLUGIN> root.
+                juce::XmlElement asPlugin(*identityEl);
+                asPlugin.setTagName("PLUGIN");
+                if (!n.desc.loadFromXml(asPlugin))
+                    return nullptr;
+            }
+
+            if (auto* stateEl = nodeEl->getChildByName("STATE"))
+                n.state.fromBase64Encoding(stateEl->getAllSubText());
+
+            patch->nodes.push_back(std::move(n));
+        }
+    }
+
+    if (auto* connsEl = root.getChildByName("CONNECTIONS"))
+    {
+        for (auto* connEl : connsEl->getChildIterator())
+        {
+            if (!connEl->hasTagName("CONN"))
+                continue;
+
+            PatchConnection c;
+            c.src = connEl->getIntAttribute("src");
+            c.srcChannel = connEl->getIntAttribute("srcChan");
+            c.dst = connEl->getIntAttribute("dst");
+            c.dstChannel = connEl->getIntAttribute("dstChan");
+            patch->connections.push_back(c);
+        }
+    }
+
+    return patch;
+}
+
 } // namespace pedalboard3::session
