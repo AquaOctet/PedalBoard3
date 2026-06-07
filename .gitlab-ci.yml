@@ -273,6 +273,14 @@ build:linux:
   artifacts:
     paths:
       - build/linux-dev/
+    # Exclude the CPM-fetched dependency tree (JUCE source + VST3 SDK +
+    # their build objects, ~570 MB). The test stage runs ctest against our
+    # compiled binaries + CTest metadata and never needs the JUCE sources;
+    # JUCE links statically, so nothing under _deps is needed at run time.
+    # This shrinks the artifact (and any manual download) from ~half a gig
+    # to a few MB.
+    exclude:
+      - "build/linux-dev/_deps/**/*"
     expire_in: 1 day
     when: on_success
 
@@ -393,6 +401,10 @@ build:windows:
   artifacts:
     paths:
       - build/windows-dev/
+    # Exclude the ~570 MB CPM dependency tree — see build:linux for the
+    # rationale (tests need our binaries, not the JUCE sources).
+    exclude:
+      - "build/windows-dev/_deps/**/*"
     expire_in: 1 day
     when: on_success
 
@@ -412,6 +424,10 @@ build:macos:
   artifacts:
     paths:
       - build/macos-dev/
+    # Exclude the ~570 MB CPM dependency tree — see build:linux for the
+    # rationale (tests need our binaries, not the JUCE sources).
+    exclude:
+      - "build/macos-dev/_deps/**/*"
     expire_in: 1 day
     when: on_success
 
