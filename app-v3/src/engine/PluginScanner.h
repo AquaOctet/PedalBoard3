@@ -6,6 +6,7 @@
 #include <juce_core/juce_core.h>
 
 #include <functional>
+#include <vector>
 
 namespace pedalboard3::engine
 {
@@ -87,22 +88,40 @@ public:
         bool helperCrashed{false}; // non-zero exit / signal
         bool timedOut{false};
         juce::String error;
+
+        // True when applyScanResults should blacklist this path (helper ran
+        // but crashed / timed out / produced no usable effect descriptors).
+        // False when we never attempted the scan (no helper) — those are
+        // retried on a future scan rather than poisoned permanently.
+        bool shouldBlacklist{false};
     };
 
-    // Scan one plugin file. On success: descriptions are added to
-    // the host's KnownPluginList. On any failure (helper crashed,
-    // timed out, returned no descriptors but exited cleanly): the
-    // path is added to the host's blacklist so subsequent scans skip
-    // it. Returns the result struct so callers can surface errors in
-    // the UI.
+    // Scan one plugin file in the subprocess and RETURN the result. Pure
+    // producer: does NOT touch the host's KnownPluginList, so it is safe to
+    // call from a worker thread. The result carries the effect descriptions
+    // to add (on success) or shouldBlacklist=true (on a failure that ran the
+    // helper). Commit it with applyScanResults() on the MESSAGE THREAD —
+    // KnownPluginList is not thread-safe and is owned solely by the message
+    // thread, so mutating it from the scan worker races the list's
+    // ChangeListeners and corrupts it (the crash this split fixes).
     ScanResult scanFile(const juce::String& pluginPath);
 
-    // Walk every registered plugin format's default search path,
-    // dedupe, and call scanFile on each. onProgress is invoked
+    // Walk every registered plugin format's default search path, dedupe,
+    // run the subprocess on each, and RETURN the results. Worker-thread
+    // safe: it mutates no shared state and snapshots the current blacklist
+    // once up front to skip already-blacklisted paths. onProgress is invoked
     // before each scan with (currentIndex, total, currentPath).
-    // Pass an empty function to skip progress callbacks.
     using ProgressCallback = std::function<void(int currentIndex, int total, const juce::String& currentPath)>;
-    int scanAllDefaultPaths(ProgressCallback onProgress);
+    std::vector<ScanResult> scanAllDefaultPaths(ProgressCallback onProgress);
+
+    // Commit scan results to the host's KnownPluginList: addType for each
+    // description, addToBlacklist for each shouldBlacklist result. Returns
+    // the number of descriptors added. MESSAGE-THREAD ONLY — this is the
+    // single writer of KnownPluginList on the scan path, serialised with the
+    // list's ChangeListeners (instrument sweep, preferences persistence)
+    // which also run on the message thread. Calling it off the message
+    // thread reintroduces the data race this split exists to prevent.
+    int applyScanResults(const std::vector<ScanResult>& results);
 
 private:
     // Helper: actually run the subprocess. Returns true if the helper

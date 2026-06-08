@@ -15,6 +15,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 
 #include <memory>
+#include <vector>
 
 namespace pedalboard3::ui
 {
@@ -359,7 +360,12 @@ public:
 
     void run() override
     {
-        added_ = scanner_.scanAllDefaultPaths(
+        // Worker thread: subprocess scans ONLY. Collect results here and do
+        // NOT touch KnownPluginList — it is committed on the message thread in
+        // threadComplete(). Mutating the list from this worker races the
+        // list's message-thread ChangeListeners (instrument sweep, prefs
+        // persist) and corrupts it (the scan-crash bug this fixes).
+        results_ = scanner_.scanAllDefaultPaths(
             [this](int idx, int total, const juce::String& path)
             {
                 if (threadShouldExit() || total == 0)
@@ -371,7 +377,12 @@ public:
 
     void threadComplete(bool userPressedCancel) override
     {
-        // Message thread. Persist + summarise + self-delete.
+        // Message thread. Commit the collected results to the KnownPluginList
+        // HERE — this is the single writer of the list on the scan path, so it
+        // runs serialised with the list's ChangeListeners. Then persist +
+        // summarise + self-delete.
+        added_ = scanner_.applyScanResults(results_);
+
         if (auto xml = ctx_.pluginHost.createKnownListXml())
             ctx_.preferences.setKnownPluginList(*xml);
         ctx_.preferences.flush();
@@ -396,6 +407,7 @@ public:
 private:
     AppContext& ctx_;
     engine::PluginScanner scanner_;
+    std::vector<engine::PluginScanner::ScanResult> results_; // worker -> message thread
     int added_{0};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginRescanThread)

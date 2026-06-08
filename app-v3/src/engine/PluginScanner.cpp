@@ -152,36 +152,56 @@ PluginScanner::ScanResult PluginScanner::scanFile(const juce::String& pluginPath
     {
         result.error = "pb3-scanner-helper binary not found";
         result.helperCrashed = true;
+        // Never attempted — leave shouldBlacklist false so a future scan
+        // (once a helper is present) retries this path rather than poisoning
+        // it permanently.
         return result;
     }
 
     const bool ok = runHelper(pluginPath, result);
 
-    auto& list = host_.getKnownPluginList();
-
-    if (!ok || result.descriptions.isEmpty())
-    {
-        // Helper crashed, timed out, or produced no descriptions —
-        // either way, we don't want to keep retrying this file every
-        // scan. Blacklist it. The user can manually un-blacklist via
-        // the Plugin List dialog if a future helper update succeeds.
-        if (!list.getBlacklistedFiles().contains(pluginPath))
-            list.addToBlacklist(pluginPath);
-        return result;
-    }
-
-    // Success — add descriptions to the live list. addType is a no-op
-    // if the description is already present (it dedupes by identifier).
-    for (const auto& d : result.descriptions)
-        list.addType(d);
+    // Decide intent ONLY — do not touch KnownPluginList here. The helper ran,
+    // so a crash / timeout / no-effect-descriptors outcome means this path
+    // should be blacklisted. The actual list mutation happens in
+    // applyScanResults() on the message thread (KnownPluginList is not
+    // thread-safe and scanFile may run on a worker thread).
+    result.shouldBlacklist = (!ok || result.descriptions.isEmpty());
 
     return result;
 }
 
-int PluginScanner::scanAllDefaultPaths(ProgressCallback onProgress)
+int PluginScanner::applyScanResults(const std::vector<ScanResult>& results)
 {
+    // MESSAGE THREAD ONLY. Single writer of KnownPluginList for the scan
+    // path; runs serialised with the list's ChangeListeners (which also fire
+    // on the message thread), so no data race.
+    auto& list = host_.getKnownPluginList();
+    int added = 0;
+
+    for (const auto& result : results)
+    {
+        if (!result.descriptions.isEmpty())
+        {
+            // addType dedupes by identifier, so re-adding is a no-op.
+            for (const auto& d : result.descriptions)
+                list.addType(d);
+            added += result.descriptions.size();
+        }
+        else if (result.shouldBlacklist)
+        {
+            if (!list.getBlacklistedFiles().contains(result.pluginPath))
+                list.addToBlacklist(result.pluginPath);
+        }
+    }
+
+    return added;
+}
+
+std::vector<PluginScanner::ScanResult> PluginScanner::scanAllDefaultPaths(ProgressCallback onProgress)
+{
+    std::vector<ScanResult> results;
     if (!isHelperAvailable())
-        return 0;
+        return results;
 
     // Enumerate every (format, path) pair, then dedupe by path so a
     // plugin under more than one search path only gets scanned once.
@@ -207,8 +227,15 @@ int PluginScanner::scanAllDefaultPaths(ProgressCallback onProgress)
         }
     }
 
+    // Snapshot the current blacklist ONCE up front (a cheap StringArray copy)
+    // rather than reading the live KnownPluginList inside the loop. The worker
+    // must not touch the list concurrently with the message thread; nothing in
+    // this method mutates it either (results are committed later via
+    // applyScanResults on the message thread).
+    const juce::StringArray blacklisted = host_.getKnownPluginList().getBlacklistedFiles();
+
     const int total = uniquePaths.size();
-    int added = 0;
+    results.reserve(static_cast<size_t>(total));
 
     for (int i = 0; i < total; ++i)
     {
@@ -216,21 +243,14 @@ int PluginScanner::scanAllDefaultPaths(ProgressCallback onProgress)
         if (onProgress)
             onProgress(i, total, path);
 
-        // Honour the existing blacklist — if the user manually
-        // blacklisted something, or a previous scan failed, skip it
-        // entirely. (juce::KnownPluginList::scanAndAddFile would do
-        // this internally; we replicate the check here since we're
-        // not using its scan loop.)
-        auto& list = host_.getKnownPluginList();
-        if (list.getBlacklistedFiles().contains(path))
+        // Skip paths the user (or a previous scan) already blacklisted.
+        if (blacklisted.contains(path))
             continue;
 
-        const auto result = scanFile(path);
-        if (!result.descriptions.isEmpty())
-            added += result.descriptions.size();
+        results.push_back(scanFile(path));
     }
 
-    return added;
+    return results;
 }
 
 } // namespace pedalboard3::engine
