@@ -31,6 +31,7 @@ stages:
   - pre-build
   - build
   - test
+  - release
 
 variables:
   CI_DEBUG_TRACE: "false"              # AC-SE-19: never leak secrets to logs
@@ -74,6 +75,15 @@ default:
   - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
   - if: '$CI_COMMIT_BRANCH == "v3-rewrite"'
   - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+# Release jobs: main branch ONLY, and manual (a click in the pipeline UI).
+# They live in the final `release` stage so a pending manual job never
+# blocks earlier stages (the trap documented on .rules-ci-image). Paired
+# with `allow_failure: true` on each release job so an un-clicked manual
+# action leaves the pipeline green rather than "blocked".
+.rules-release: &rules-release
+  - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    when: manual
 
 # Image build runs only when the recipe (Dockerfile) or pipeline that
 # consumes it changes. NO `when: manual` catch-all: a manual-pending job
@@ -265,10 +275,13 @@ build:linux:
   variables:
     CMAKE_C_COMPILER_LAUNCHER: ccache
     CMAKE_CXX_COMPILER_LAUNCHER: ccache
+    # Preset is a variable so release:linux can extend this job and only
+    # swap in the RelWithDebInfo preset (linux-release).
+    PB3_BUILD_PRESET: linux-dev
   script:
     - ccache --zero-stats || true
-    - cmake --preset linux-dev -S app-v3
-    - cmake --build --preset linux-dev -- -j$(nproc)
+    - cmake --preset "$PB3_BUILD_PRESET" -S app-v3
+    - cmake --build --preset "$PB3_BUILD_PRESET" -- -j$(nproc)
     - ccache --show-stats || true
   artifacts:
     paths:
@@ -301,6 +314,11 @@ build:windows:
   allow_failure: true
   <<: *cache-windows
   before_script: *windows-setup
+  variables:
+    # Preset is a variable so release:windows can extend this job (reusing
+    # all the dcomp/DLL setup below) and only swap in the RelWithDebInfo
+    # preset (windows-ci).
+    PB3_BUILD_PRESET: windows-dev
   script:
     # Patch JUCE to delay-load dcomp.dll. Pipeline #140 confirmed
     # saas-windows-medium-amd64 doesn't ship DirectComposition's
@@ -372,14 +390,14 @@ build:windows:
 
       Patch-JuceForDcomp | Out-Null
 
-      cmake --preset windows-dev -S app-v3
+      cmake --preset $env:PB3_BUILD_PRESET -S app-v3
       if ($LASTEXITCODE -ne 0) {
           Write-Host "=== first cmake failed; patching JUCE for dcomp delay-load and retrying ==="
           $applied = Patch-JuceForDcomp
           if ($applied) {
-              $juceTools = "build\windows-dev\_deps\juce-build\tools"
+              $juceTools = "build\$($env:PB3_BUILD_PRESET)\_deps\juce-build\tools"
               if (Test-Path $juceTools) { Remove-Item -Recurse -Force $juceTools -ErrorAction SilentlyContinue }
-              cmake --preset windows-dev -S app-v3
+              cmake --preset $env:PB3_BUILD_PRESET -S app-v3
           }
           if ($LASTEXITCODE -ne 0) {
               Write-Host "=== cmake configure still failing after delay-load patch; full diagnostic ==="
@@ -401,7 +419,7 @@ build:windows:
               throw "cmake configure failed even after delay-load patch"
           }
       }
-    - cmake --build --preset windows-dev -- -j $env:NUMBER_OF_PROCESSORS
+    - cmake --build --preset $env:PB3_BUILD_PRESET -- -j $env:NUMBER_OF_PROCESSORS
   artifacts:
     paths:
       - build/windows-dev/
@@ -425,9 +443,13 @@ build:macos:
   rules: *rules-macos
   allow_failure: true
   before_script: *macos-setup
+  variables:
+    # Preset is a variable so release:macos can extend this job and only
+    # swap in the universal RelWithDebInfo preset (macos-universal).
+    PB3_BUILD_PRESET: macos-dev
   script:
-    - cmake --preset macos-dev -S app-v3
-    - cmake --build --preset macos-dev -- -j$(sysctl -n hw.ncpu)
+    - cmake --preset "$PB3_BUILD_PRESET" -S app-v3
+    - cmake --build --preset "$PB3_BUILD_PRESET" -- -j$(sysctl -n hw.ncpu)
   artifacts:
     paths:
       - build/macos-dev/
@@ -473,3 +495,68 @@ test:windows:unit:
   before_script: *windows-setup
   script:
     - ctest --preset windows-dev
+
+# ===========================================================================
+# RELEASE — RelWithDebInfo builds, MANUAL on the main branch only.
+#
+# These produce artifacts that run on a clean machine (release CRT + real
+# optimisation), unlike the Debug build:* jobs whose artifacts need the VS
+# debug runtime installed. Each release job `extends` its build:* sibling so
+# it reuses the exact same runner setup and build script (including the
+# Windows dcomp/DLL handling) and only overrides the preset (via
+# PB3_BUILD_PRESET), the stage, the rules (main + manual), and the artifacts.
+#
+# `allow_failure: true` keeps an un-clicked manual job from leaving the
+# pipeline "blocked". Signing / installers / notarisation are Phase 6 and
+# build on top of these.
+# ===========================================================================
+release:linux:
+  extends: build:linux
+  stage: release
+  rules: *rules-release
+  allow_failure: true
+  variables:
+    PB3_BUILD_PRESET: linux-release
+  artifacts:
+    paths:
+      - build/linux-release/
+    exclude:
+      - "build/linux-release/_deps/**/*"
+      - "build/linux-release/**/CMakeFiles/**"
+      - "build/linux-release/**/*.o"
+    expire_in: 2 weeks
+    when: on_success
+
+release:macos:
+  extends: build:macos
+  stage: release
+  rules: *rules-release
+  allow_failure: true
+  variables:
+    PB3_BUILD_PRESET: macos-universal
+  artifacts:
+    paths:
+      - build/macos-universal/
+    exclude:
+      - "build/macos-universal/_deps/**/*"
+      - "build/macos-universal/**/CMakeFiles/**"
+      - "build/macos-universal/**/*.o"
+    expire_in: 2 weeks
+    when: on_success
+
+release:windows:
+  extends: build:windows
+  stage: release
+  rules: *rules-release
+  allow_failure: true
+  variables:
+    PB3_BUILD_PRESET: windows-ci
+  artifacts:
+    paths:
+      - build/windows-ci/
+    exclude:
+      - "build/windows-ci/_deps/**/*"
+      - "build/windows-ci/**/CMakeFiles/**"
+      - "build/windows-ci/**/*.obj"
+    expire_in: 2 weeks
+    when: on_success
