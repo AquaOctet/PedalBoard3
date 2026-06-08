@@ -89,13 +89,13 @@
     {
       "name": "windows-ci",
       "displayName": "Windows MSVC (CI)",
-      "description": "Release build on Windows using MSVC. Runs on self-hosted QA runner (Phase 6).",
+      "description": "Release build on Windows using MSVC (used by the release:windows CI job). CLAP is OFF: the vendored juce_clap_hosting fork's CLAPPluginFormat.cpp includes a macOS-only AudioUnit header (CAXException.h) and fails to compile on Windows. Re-enable once the fork guards that include for non-Apple.",
       "generator": "Ninja",
       "binaryDir": "${fileDir}/../build/windows-ci",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "PB3_BUILD_TESTS": "ON",
-        "PB3_ENABLE_CLAP": "ON"
+        "PB3_ENABLE_CLAP": "OFF"
       },
       "condition": {
         "type": "equals",
