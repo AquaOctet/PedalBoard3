@@ -115,23 +115,61 @@ TEST_CASE("PluginScanner: scanFile without a helper sets helperCrashed and an er
     REQUIRE(result.error.isNotEmpty());
     REQUIRE(result.pluginPath == kBogusPluginPath);
 
-    // Intentional: when we couldn't even attempt the scan we DON'T
-    // blacklist the path. Once a future helper is in place those plugins
-    // should be re-tried, not poisoned permanently. The blacklist
-    // update is reserved for cases where the helper actually ran and
-    // either crashed, timed out, or produced no descriptors.
+    // Never attempted (no helper): shouldBlacklist stays false so a future
+    // scan retries the path rather than poisoning it permanently.
+    REQUIRE_FALSE(result.shouldBlacklist);
+
+    // scanFile is a pure producer — it never mutates the list, so nothing is
+    // blacklisted regardless.
     REQUIRE(host.getKnownPluginList().getBlacklistedFiles().isEmpty());
 }
 
-TEST_CASE("PluginScanner: scanAllDefaultPaths returns 0 when no helper is available", "[engine][plugin-scanner]")
+TEST_CASE("PluginScanner: applyScanResults adds effects, blacklists failures, retries never-attempted",
+          "[engine][plugin-scanner]")
+{
+    // Deterministic (no helper needed): applyScanResults is the message-thread
+    // commit step. It must addType descriptions, blacklist shouldBlacklist
+    // results, and leave never-attempted (shouldBlacklist=false) paths alone.
+    engine::PluginHost host;
+    engine::PluginScanner scanner(host, juce::File{});
+
+    engine::PluginScanner::ScanResult effect;
+    effect.pluginPath = "/plugins/Good.vst3";
+    juce::PluginDescription d;
+    d.name = "GoodEffect";
+    d.pluginFormatName = "VST3";
+    d.fileOrIdentifier = effect.pluginPath;
+    d.isInstrument = false;
+    effect.descriptions.add(d);
+
+    engine::PluginScanner::ScanResult failed; // helper ran, no descriptors
+    failed.pluginPath = "/plugins/Bad.vst3";
+    failed.shouldBlacklist = true;
+
+    engine::PluginScanner::ScanResult untried; // no helper -> retry later
+    untried.pluginPath = "/plugins/Untried.vst3";
+    untried.shouldBlacklist = false;
+
+    const int added = scanner.applyScanResults({effect, failed, untried});
+
+    REQUIRE(added == 1);
+    const auto& blacklist = host.getKnownPluginList().getBlacklistedFiles();
+    CHECK(blacklist.contains("/plugins/Bad.vst3"));
+    CHECK_FALSE(blacklist.contains("/plugins/Untried.vst3"));
+    CHECK_FALSE(blacklist.contains("/plugins/Good.vst3"));
+}
+
+TEST_CASE("PluginScanner: scanAllDefaultPaths returns no results when no helper is available",
+          "[engine][plugin-scanner]")
 {
     engine::PluginHost host;
     engine::PluginScanner scanner(host, juce::File{});
 
     int progressCalls = 0;
-    const int added = scanner.scanAllDefaultPaths([&progressCalls](int, int, const juce::String&) { ++progressCalls; });
+    const auto results =
+        scanner.scanAllDefaultPaths([&progressCalls](int, int, const juce::String&) { ++progressCalls; });
 
-    REQUIRE(added == 0);
+    REQUIRE(results.empty());
     REQUIRE(progressCalls == 0); // no scan loop runs without helper
 }
 
@@ -237,12 +275,14 @@ TEST_CASE("PluginScanner: real helper against a non-plugin file blacklists the p
     auto result = scanner.scanFile(target.getFullPathName());
     PB3_SKIP_IF_HELPER_CRASHED(result);
 
-    // Helper exited 0 with an empty <PB3_SCAN_RESULT/> -- no crash,
-    // no timeout, but also no descriptors. PluginScanner treats
-    // "no descriptors" as a failed scan and blacklists the path so
-    // we don't re-scan it next launch.
+    // Helper exited 0 with an empty <PB3_SCAN_RESULT/> -- no crash, no
+    // timeout, but also no descriptors. scanFile flags it for blacklisting;
+    // applyScanResults (message thread) commits that to the list.
     REQUIRE_FALSE(result.timedOut);
     REQUIRE(result.descriptions.isEmpty());
+    REQUIRE(result.shouldBlacklist);
+
+    scanner.applyScanResults({result});
     REQUIRE(host.getKnownPluginList().getBlacklistedFiles().contains(target.getFullPathName()));
 
     target.deleteFile();
@@ -266,6 +306,9 @@ TEST_CASE("PluginScanner: real helper against a non-existent path still produces
 
     REQUIRE_FALSE(result.timedOut);
     REQUIRE(result.descriptions.isEmpty());
+    REQUIRE(result.shouldBlacklist);
+
+    scanner.applyScanResults({result});
     REQUIRE(host.getKnownPluginList().getBlacklistedFiles().contains("/totally/nonexistent/path/Plugin.vst3"));
 }
 
@@ -286,16 +329,17 @@ TEST_CASE("PluginScanner: real helper -- repeat scan of same failing path doesn'
     auto firstResult = scanner.scanFile(path);
     PB3_SKIP_IF_HELPER_CRASHED(firstResult);
 
+    scanner.applyScanResults({firstResult});
     const auto sizeAfterFirst = host.getKnownPluginList().getBlacklistedFiles().size();
     REQUIRE(host.getKnownPluginList().getBlacklistedFiles().contains(path));
 
-    scanner.scanFile(path);
+    // Applying the same failing result again must not double-blacklist —
+    // applyScanResults has an explicit `!contains(path)` guard before
+    // addToBlacklist (belt-and-braces with JUCE's own dedupe).
+    auto secondResult = scanner.scanFile(path);
+    scanner.applyScanResults({secondResult});
     const auto sizeAfterSecond = host.getKnownPluginList().getBlacklistedFiles().size();
 
-    // PluginScanner has an explicit `!contains(path)` guard before
-    // calling addToBlacklist -- both layers must hold this invariant
-    // (the JUCE addToBlacklist guard AND our defensive check) so a
-    // future JUCE behaviour change wouldn't introduce duplicates.
     REQUIRE(sizeAfterSecond == sizeAfterFirst);
 
     target.deleteFile();
