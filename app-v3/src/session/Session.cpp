@@ -267,6 +267,17 @@ void Session::removeNode(NodeId id)
     if (id == graphIO)
         return;
 
+    // A live-graph mutation must not run while a rebuild is in flight. During
+    // the async window after clearPatch()/replacePatch() — e.g. a Test Tone
+    // toggle, which frees the previous chain graph out-of-band — the cached
+    // liveGraph_ and the Node* in nodes_ can already be dangling. replacePatch
+    // publishes State::Building synchronously before the old graph is freed, so
+    // gating on Idle keeps removeNode off the freed memory (use-after-free).
+    // Once the rebuild lands, Session is Idle again and nodes_/liveGraph_ are
+    // consistent.
+    if (getState() != State::Idle)
+        return;
+
     std::lock_guard<std::mutex> lk(statusMutex_);
 
     auto it = nodes_.find(id);
@@ -294,6 +305,11 @@ void Session::removeNode(NodeId id)
 
 void Session::moveNode(NodeId id, int newIndex)
 {
+    // Same dangling-graph guard as removeNode: reordering re-wires the live
+    // graph and reads cached Node*s that can be freed mid-rebuild. Idle only.
+    if (getState() != State::Idle)
+        return;
+
     std::lock_guard<std::mutex> lk(statusMutex_);
 
     const auto curIdx = activePatch_.indexOfNode(id);
@@ -316,6 +332,12 @@ void Session::moveNode(NodeId id, int newIndex)
 
 void Session::setNodeBypass(NodeId id, bool shouldBypass)
 {
+    // Same dangling-graph guard as removeNode: the cached BypassableInstance*
+    // lives inside the live graph's node, which can be freed during a rebuild
+    // (Test Tone toggle). Only touch it while Idle.
+    if (getState() != State::Idle)
+        return;
+
     std::lock_guard<std::mutex> lk(statusMutex_);
     auto it = nodes_.find(id);
     if (it == nodes_.end() || it->second.bypass == nullptr)

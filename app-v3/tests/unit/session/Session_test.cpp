@@ -413,3 +413,40 @@ TEST_CASE("Session: moveNode after external loadGraph re-derives liveGraph_ rath
 
     (void)previous;
 }
+
+TEST_CASE("Session: destructive mutators are no-ops while a rebuild is in flight", "[session][rebind]")
+{
+    // Regression guard for the dangling-graph use-after-free: during the async
+    // window after clearPatch()/replacePatch() (production trigger: Test Tone
+    // toggle, which frees the previous chain graph out-of-band) the cached
+    // Node*s in nodes_ can be dangling. removeNode/setNodeBypass/moveNode must
+    // short-circuit while Session is not Idle rather than dereference them.
+    engine::AudioEngine eng;
+    eng.initialise();
+    engine::PluginHost host;
+    FakeBuilder builder;
+
+    session::Session s(eng, host, builder.fn());
+
+    s.replacePatch(makeTwoNodePatch());
+    pumpUntilIdle(s);
+    REQUIRE(s.getNodeCount() == 2);
+
+    // Queue another rebuild but DON'T pump — replacePatch publishes Building
+    // synchronously, so Session is now mid-rebuild (the dangling window).
+    s.replacePatch(makeTwoNodePatch());
+    REQUIRE(s.getState() != session::Session::State::Idle);
+
+    const auto vBuilding = s.getStateVersion();
+    s.removeNode(1);
+    s.setNodeBypass(1, true);
+    s.moveNode(1, 1);
+
+    // All three short-circuited: no state change, no crash.
+    REQUIRE(s.getStateVersion() == vBuilding);
+    REQUIRE(s.getNodeCount() == 2);
+
+    // Once the rebuild lands the chain is intact and mutable again.
+    pumpUntilIdle(s);
+    REQUIRE(s.getNodeCount() == 2);
+}
