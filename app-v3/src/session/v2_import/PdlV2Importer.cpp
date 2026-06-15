@@ -1,0 +1,213 @@
+#include "PdlV2Importer.h"
+
+#include <juce_audio_processors/juce_audio_processors.h>
+
+#include <unordered_map>
+
+namespace pedalboard3::session::v2
+{
+
+namespace
+{
+
+// v2 internal I/O filters that become the v3 graphIO endpoint rather than a
+// chain node. Matched on the <PLUGIN format="Internal"> name.
+bool isInternalIoPlugin(const juce::XmlElement& pluginEl)
+{
+    if (pluginEl.getStringAttribute("format") != "Internal")
+        return false;
+    const auto name = pluginEl.getStringAttribute("name");
+    return name == "Audio Input" || name == "Audio Output" || name == "Midi Input" || name == "Midi Output";
+}
+
+juce::PluginDescription descFromV2Plugin(const juce::XmlElement& pluginEl)
+{
+    juce::PluginDescription d;
+    d.name = pluginEl.getStringAttribute("name");
+    d.descriptiveName = pluginEl.getStringAttribute("descriptiveName", d.name);
+    d.manufacturerName = pluginEl.getStringAttribute("manufacturer");
+    d.pluginFormatName = pluginEl.getStringAttribute("format"); // e.g. "VST" (VST2)
+    d.category = pluginEl.getStringAttribute("category");
+    d.version = pluginEl.getStringAttribute("version");
+    d.fileOrIdentifier = pluginEl.getStringAttribute("file");
+    d.isInstrument = pluginEl.getIntAttribute("isInstrument", 0) != 0;
+    d.numInputChannels = pluginEl.getIntAttribute("numInputs", 2);
+    d.numOutputChannels = pluginEl.getIntAttribute("numOutputs", 2);
+    // v2 stores the VST2 4-char code as hex (e.g. "46513370").
+    const auto uid = pluginEl.getStringAttribute("uid").getHexValue32();
+    d.uniqueId = uid;
+    d.deprecatedUid = uid;
+    return d;
+}
+
+// Reorder `nodes` to follow the audio (channel 0) signal chain starting from the
+// input endpoint, using the translated connections. Nodes not reached by the
+// walk (parallel/branching graphs, or disconnected) keep their original order
+// and are appended after the reachable run. Returns false if the result isn't a
+// single linear pass over every node (so the caller can warn).
+bool orderNodesBySignalFlow(std::vector<PatchNode>& nodes, const std::vector<PatchConnection>& connections)
+{
+    if (nodes.size() < 2)
+        return true;
+
+    std::unordered_map<NodeId, NodeId> succ; // src -> dst on audio channel 0
+    for (const auto& c : connections)
+        if (c.srcChannel == 0)
+            succ.emplace(c.src, c.dst);
+
+    std::vector<PatchNode> ordered;
+    ordered.reserve(nodes.size());
+    std::unordered_map<NodeId, bool> placed;
+
+    NodeId cur = graphIO; // start at the input endpoint
+    auto step = succ.find(cur);
+    int guard = 0;
+    const int maxSteps = static_cast<int>(nodes.size()) + 2;
+    while (step != succ.end() && step->second != graphIO && guard++ < maxSteps)
+    {
+        const NodeId id = step->second;
+        if (placed[id])
+            break; // cycle guard (shouldn't happen for a valid chain)
+
+        for (const auto& nn : nodes)
+        {
+            if (nn.id == id)
+            {
+                ordered.push_back(nn);
+                placed[id] = true;
+                break;
+            }
+        }
+        step = succ.find(id);
+    }
+
+    // Append anything the walk didn't reach (keeps every node).
+    for (const auto& n : nodes)
+        if (!placed[n.id])
+            ordered.push_back(n);
+
+    const bool fullyLinear = ordered.size() == nodes.size() && static_cast<size_t>(guard) <= nodes.size();
+    nodes = std::move(ordered);
+    return fullyLinear;
+}
+
+} // namespace
+
+bool isPedalboard2Patch(const juce::XmlElement& root)
+{
+    return root.hasTagName("Pedalboard2PatchFile");
+}
+
+ImportResult importPedalboard2Patch(const juce::XmlElement& root)
+{
+    ImportResult result;
+
+    if (!isPedalboard2Patch(root))
+    {
+        result.error = "Not a Pedalboard2 patch file";
+        return result;
+    }
+
+    auto* patchEl = root.getChildByName("Patch");
+    if (patchEl == nullptr)
+    {
+        result.error = "Pedalboard2 file has no <Patch>";
+        return result;
+    }
+    if (patchEl->getNextElementWithTagName("Patch") != nullptr)
+        result.warnings.add("File contains multiple patches; only the first was imported.");
+
+    auto* graphEl = patchEl->getChildByName("FILTERGRAPH");
+    if (graphEl == nullptr)
+    {
+        result.error = "Pedalboard2 patch has no <FILTERGRAPH>";
+        return result;
+    }
+
+    auto patch = std::make_unique<Patch>();
+    patch->name = patchEl->getStringAttribute("name", "Imported");
+
+    // First pass: filters -> nodes (or graphIO for internal I/O). Build the
+    // v2-uid -> v3-NodeId map used to translate connections.
+    std::unordered_map<int, NodeId> v2ToV3; // v2 FILTER uid -> v3 NodeId (or graphIO)
+    NodeId nextId = 1;
+    bool droppedState = false;
+
+    for (auto* filterEl : graphEl->getChildIterator())
+    {
+        if (!filterEl->hasTagName("FILTER"))
+            continue;
+
+        const int v2uid = filterEl->getIntAttribute("uid");
+        auto* pluginEl = filterEl->getChildByName("PLUGIN");
+        if (pluginEl == nullptr)
+            continue;
+
+        if (isInternalIoPlugin(*pluginEl))
+        {
+            v2ToV3[v2uid] = graphIO; // both Audio In and Out collapse to the endpoint
+            continue;
+        }
+
+        PatchNode node;
+        node.id = nextId++;
+        node.desc = descFromV2Plugin(*pluginEl);
+        // STATE intentionally not migrated (VST2 -> VST3 format mismatch).
+        if (filterEl->getChildByName("STATE") != nullptr)
+            droppedState = true;
+
+        v2ToV3[v2uid] = node.id;
+        patch->nodes.push_back(std::move(node));
+    }
+
+    if (droppedState)
+        result.warnings.add("Plugin settings (state) were not migrated across the VST2 -> VST3 format change.");
+
+    // Second pass: connections.
+    for (auto* connEl : graphEl->getChildIterator())
+    {
+        if (!connEl->hasTagName("CONNECTION"))
+            continue;
+
+        const int srcUid = connEl->getIntAttribute("srcFilter");
+        const int dstUid = connEl->getIntAttribute("dstFilter");
+        const auto srcIt = v2ToV3.find(srcUid);
+        const auto dstIt = v2ToV3.find(dstUid);
+        if (srcIt == v2ToV3.end() || dstIt == v2ToV3.end())
+        {
+            result.warnings.add("Dropped a connection referencing an unknown filter.");
+            continue;
+        }
+
+        PatchConnection c;
+        c.src = srcIt->second;
+        c.srcChannel = connEl->getIntAttribute("srcChannel");
+        c.dst = dstIt->second;
+        c.dstChannel = connEl->getIntAttribute("dstChannel");
+        patch->connections.push_back(c);
+    }
+
+    // Custom names: <UserNames><Name id val/>.
+    if (auto* userNames = patchEl->getChildByName("UserNames"))
+    {
+        for (auto* nameEl : userNames->getChildIterator())
+        {
+            if (!nameEl->hasTagName("Name"))
+                continue;
+            const int v2uid = nameEl->getIntAttribute("id");
+            const auto it = v2ToV3.find(v2uid);
+            if (it == v2ToV3.end())
+                continue;
+            if (auto* pn = patch->findNode(it->second))
+                pn->customName = nameEl->getStringAttribute("val");
+        }
+    }
+
+    if (!orderNodesBySignalFlow(patch->nodes, patch->connections))
+        result.warnings.add("Patch is not a simple linear chain; node order is approximate.");
+
+    result.patch = std::move(patch);
+    return result;
+}
+
+} // namespace pedalboard3::session::v2
