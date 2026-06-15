@@ -158,6 +158,40 @@ std::unique_ptr<juce::XmlElement> patchToXml(const Patch& p)
     return root;
 }
 
+std::vector<PatchConnection> linearChainConnections(const std::vector<PatchNode>& nodes)
+{
+    constexpr int kStereoChannels = 2;
+    constexpr int kMidiChannel = juce::AudioProcessorGraph::midiChannelIndex;
+
+    std::vector<PatchConnection> conns;
+
+    if (nodes.empty())
+    {
+        // Audio + MIDI passthrough so a cleared chain still routes in -> out.
+        conns.push_back({graphIO, 0, graphIO, 0});
+        conns.push_back({graphIO, 1, graphIO, 1});
+        conns.push_back({graphIO, kMidiChannel, graphIO, kMidiChannel});
+        return conns;
+    }
+
+    // Stereo audio: in -> first node, last -> out, intermediates form the chain.
+    for (int ch = 0; ch < kStereoChannels; ++ch)
+    {
+        conns.push_back({graphIO, ch, nodes.front().id, ch});
+        for (size_t i = 0; i + 1 < nodes.size(); ++i)
+            conns.push_back({nodes[i].id, ch, nodes[i + 1].id, ch});
+        conns.push_back({nodes.back().id, ch, graphIO, ch});
+    }
+
+    // MIDI follows the same shape (master plan §4.5 v2 parity, not broadcast).
+    conns.push_back({graphIO, kMidiChannel, nodes.front().id, kMidiChannel});
+    for (size_t i = 0; i + 1 < nodes.size(); ++i)
+        conns.push_back({nodes[i].id, kMidiChannel, nodes[i + 1].id, kMidiChannel});
+    conns.push_back({nodes.back().id, kMidiChannel, graphIO, kMidiChannel});
+
+    return conns;
+}
+
 std::unique_ptr<Patch> patchFromXml(const juce::XmlElement& root)
 {
     // Accept the current <PATCH> tag and the legacy <ACTIVE_PATCH> tag

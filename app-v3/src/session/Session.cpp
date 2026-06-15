@@ -16,7 +16,6 @@ namespace
 
 constexpr double kFallbackSampleRate = 48000.0;
 constexpr int kFallbackBlockSize = 512;
-constexpr int kStereoChannels = 2;
 
 using AudioGraph = juce::AudioProcessorGraph;
 using UpdateKind = AudioGraph::UpdateKind;
@@ -42,37 +41,11 @@ DeviceConfig deriveConfig(engine::AudioEngine& eng)
 }
 
 // Recompute a linear-chain `connections` vector from a node ordering.
-// Stereo audio + MIDI through every node in order: graphIO → node[0] →
-// node[1] → ... → graphIO.
+// Single source of truth lives in session::linearChainConnections (Patch.cpp)
+// so App's saved-patch restore rebuilds the exact same topology.
 std::vector<PatchConnection> computeLinearConnections(const std::vector<PatchNode>& nodes)
 {
-    std::vector<PatchConnection> conns;
-    if (nodes.empty())
-    {
-        // Audio passthrough.
-        conns.push_back({graphIO, 0, graphIO, 0});
-        conns.push_back({graphIO, 1, graphIO, 1});
-        // MIDI passthrough.
-        conns.push_back({graphIO, AudioGraph::midiChannelIndex, graphIO, AudioGraph::midiChannelIndex});
-        return conns;
-    }
-
-    // Stereo audio: in → first node, last → out, intermediates form the chain.
-    for (int ch = 0; ch < kStereoChannels; ++ch)
-    {
-        conns.push_back({graphIO, ch, nodes.front().id, ch});
-        for (size_t i = 0; i + 1 < nodes.size(); ++i)
-            conns.push_back({nodes[i].id, ch, nodes[i + 1].id, ch});
-        conns.push_back({nodes.back().id, ch, graphIO, ch});
-    }
-
-    // MIDI follows the same shape (master plan §4.5 v2 parity, not broadcast).
-    conns.push_back({graphIO, AudioGraph::midiChannelIndex, nodes.front().id, AudioGraph::midiChannelIndex});
-    for (size_t i = 0; i + 1 < nodes.size(); ++i)
-        conns.push_back({nodes[i].id, AudioGraph::midiChannelIndex, nodes[i + 1].id, AudioGraph::midiChannelIndex});
-    conns.push_back({nodes.back().id, AudioGraph::midiChannelIndex, graphIO, AudioGraph::midiChannelIndex});
-
-    return conns;
+    return linearChainConnections(nodes);
 }
 
 } // namespace

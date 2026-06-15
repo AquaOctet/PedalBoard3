@@ -164,6 +164,23 @@ juce::Array<juce::PluginDescription> PluginHost::getKnownEffects() const
     return result;
 }
 
+bool PluginHost::isDescriptorSafeForChain(const juce::PluginDescription& desc) const
+{
+    // Instruments are out of scope for v3.0 and frequently crash on
+    // construction (heavy license/online-refresh ctors) — never restore one.
+    if (desc.isInstrument)
+        return false;
+
+    // Blacklisted = known crash-on-construct (or a prior scan failure). The
+    // restore/load path calls createInstance directly, so we must honour the
+    // blacklist here just as the scanner does.
+    const juce::ScopedReadLock sl(listLock_);
+    if (knownList_.getBlacklistedFiles().contains(desc.fileOrIdentifier))
+        return false;
+
+    return true;
+}
+
 std::unique_ptr<juce::AudioPluginInstance> PluginHost::createInstance(const juce::PluginDescription& desc,
                                                                       double sampleRate,
                                                                       int blockSize,

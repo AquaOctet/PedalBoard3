@@ -7,6 +7,9 @@
 
 #include "session/Patch.h"
 
+#include <algorithm>
+#include <vector>
+
 using namespace pedalboard3;
 
 namespace
@@ -237,4 +240,40 @@ TEST_CASE("Patch: patchFromXml rejects an unrelated element", "[session][patch][
 {
     juce::XmlElement bogus("SOMETHING_ELSE");
     REQUIRE(session::patchFromXml(bogus) == nullptr);
+}
+
+TEST_CASE("Patch: linearChainConnections empty -> audio + MIDI passthrough", "[session][patch][connections]")
+{
+    const auto conns = session::linearChainConnections({});
+    // L + R audio passthrough + one MIDI passthrough.
+    REQUIRE(conns.size() == 3);
+
+    session::Patch p;
+    p.connections = conns;
+    REQUIRE(session::validatePatch(p) == session::PatchValidation::Ok);
+}
+
+TEST_CASE("Patch: linearChainConnections wires a valid linear chain over survivors", "[session][patch][connections]")
+{
+    // Mirrors App's restore: after dropping an unsafe node we rebuild the
+    // chain over the survivors; the result must validate (no dangling refs).
+    std::vector<session::PatchNode> nodes{makeNode(1, "A"), makeNode(2, "B")};
+    const auto conns = session::linearChainConnections(nodes);
+
+    session::Patch p;
+    p.nodes = nodes;
+    p.connections = conns;
+    REQUIRE(session::validatePatch(p) == session::PatchValidation::Ok);
+
+    // graphIO -> 1 and 2 -> graphIO must both exist on the stereo channels.
+    const auto has = [&](session::NodeId s, int sc, session::NodeId d, int dc)
+    {
+        return std::any_of(conns.begin(),
+                           conns.end(),
+                           [&](const session::PatchConnection& c)
+                           { return c.src == s && c.srcChannel == sc && c.dst == d && c.dstChannel == dc; });
+    };
+    REQUIRE(has(session::graphIO, 0, 1, 0)); // input -> first node L
+    REQUIRE(has(1, 0, 2, 0));                // first -> second L
+    REQUIRE(has(2, 0, session::graphIO, 0)); // last node -> output L
 }
