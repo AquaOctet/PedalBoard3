@@ -58,6 +58,28 @@ cmake --build build/macos-universal
 Windows and Linux CI both build through `cmake --preset` as well; see
 `ci/docker/Dockerfile.linux` and `.gitlab-ci.yml`.
 
+If `just` isn't available, the repo root carries equivalent wrappers over the
+same presets:
+
+```bash
+make build       # Linux/macOS: configure + build the host dev preset
+make test        # ctest against the host dev build
+make run         # launch the app (open .app on macOS, exec on Linux)
+make release     # optimized preset for the host OS
+```
+
+```powershell
+# Windows — auto-loads the VS developer environment (cl.exe + Ninja on PATH),
+# so it works from any PowerShell, not only an "x64 Native Tools" prompt:
+./build.ps1 build                  # Debug (windows-dev)
+./build.ps1 build -Config release  # RelWithDebInfo (windows-ci)
+./build.ps1 test                   # build + ctest
+./build.ps1 run                    # launch the built app
+```
+
+`make` on Windows still needs a VS developer shell (it can't load the VS env);
+prefer `build.ps1` there.
+
 ## What an agent may run without confirmation
 
 - `cmake --preset linux-*`, `cmake --build`, `ctest`
