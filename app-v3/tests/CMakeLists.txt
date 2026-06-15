@@ -29,6 +29,7 @@ set(PB3_TEST_SOURCES
     unit/session/PdlV2Importer_test.cpp
     unit/control/MidiMapping_test.cpp
     unit/control/MidiRouter_test.cpp
+    unit/control/MidiControlSurface_test.cpp
 )
 
 add_executable(pb3_smoke_tests ${PB3_TEST_SOURCES})
