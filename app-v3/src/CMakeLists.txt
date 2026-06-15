@@ -17,6 +17,8 @@
 # engine first; session PUBLIC-links pb3_engine_core for PluginSlot.
 add_subdirectory(engine)
 add_subdirectory(session)
+# control/ (Phase 4 MIDI/OSC) depends only on session/NodeId.h + juce basics.
+add_subdirectory(control)
 
 add_library(pb3_app_core STATIC
     App.cpp
@@ -55,6 +57,7 @@ target_link_libraries(pb3_app_core
     PUBLIC
         pb3_engine_core
         pb3_session_core
+        pb3_control_core
         juce::juce_gui_extra
         juce::juce_audio_utils
         juce::juce_audio_processors
