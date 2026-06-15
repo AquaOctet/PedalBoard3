@@ -8,6 +8,7 @@
 #include "session/PdlSerializer.h"
 #include "session/Preferences.h"
 #include "session/Session.h"
+#include "session/v2_import/PdlV2Importer.h"
 #include "SignalCanvas.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
@@ -69,6 +70,78 @@ std::unique_ptr<juce::AudioProcessorGraph> buildTestToneGraph(juce::AudioDeviceM
 
     graph->prepareToPlay(sr, bs);
     return graph;
+}
+
+// Resolve an imported (e.g. Pedalboard2/VST2) plugin descriptor to an installed
+// plugin by display name — case-insensitive, effects preferred over instruments.
+// Returns nullptr when nothing matches. Lets a v2 import reconnect to the user's
+// installed VST3/AU build of the same plugin even though the format differs.
+const juce::PluginDescription* findKnownByName(const juce::Array<juce::PluginDescription>& known,
+                                               const juce::String& name)
+{
+    const juce::PluginDescription* best = nullptr;
+    for (const auto& d : known)
+    {
+        if (!d.name.equalsIgnoreCase(name))
+            continue;
+        if (!d.isInstrument)
+            return &d; // an effect match is exactly what we want
+        if (best == nullptr)
+            best = &d; // remember an instrument match as a last resort
+    }
+    return best;
+}
+
+struct LoadedPatch
+{
+    std::unique_ptr<session::Patch> patch;
+    juce::StringArray warnings;
+    juce::String error;
+};
+
+// Load a patch file for File > Open, transparently handling both v3 .pdl and
+// legacy Pedalboard2 (.pdl v2) files. For a v2 file it imports the topology and
+// resolves each plugin to an installed one by name (dropping unmatched, with a
+// warning); state is not migrated across the VST2 -> VST3 format change.
+LoadedPatch loadOpenedPatch(const juce::File& file, engine::PluginHost& host)
+{
+    LoadedPatch out;
+
+    auto xml = juce::parseXML(file);
+    if (xml != nullptr && session::v2::isPedalboard2Patch(*xml))
+    {
+        auto imp = session::v2::importPedalboard2Patch(*xml);
+        out.warnings = imp.warnings;
+        out.error = imp.error;
+        if (imp.patch == nullptr)
+            return out;
+
+        const auto known = host.getKnownPlugins();
+        std::vector<session::PatchNode> kept;
+        for (auto& node : imp.patch->nodes)
+        {
+            if (const auto* match = findKnownByName(known, node.desc.name))
+            {
+                node.desc = *match;    // resolve to the installed plugin
+                node.state.setSize(0); // cross-format; state already not migrated
+                kept.push_back(std::move(node));
+            }
+            else
+            {
+                out.warnings.add("Skipped \"" + node.desc.name +
+                                 "\" - not found in your scanned plugins (scan it, or no installed equivalent).");
+            }
+        }
+        imp.patch->nodes = std::move(kept);
+        imp.patch->connections = session::linearChainConnections(imp.patch->nodes);
+        out.patch = std::move(imp.patch);
+        return out;
+    }
+
+    auto loaded = session::pdl::readPatch(file);
+    out.patch = std::move(loaded.patch);
+    out.error = loaded.error;
+    return out;
 }
 } // namespace
 
@@ -504,52 +577,67 @@ void TransportBar::openPatch()
 
     const auto flags = juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles;
 
-    fileChooser_->launchAsync(flags,
-                              [this](const juce::FileChooser& fc)
-                              {
-                                  const auto file = fc.getResult();
-                                  if (file == juce::File())
-                                      return; // cancelled
+    fileChooser_->launchAsync(
+        flags,
+        [this](const juce::FileChooser& fc)
+        {
+            const auto file = fc.getResult();
+            if (file == juce::File())
+                return; // cancelled
 
-                                  auto loaded = session::pdl::readPatch(file);
-                                  if (loaded.patch == nullptr)
-                                  {
-                                      const auto opts = juce::MessageBoxOptions{}
-                                                            .withIconType(juce::MessageBoxIconType::WarningIcon)
-                                                            .withTitle("Couldn't open patch")
-                                                            .withMessage(loaded.error)
-                                                            .withButton("OK");
-                                      juce::AlertWindow::showAsync(opts, nullptr);
-                                      return;
-                                  }
+            // Handles both v3 .pdl and legacy Pedalboard2 (.pdl v2) files.
+            auto loaded = loadOpenedPatch(file, ctx_.pluginHost);
+            if (loaded.patch == nullptr)
+            {
+                const auto msg =
+                    loaded.error.isNotEmpty() ? loaded.error : juce::String("Couldn't read the patch file.");
+                const auto opts = juce::MessageBoxOptions{}
+                                      .withIconType(juce::MessageBoxIconType::WarningIcon)
+                                      .withTitle("Couldn't open patch")
+                                      .withMessage(msg)
+                                      .withButton("OK");
+                juce::AlertWindow::showAsync(opts, nullptr);
+                return;
+            }
 
-                                  // Drop nodes that are unsafe to construct (instruments or
-                                  // blacklisted crash-on-construct plugins) BEFORE replacePatch —
-                                  // a hand-crafted/shared .pdl can reference them, and replacePatch
-                                  // calls createInstance directly (bypassing the scanner's guards).
-                                  // Rebuild a linear chain over the survivors so connections stay valid.
-                                  auto& patch = *loaded.patch;
-                                  const auto countBefore = patch.nodes.size();
-                                  patch.nodes.erase(
-                                      std::remove_if(patch.nodes.begin(),
-                                                     patch.nodes.end(),
-                                                     [this](const session::PatchNode& n)
-                                                     { return !ctx_.pluginHost.isDescriptorSafeForChain(n.desc); }),
-                                      patch.nodes.end());
-                                  if (patch.nodes.size() != countBefore)
-                                      patch.connections = session::linearChainConnections(patch.nodes);
+            // Drop nodes that are unsafe to construct (instruments or blacklisted
+            // crash-on-construct plugins) BEFORE replacePatch — replacePatch calls
+            // createInstance directly (bypassing the scanner's guards). Rebuild a
+            // linear chain over the survivors so connections stay valid.
+            auto& patch = *loaded.patch;
+            const auto countBefore = patch.nodes.size();
+            patch.nodes.erase(std::remove_if(patch.nodes.begin(),
+                                             patch.nodes.end(),
+                                             [this](const session::PatchNode& n)
+                                             { return !ctx_.pluginHost.isDescriptorSafeForChain(n.desc); }),
+                              patch.nodes.end());
+            if (patch.nodes.size() != countBefore)
+                patch.connections = session::linearChainConnections(patch.nodes);
 
-                                  // If Test Tone is on, drop it: the loaded patch becomes the
-                                  // live graph via Session. Clear the toggle so the UI agrees.
-                                  if (toneButton_.getToggleState())
-                                      toneButton_.setToggleState(false, juce::dontSendNotification);
+            // If Test Tone is on, drop it: the loaded patch becomes the live graph
+            // via Session. Clear the toggle so the UI agrees.
+            if (toneButton_.getToggleState())
+                toneButton_.setToggleState(false, juce::dontSendNotification);
 
-                                  // CALLER-MANAGED EDITOR LIFECYCLE (D1b / AC-UI-P): close every
-                                  // open editor BEFORE replacePatch destroys the live instances.
-                                  canvas_.closeAllEditors();
-                                  ctx_.session.replacePatch(std::move(patch));
-                                  updateAddPluginEnabled();
-                              });
+            // CALLER-MANAGED EDITOR LIFECYCLE (D1b / AC-UI-P): close every open
+            // editor BEFORE replacePatch destroys the live instances.
+            canvas_.closeAllEditors();
+            ctx_.session.replacePatch(std::move(patch));
+            updateAddPluginEnabled();
+
+            // Surface import notes (Pedalboard2 conversion: dropped state, skipped
+            // plugins, etc.) once the chain is in.
+            if (!loaded.warnings.isEmpty())
+            {
+                const auto body = "Imported with notes:\n\n - " + loaded.warnings.joinIntoString("\n - ");
+                const auto opts = juce::MessageBoxOptions{}
+                                      .withIconType(juce::MessageBoxIconType::InfoIcon)
+                                      .withTitle("Patch imported")
+                                      .withMessage(body)
+                                      .withButton("OK");
+                juce::AlertWindow::showAsync(opts, nullptr);
+            }
+        });
 }
 
 void TransportBar::onTestToneToggled()
