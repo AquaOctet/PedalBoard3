@@ -26,6 +26,7 @@ set(PB3_TEST_SOURCES
     unit/session/Session_test.cpp
     unit/session/Patch_test.cpp
     unit/session/PdlSerializer_test.cpp
+    unit/session/PdlV2Importer_test.cpp
 )
 
 add_executable(pb3_smoke_tests ${PB3_TEST_SOURCES})
