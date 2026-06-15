@@ -192,3 +192,5 @@ test_output/
 
 # Workspace files (if using VS Code workspace)
 *.code-workspace
+# Vendored Steinberg ASIO SDK (not redistributable; see issue #9 / AGENTS.md)
+app-v3/asio_sdk/

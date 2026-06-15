@@ -203,6 +203,31 @@ target_compile_definitions(pb3_juce_config INTERFACE
 )
 
 # -----------------------------------------------------------------------------
+# Windows: ASIO low-latency driver support (opt-in, SDK-gated)
+# -----------------------------------------------------------------------------
+# JUCE only exposes ASIO when built with JUCE_ASIO=1 AND the Steinberg ASIO SDK
+# on the include path. The SDK can't be redistributed, so vendor it yourself at
+# app-v3/asio_sdk/ (any layout — we locate the dir containing iasiodrv.h) and
+# reconfigure; ASIO then appears in Audio Settings. Without the SDK this is a
+# no-op, so CI and non-ASIO builds configure unchanged. ASIO relicensed to
+# GPLv3 (Oct 2025), compatible with this project. See issue #9 / master plan
+# §4.2.E. Untestable on the Linux dev box — verify on Windows hardware.
+if(WIN32 AND NOT PB3_LINT_ONLY)
+    file(GLOB_RECURSE _pb3_asio_iface "${CMAKE_CURRENT_SOURCE_DIR}/asio_sdk/*/iasiodrv.h"
+                                      "${CMAKE_CURRENT_SOURCE_DIR}/asio_sdk/iasiodrv.h")
+    if(_pb3_asio_iface)
+        list(GET _pb3_asio_iface 0 _pb3_asio_header)
+        get_filename_component(_pb3_asio_dir "${_pb3_asio_header}" DIRECTORY)
+        message(STATUS "Pedalboard 3: ASIO SDK found at ${_pb3_asio_dir} — enabling JUCE_ASIO=1")
+        target_compile_definitions(pb3_juce_config INTERFACE JUCE_ASIO=1)
+        target_include_directories(pb3_juce_config INTERFACE "${_pb3_asio_dir}")
+    else()
+        message(STATUS "Pedalboard 3: no ASIO SDK at app-v3/asio_sdk/ — ASIO disabled "
+                       "(WASAPI/DirectSound only). Drop the Steinberg ASIO SDK there to enable it.")
+    endif()
+endif()
+
+# -----------------------------------------------------------------------------
 # Windows: delay-load dcomp.dll
 # -----------------------------------------------------------------------------
 # JUCE 8's juce_graphics statically imports dcomp.dll (DirectComposition)
