@@ -101,4 +101,13 @@ juce::String patchIdentityString(const Patch&);
 std::unique_ptr<juce::XmlElement> patchToXml(const Patch&);
 std::unique_ptr<Patch> patchFromXml(const juce::XmlElement&);
 
+// Build the canonical linear-chain connection set for `nodes`: stereo audio
+// + MIDI threaded graphIO -> node[0] -> ... -> node[N-1] -> graphIO. For an
+// empty node list, returns the audio + MIDI passthrough. This is the
+// topology the app wires for add / remove / restore; living here (rather
+// than only inside Session) makes it reusable by App's saved-patch restore
+// — which must rebuild connections after dropping unsafe nodes — and
+// unit-testable in isolation.
+std::vector<PatchConnection> linearChainConnections(const std::vector<PatchNode>& nodes);
+
 } // namespace pedalboard3::session

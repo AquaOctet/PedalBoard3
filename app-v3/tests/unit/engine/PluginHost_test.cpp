@@ -206,6 +206,25 @@ TEST_CASE("PluginHost: getKnownEffects returns empty when the list is empty", "[
     REQUIRE(host.getKnownEffects().isEmpty());
 }
 
+TEST_CASE("PluginHost: isDescriptorSafeForChain gates instruments and blacklisted files",
+          "[engine][plugin-host][restore]")
+{
+    engine::PluginHost host;
+
+    const auto effect = makeFakePluginDesc("SafeEffect", /*isInstrument*/ false);
+    const auto instrument = makeFakePluginDesc("BadSynth", /*isInstrument*/ true);
+
+    // A plain effect not on the blacklist is safe to restore into a chain.
+    REQUIRE(host.isDescriptorSafeForChain(effect));
+
+    // Instruments are never safe (v3.0 effects-only + heavy ctors).
+    REQUIRE_FALSE(host.isDescriptorSafeForChain(instrument));
+
+    // A blacklisted effect (known crash-on-construct) is not safe either.
+    host.getKnownPluginList().addToBlacklist(effect.fileOrIdentifier);
+    REQUIRE_FALSE(host.isDescriptorSafeForChain(effect));
+}
+
 TEST_CASE("PluginHost: getKnownEffects filters out PluginDescription::isInstrument", "[engine][plugin-host][effects]")
 {
     engine::PluginHost host;

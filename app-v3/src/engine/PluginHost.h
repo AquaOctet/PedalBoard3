@@ -101,6 +101,16 @@ public:
     // filter only applies at the "Add to chain" path.
     juce::Array<juce::PluginDescription> getKnownEffects() const;
 
+    // True if `desc` is safe to construct into a live chain. False for
+    // instruments (v3.0 is effects-only) and for descriptors whose file is
+    // blacklisted (known crash-on-construct, e.g. Current.vst3). Used by
+    // App's saved-patch restore and the .pdl loader to drop nodes BEFORE
+    // createInstance: the instrument sweep and known-problem floor only guard
+    // the scan path, so the restore/load path — which calls createInstance
+    // directly — would otherwise construct such a plugin unguarded and crash
+    // the host on launch. Message-thread only.
+    bool isDescriptorSafeForChain(const juce::PluginDescription& desc) const;
+
     // Create a single plugin instance. Returns nullptr and fills `errorOut`
     // on any failure (plugin missing, format unregistered, plugin ctor
     // threw, etc.). Caller takes ownership; the Phase 1.D patch builder

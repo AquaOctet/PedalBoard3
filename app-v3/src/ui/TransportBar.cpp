@@ -14,6 +14,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_audio_utils/juce_audio_utils.h>
 
+#include <algorithm>
 #include <memory>
 #include <vector>
 
@@ -522,6 +523,22 @@ void TransportBar::openPatch()
                                       return;
                                   }
 
+                                  // Drop nodes that are unsafe to construct (instruments or
+                                  // blacklisted crash-on-construct plugins) BEFORE replacePatch —
+                                  // a hand-crafted/shared .pdl can reference them, and replacePatch
+                                  // calls createInstance directly (bypassing the scanner's guards).
+                                  // Rebuild a linear chain over the survivors so connections stay valid.
+                                  auto& patch = *loaded.patch;
+                                  const auto countBefore = patch.nodes.size();
+                                  patch.nodes.erase(
+                                      std::remove_if(patch.nodes.begin(),
+                                                     patch.nodes.end(),
+                                                     [this](const session::PatchNode& n)
+                                                     { return !ctx_.pluginHost.isDescriptorSafeForChain(n.desc); }),
+                                      patch.nodes.end());
+                                  if (patch.nodes.size() != countBefore)
+                                      patch.connections = session::linearChainConnections(patch.nodes);
+
                                   // If Test Tone is on, drop it: the loaded patch becomes the
                                   // live graph via Session. Clear the toggle so the UI agrees.
                                   if (toneButton_.getToggleState())
@@ -530,7 +547,7 @@ void TransportBar::openPatch()
                                   // CALLER-MANAGED EDITOR LIFECYCLE (D1b / AC-UI-P): close every
                                   // open editor BEFORE replacePatch destroys the live instances.
                                   canvas_.closeAllEditors();
-                                  ctx_.session.replacePatch(std::move(*loaded.patch));
+                                  ctx_.session.replacePatch(std::move(patch));
                                   updateAddPluginEnabled();
                               });
 }
