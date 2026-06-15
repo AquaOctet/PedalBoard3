@@ -158,28 +158,38 @@ if(PB3_ENABLE_CLAP)
 endif()
 
 # -----------------------------------------------------------------------------
-# macOS: copy pb3-scanner-helper into the Pedalboard3.app bundle
+# Place pb3-scanner-helper next to the host executable (all platforms)
 # -----------------------------------------------------------------------------
-# juce_add_gui_app produces Pedalboard3.app; juce_add_console_app produces
-# pb3-scanner-helper as a loose binary in its own _artefacts tree. At
-# runtime PluginScanner::findHelperBinary() looks for the helper as a
-# sibling of the host's currentExecutableFile, which on macOS is
-# Pedalboard3.app/Contents/MacOS/Pedalboard 3 — so the helper has to live
-# right next to it for an installed .app to find it. (On Linux/Windows
-# the artefact tree layout already puts both binaries at sibling paths
-# in dev builds, and Phase 6 install rules will put them under the same
-# install prefix on those platforms.)
+# juce_add_gui_app and juce_add_console_app each emit into their OWN _artefacts
+# tree (Pedalboard3_artefacts vs pb3-scanner-helper_artefacts), so the helper
+# is NOT a sibling of the host binary by default. At runtime
+# PluginScanner::findHelperBinary() prefers the helper as a sibling of the
+# host's currentExecutableFile; without this copy that lookup fails and the
+# host falls back to the crash-prone in-process scan (most visibly on Windows).
 #
-# add_dependencies makes the helper build first so the POST_BUILD copy
-# always sees a fresh binary. copy_if_different is a no-op when the
-# helper is unchanged, so incremental builds aren't penalised.
+# macOS: copy into Pedalboard3.app/Contents/MacOS/ (next to the host binary
+# inside the bundle). Windows/Linux: copy next to "Pedalboard 3"(.exe). Both
+# make the sibling lookup succeed in dev builds and mirror what a packaged
+# install ships.
+#
+# add_dependencies makes the helper build first so the POST_BUILD copy always
+# sees a fresh binary. copy_if_different is a no-op when unchanged, so
+# incremental builds aren't penalised.
+add_dependencies(Pedalboard3 pb3-scanner-helper)
 if(APPLE)
-    add_dependencies(Pedalboard3 pb3-scanner-helper)
     add_custom_command(TARGET Pedalboard3 POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_FILE:pb3-scanner-helper>
             $<TARGET_BUNDLE_CONTENT_DIR:Pedalboard3>/MacOS/$<TARGET_FILE_NAME:pb3-scanner-helper>
         COMMENT "Embedding pb3-scanner-helper in Pedalboard3.app/Contents/MacOS/"
+        VERBATIM
+    )
+else()
+    add_custom_command(TARGET Pedalboard3 POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:pb3-scanner-helper>
+            $<TARGET_FILE_DIR:Pedalboard3>/$<TARGET_FILE_NAME:pb3-scanner-helper>
+        COMMENT "Copying pb3-scanner-helper next to the Pedalboard 3 executable"
         VERBATIM
     )
 endif()

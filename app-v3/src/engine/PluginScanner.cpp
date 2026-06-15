@@ -25,25 +25,35 @@ juce::File locateHelper()
 {
     const auto self = juce::File::getSpecialLocation(juce::File::currentExecutableFile);
 
-    // 1. Sibling of the host binary (production install, or post-build
-    //    copy into the .app's Contents/MacOS/).
-    const auto sibling = self.getSiblingFile("pb3-scanner-helper");
+    // The executable name is platform-dependent: Windows appends ".exe".
+    // BOTH lookups below must use the right name — otherwise on Windows the
+    // helper is silently "not found" even though it built fine, and the host
+    // falls back to the crash-prone in-process scan (the exact symptom this
+    // fixes). macOS/Linux helpers have no extension.
+#if JUCE_WINDOWS
+    const juce::String helperName = "pb3-scanner-helper.exe";
+#else
+    const juce::String helperName = "pb3-scanner-helper";
+#endif
+
+    // 1. Sibling of the host binary (production install, or the post-build
+    //    copy next to the executable / into the .app's Contents/MacOS/).
+    const auto sibling = self.getSiblingFile(helperName);
     if (sibling.existsAsFile())
         return sibling;
 
-    // 2. JUCE in-tree dev layout: each target has its own artefacts
-    //    subtree under build/<preset>/src/<TargetName>_artefacts/<config>/.
-    //    On macOS the host is at .../Pedalboard3_artefacts/<config>/Pedalboard 3.app/Contents/MacOS/Pedalboard 3
-    //    so we walk up to find the sibling artefact directory.
+    // 2. JUCE in-tree dev layout: each target has its own artefacts subtree
+    //    under build/<preset>/src/<TargetName>_artefacts/<config>/. The host
+    //    and helper live in SEPARATE artefacts trees, so walk up to find the
+    //    sibling pb3-scanner-helper_artefacts directory and search it.
     auto walker = self;
     for (int i = 0; i < 6 && walker.exists(); ++i)
     {
         const auto candidate = walker.getSiblingFile("pb3-scanner-helper_artefacts");
         if (candidate.isDirectory())
         {
-            // Look for the binary one or two levels deep — JUCE's
-            // <config>/ subfolder is typically Debug or Release.
-            auto found = candidate.findChildFiles(juce::File::findFiles, /*recursive*/ true, "pb3-scanner-helper");
+            // <config>/ subfolder is typically Debug / Release / RelWithDebInfo.
+            auto found = candidate.findChildFiles(juce::File::findFiles, /*recursive*/ true, helperName);
             if (!found.isEmpty())
                 return found.getReference(0);
         }
