@@ -26,6 +26,8 @@ set(PB3_TEST_SOURCES
     unit/session/Session_test.cpp
     unit/session/Patch_test.cpp
     unit/session/PdlSerializer_test.cpp
+    unit/control/MidiMapping_test.cpp
+    unit/control/MidiRouter_test.cpp
 )
 
 add_executable(pb3_smoke_tests ${PB3_TEST_SOURCES})
@@ -38,6 +40,7 @@ target_link_libraries(pb3_smoke_tests PRIVATE
     Catch2::Catch2WithMain
     pb3_engine_core
     pb3_session_core
+    pb3_control_core
     pb3_rtsafety
     juce::juce_recommended_config_flags
 )
