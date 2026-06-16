@@ -204,8 +204,12 @@ std::unique_ptr<juce::AudioPluginInstance> PluginHost::createInstance(const juce
 juce::Array<InternalNodeType> PluginHost::getInternalNodeTypes() const
 {
     // The single source of truth for which built-in nodes exist. Keep in sync
-    // with the createInternalInstance switch below.
-    return {{"LevelProcessor", "Level"}, {"VuMeterProcessor", "VU Meter"}};
+    // with the createInternalInstance switch below. (juce::Array doesn't take a
+    // nested brace-init list the way std::vector does, so add() each entry.)
+    juce::Array<InternalNodeType> types;
+    types.add({"LevelProcessor", "Level"});
+    types.add({"VuMeterProcessor", "VU Meter"});
+    return types;
 }
 
 std::unique_ptr<juce::AudioProcessor> PluginHost::createInternalInstance(const juce::String& type,
