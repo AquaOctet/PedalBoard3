@@ -28,10 +28,14 @@ add_library(pb3_engine_core STATIC
     PluginHost.h
     PluginScanner.cpp
     PluginScanner.h
+    processors/LevelProcessor.cpp
+    processors/LevelProcessor.h
     processors/OutputSanitiser.cpp
     processors/OutputSanitiser.h
     processors/TestToneProcessor.cpp
     processors/TestToneProcessor.h
+    processors/VuMeterProcessor.cpp
+    processors/VuMeterProcessor.h
 )
 
 target_include_directories(pb3_engine_core PUBLIC
@@ -63,6 +67,8 @@ pb3_apply_strict_warnings(pb3_engine_core
     BypassableInstance.cpp
     PluginHost.cpp
     PluginScanner.cpp
+    processors/LevelProcessor.cpp
     processors/OutputSanitiser.cpp
     processors/TestToneProcessor.cpp
+    processors/VuMeterProcessor.cpp
 )
