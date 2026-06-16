@@ -17,6 +17,8 @@ set(PB3_TEST_SOURCES
     unit/engine/BypassableInstance_watchdog_test.cpp
     unit/engine/AudioGraphRuntime_test.cpp
     unit/engine/TestToneProcessor_test.cpp
+    unit/engine/LevelProcessor_test.cpp
+    unit/engine/VuMeterProcessor_test.cpp
     unit/engine/AudioEngine_test.cpp
     unit/engine/PluginHost_test.cpp
     unit/engine/PluginScanner_test.cpp
