@@ -321,6 +321,32 @@ build:windows:
     # preset (windows-ci).
     PB3_BUILD_PRESET: windows-dev
   script:
+    - |
+      # Fetch the Steinberg ASIO SDK from the project's private generic package
+      # registry so the Windows build can enable JUCE_ASIO=1 (see the ASIO block
+      # in app-v3/CMakeLists.txt and AGENTS.md "Windows: ASIO"). The SDK is GPLv3
+      # but kept out of git; a maintainer uploads it once to
+      # packages/generic/asio-sdk/<ver>/asio-sdk.zip. Best-effort: if the package
+      # isn't there (not yet uploaded, or a fork without registry access) the build
+      # continues with WASAPI/DirectSound only — this step never fails the job.
+      # curl's non-zero exit does NOT throw in PowerShell, so check $LASTEXITCODE.
+      $asioDest = "app-v3/asio_sdk"
+      $asioUrl  = "$($env:CI_API_V4_URL)/projects/$($env:CI_PROJECT_ID)/packages/generic/asio-sdk/2.3/asio-sdk.zip"
+      curl.exe --fail --silent --show-error --location --header "JOB-TOKEN: $($env:CI_JOB_TOKEN)" --output asio-sdk.zip $asioUrl
+      if ($LASTEXITCODE -eq 0 -and (Test-Path asio-sdk.zip)) {
+          try {
+              New-Item -ItemType Directory -Force $asioDest | Out-Null
+              Expand-Archive -Force -Path asio-sdk.zip -DestinationPath $asioDest
+              $hdr = Get-ChildItem -Path $asioDest -Recurse -Filter "iasiodrv.h" -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($hdr) { Write-Host "ASIO SDK ready: $($hdr.FullName) — JUCE_ASIO will be enabled" }
+              else { Write-Warning "ASIO SDK archive fetched but iasiodrv.h not found under $asioDest; ASIO stays disabled." }
+          } catch {
+              Write-Warning "ASIO SDK archive could not be extracted; building WASAPI/DirectSound only. $_"
+          }
+      } else {
+          Write-Warning "ASIO SDK package not available at $asioUrl; building WASAPI/DirectSound only."
+      }
+      Remove-Item asio-sdk.zip -ErrorAction SilentlyContinue
     # Patch JUCE to delay-load dcomp.dll. Pipeline #140 confirmed
     # saas-windows-medium-amd64 doesn't ship DirectComposition's
     # dcomp.dll and there's no Microsoft FoD or vendored copy on the
