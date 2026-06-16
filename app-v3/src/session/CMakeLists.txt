@@ -22,6 +22,8 @@ add_library(pb3_session_core STATIC
     PdlSerializer.h
     v2_import/PdlV2Importer.cpp
     v2_import/PdlV2Importer.h
+    ControlParameterApplier.cpp
+    ControlParameterApplier.h
     NodeId.h
 )
 
@@ -35,6 +37,10 @@ target_link_libraries(pb3_session_core
         # uses them directly. PUBLIC because consumers of session
         # (App, tests) typically use both.
         pb3_engine_core
+        # ControlParameterApplier.h exposes control::MidiTarget; PUBLIC so
+        # consumers get the control headers. (control depends on session only
+        # via the NodeId.h include path, so there is no link cycle.)
+        pb3_control_core
         juce::juce_data_structures
         juce::juce_core
         juce::juce_audio_processors
@@ -59,4 +65,5 @@ pb3_apply_strict_warnings(pb3_session_core
     Patch.cpp
     PdlSerializer.cpp
     v2_import/PdlV2Importer.cpp
+    ControlParameterApplier.cpp
 )
