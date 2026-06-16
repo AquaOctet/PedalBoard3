@@ -192,5 +192,7 @@ test_output/
 
 # Workspace files (if using VS Code workspace)
 *.code-workspace
-# Vendored Steinberg ASIO SDK (not redistributable; see issue #9 / AGENTS.md)
+# Vendored Steinberg ASIO SDK — GPLv3 (Oct 2025 relicense) but kept out of git
+# by policy. Devs drop it here locally; CI fetches it from the GitLab generic
+# package registry. See AGENTS.md "Windows: ASIO" + app-v3/CMakeLists.txt (#9).
 app-v3/asio_sdk/

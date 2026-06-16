@@ -80,6 +80,32 @@ make release     # optimized preset for the host OS
 `make` on Windows still needs a VS developer shell (it can't load the VS env);
 prefer `build.ps1` there.
 
+### Windows: ASIO (optional low-latency drivers, SDK-gated)
+
+ASIO is auto-detected and gated on the Steinberg ASIO SDK. The SDK is GPLv3
+(Steinberg's Oct 2025 relicence) but **kept out of git** by policy, so you
+provide it — `app-v3/CMakeLists.txt` finds the directory containing
+`iasiodrv.h` anywhere under `app-v3/asio_sdk/` and then defines `JUCE_ASIO=1`.
+Without the SDK, Windows builds use WASAPI/DirectSound only (no error).
+
+- **Local dev:** download the ASIO SDK from Steinberg and extract it under
+  `app-v3/asio_sdk/` (any internal layout), then reconfigure (`./build.ps1
+  build`). ASIO then appears in Audio Settings.
+- **CI:** the `build:windows` / `release:windows` jobs fetch the SDK from the
+  project's GitLab generic package registry before configure (best-effort — a
+  missing package leaves ASIO off and the pipeline green). A maintainer uploads
+  it once (pin `<ver>` to the actual SDK version, matching the CI URL):
+
+  ```bash
+  curl --header "PRIVATE-TOKEN: <token>" \
+    --upload-file ASIO-SDK_2.3.4_2025-10-15.zip \
+    "https://gitlab.com/api/v4/projects/${CI_PROJECT_ID}/packages/generic/asio-sdk/2.3.4/ASIO-SDK_2.3.4_2025-10-15.zip"
+  ```
+
+  The `build:windows` job's fetch URL must match this package path/version. Verify
+  it took: the next `build:windows` log prints
+  `Pedalboard 3: ASIO SDK found … — enabling JUCE_ASIO=1`.
+
 ## What an agent may run without confirmation
 
 - `cmake --preset linux-*`, `cmake --build`, `ctest`
