@@ -30,6 +30,22 @@ session::PatchConnection conn(session::NodeId src, int srcCh, session::NodeId ds
     return {src, srcCh, dst, dstCh};
 }
 
+control::MidiMapping midiMap(control::MidiSourceKind kind, int channel, int controller)
+{
+    control::MidiMapping m;
+    m.source.kind = kind;
+    m.source.channel = channel;
+    m.source.controller = controller;
+    return m;
+}
+
+control::OscMapping oscMap(const juce::String& address)
+{
+    control::OscMapping m;
+    m.address = address;
+    return m;
+}
+
 } // namespace
 
 TEST_CASE("Patch: default-constructed is empty", "[session][patch]")
@@ -221,10 +237,125 @@ TEST_CASE("Patch: patchToXml/patchFromXml round-trips nodes, connections, and st
     REQUIRE(rt->nodes[1].state.getSize() == 0);
 }
 
+TEST_CASE("Patch: MIDI and OSC mappings round-trip with all fields", "[session][patch][xml][mappings]")
+{
+    session::Patch p;
+    p.nodes.push_back(makeNode(1, "Comp"));
+
+    auto cc = midiMap(control::MidiSourceKind::ControlChange, 1, 7);
+    cc.rangeMin = -0.5f; // out-of-0..1 + reversed exactness
+    cc.rangeMax = 2.0f;
+    cc.inverted = true;
+    cc.latch = true;
+    cc.target.kind = control::MidiTargetKind::PluginParameter;
+    cc.target.node = 1;
+    cc.target.parameterIndex = 12;
+
+    auto note = midiMap(control::MidiSourceKind::Note, 10, 60);
+    note.target.kind = control::MidiTargetKind::PatchSelect;
+    note.target.patchIndex = 4;
+
+    // controller is ignored-for-kind on ProgramChange but must store verbatim.
+    auto pc = midiMap(control::MidiSourceKind::ProgramChange, 0, 42);
+    pc.target.kind = control::MidiTargetKind::AppCommand;
+    pc.target.commandId = "transport.tap-tempo";
+
+    p.midiMappings = {cc, note, pc};
+
+    auto osc = oscMap("/pb3/track1/gain");
+    osc.argumentIndex = 2;
+    osc.rangeMin = 0.2f;
+    osc.rangeMax = 0.8f;
+    osc.inverted = true;
+    osc.target.kind = control::MidiTargetKind::AppCommand;
+    osc.target.commandId = "a & b < c > \"d\" 'e'/f"; // XML metacharacters must escape + restore
+    p.oscMappings = {osc};
+
+    auto xml = session::patchToXml(p);
+    REQUIRE(xml != nullptr);
+    auto rt = session::patchFromXml(*xml);
+    REQUIRE(rt != nullptr);
+
+    REQUIRE(rt->midiMappings == p.midiMappings);
+    REQUIRE(rt->oscMappings == p.oscMappings);
+    REQUIRE(rt->midiMappings.size() == 3);
+    REQUIRE(rt->midiMappings[2].source.controller == 42); // ignored-for-kind stored verbatim
+    REQUIRE(session::validatePatch(*rt) == session::PatchValidation::Ok);
+}
+
+TEST_CASE("Patch: a patch with no <MAPPINGS> round-trips to empty tables", "[session][patch][xml][mappings]")
+{
+    session::Patch p;
+    p.nodes.push_back(makeNode(1, "X"));
+    p.connections.push_back(conn(session::graphIO, 0, 1, 0));
+
+    auto xml = session::patchToXml(p);
+    REQUIRE(xml->getChildByName("MAPPINGS") == nullptr); // omitted when empty
+
+    auto rt = session::patchFromXml(*xml);
+    REQUIRE(rt != nullptr);
+    REQUIRE(rt->midiMappings.empty());
+    REQUIRE(rt->oscMappings.empty());
+    REQUIRE(session::validatePatch(*rt) == session::PatchValidation::Ok);
+}
+
+TEST_CASE("Patch: unknown MIDI source kind drops that mapping; garbage child skipped",
+          "[session][patch][xml][mappings]")
+{
+    juce::XmlElement root("PATCH");
+    root.setAttribute("name", "X");
+    auto* maps = root.createNewChildElement("MAPPINGS");
+
+    auto* good = maps->createNewChildElement("MIDI_MAP");
+    good->setAttribute("kind", "cc");
+    good->setAttribute("channel", 1);
+    good->setAttribute("controller", 7);
+
+    auto* bad = maps->createNewChildElement("MIDI_MAP"); // unknown kind -> dropped
+    bad->setAttribute("kind", "future");
+    bad->setAttribute("controller", 9);
+
+    maps->createNewChildElement("FOO"); // garbage child -> skipped
+
+    auto rt = session::patchFromXml(root);
+    REQUIRE(rt != nullptr);
+    REQUIRE(rt->midiMappings.size() == 1);
+    REQUIRE(rt->midiMappings[0].source.controller == 7);
+}
+
+TEST_CASE("Patch: missing mapping attributes fall back to defaults", "[session][patch][xml][mappings]")
+{
+    juce::XmlElement root("PATCH");
+    auto* maps = root.createNewChildElement("MAPPINGS");
+    maps->createNewChildElement("MIDI_MAP")->setAttribute("kind", "cc"); // all else absent, no <TARGET>
+
+    auto rt = session::patchFromXml(root);
+    REQUIRE(rt != nullptr);
+    REQUIRE(rt->midiMappings.size() == 1);
+    // Equals a default mapping (rangeMin 0, rangeMax 1, flags false, default target).
+    REQUIRE(rt->midiMappings[0] == midiMap(control::MidiSourceKind::ControlChange, 0, 0));
+}
+
+TEST_CASE("Patch: a mapping targeting an absent node still validates", "[session][patch][xml][mappings]")
+{
+    session::Patch p; // no nodes at all
+    auto m = midiMap(control::MidiSourceKind::ControlChange, 1, 7);
+    m.target.node = 999; // not present in the (empty) node table
+    p.midiMappings = {m};
+
+    auto rt = session::patchFromXml(*session::patchToXml(p));
+    REQUIRE(rt != nullptr);
+    REQUIRE(rt->midiMappings == p.midiMappings);
+    REQUIRE(session::validatePatch(*rt) == session::PatchValidation::Ok);
+}
+
 TEST_CASE("Patch: patchFromXml accepts the legacy <ACTIVE_PATCH> tag", "[session][patch][xml]")
 {
     session::Patch p;
     p.nodes.push_back(makeNode(1, "Legacy"));
+    auto m = midiMap(control::MidiSourceKind::ControlChange, 1, 7);
+    m.target.node = 1;
+    p.midiMappings = {m};
 
     auto xml = session::patchToXml(p);
     REQUIRE(xml != nullptr);
@@ -234,6 +365,7 @@ TEST_CASE("Patch: patchFromXml accepts the legacy <ACTIVE_PATCH> tag", "[session
     REQUIRE(rt != nullptr);
     REQUIRE(rt->nodes.size() == 1);
     REQUIRE(rt->nodes[0].desc.name == "Legacy");
+    REQUIRE(rt->midiMappings == p.midiMappings); // mappings ride the legacy tag too
 }
 
 TEST_CASE("Patch: patchFromXml rejects an unrelated element", "[session][patch][xml]")

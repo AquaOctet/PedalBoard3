@@ -126,3 +126,31 @@ TEST_CASE("MidiMapping applyRange: identity, inverted, custom and reversed range
         REQUIRE(applyRange(m, 2.0f) == Approx(1.0f));
     }
 }
+
+TEST_CASE("MidiMapping: source kind <-> string round-trips", "[control][midi]")
+{
+    for (auto k : {MidiSourceKind::ControlChange,
+                   MidiSourceKind::Note,
+                   MidiSourceKind::ProgramChange,
+                   MidiSourceKind::PitchBend})
+        REQUIRE(midiSourceKindFromString(midiSourceKindToString(k)) == k);
+
+    REQUIRE(midiSourceKindToString(MidiSourceKind::ControlChange) == "cc");
+    REQUIRE(midiSourceKindToString(MidiSourceKind::PitchBend) == "pitchBend");
+}
+
+TEST_CASE("MidiMapping: target kind <-> string round-trips", "[control][midi]")
+{
+    for (auto k : {MidiTargetKind::PluginParameter, MidiTargetKind::PatchSelect, MidiTargetKind::AppCommand})
+        REQUIRE(midiTargetKindFromString(midiTargetKindToString(k)) == k);
+
+    REQUIRE(midiTargetKindToString(MidiTargetKind::AppCommand) == "appCommand");
+}
+
+TEST_CASE("MidiMapping: kind fromString rejects unknown and empty", "[control][midi]")
+{
+    REQUIRE_FALSE(midiSourceKindFromString("").has_value());
+    REQUIRE_FALSE(midiSourceKindFromString("sysex").has_value());
+    REQUIRE_FALSE(midiTargetKindFromString("foo").has_value());
+    REQUIRE_FALSE(midiTargetKindFromString("").has_value());
+}

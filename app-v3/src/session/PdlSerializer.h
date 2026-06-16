@@ -12,19 +12,20 @@ namespace pedalboard3::session::pdl
 // Read/write Pedalboard 3 .pdl files (master plan §4.5). A .pdl wraps a
 // single <PATCH> (session/Patch.cpp) in a versioned <PEDALBOARD> root:
 //
-//   <PEDALBOARD schemaMajor="3" schemaMinor="0" appVersion="3.0.0">
-//     <PATCH name="..."> <NODES/> <CONNECTIONS/> </PATCH>
+//   <PEDALBOARD schemaMajor="3" schemaMinor="1" appVersion="3.0.0">
+//     <PATCH name="..."> <NODES/> <CONNECTIONS/> <MAPPINGS/> </PATCH>
 //   </PEDALBOARD>
 //
 // v3.x readers accept schemaMajor == 3 regardless of schemaMinor. A file
 // with schemaMajor > 3 was written by a newer app and is rejected with a
 // friendly error (Phase 2 MVP: no read-only fallback yet; the AC-FS-7
-// preserve-unknown round-trip is deferred). MIDI/OSC mappings,
-// application mappings, and per-patch preferences are out of scope until
-// the control layer (Phase 4) lands.
+// preserve-unknown round-trip is deferred). schemaMinor 1 adds the optional
+// per-patch <MAPPINGS> (MIDI/OSC control bindings); older minor-0 files with
+// no <MAPPINGS> load cleanly with empty mapping tables. Application mappings
+// and per-patch preferences remain out of scope.
 
 inline constexpr int kSchemaMajor = 3;
-inline constexpr int kSchemaMinor = 0;
+inline constexpr int kSchemaMinor = 1;
 
 // Atomically write `patch` to `file` (temp file in the same directory +
 // rename, so a crash mid-write never corrupts an existing .pdl). Creates

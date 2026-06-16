@@ -1,5 +1,7 @@
 #pragma once
 
+#include "control/MidiMapping.h"
+#include "control/OscMapping.h"
 #include "NodeId.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -56,6 +58,14 @@ struct Patch
 {
     std::vector<PatchNode> nodes;
     std::vector<PatchConnection> connections;
+
+    // Per-patch control bindings (Phase 4). Persisted alongside the topology;
+    // a mapping whose target NodeId is absent from `nodes` is a harmless
+    // runtime no-op (not a validation error), so they are intentionally not
+    // cross-checked against the node table.
+    std::vector<control::MidiMapping> midiMappings;
+    std::vector<control::OscMapping> oscMappings;
+
     juce::String name{"Untitled"};
 
     // max(existing node.id) + 1, or 1 if empty. Never reuses an id
@@ -92,12 +102,16 @@ PatchValidation validatePatch(const Patch&) noexcept;
 juce::String patchIdentityString(const Patch&);
 
 // Patch <-> XML. Produces a <PATCH> element carrying NODES (each with an
-// <IDENTITY> and, when non-empty, a base64 <STATE>) and CONNECTIONS.
+// <IDENTITY> and, when non-empty, a base64 <STATE>), CONNECTIONS, and — when
+// any exist — a <MAPPINGS> child of <MIDI_MAP>/<OSC_MAP> entries (Phase 4).
 // Shared by Preferences (auto-restore) and PdlSerializer (.pdl files) so
-// both round-trip plugin state identically. patchFromXml also accepts the
-// legacy <ACTIVE_PATCH> tag written by pre-Phase-2 builds. Returns nullptr
-// if the element is not a recognised patch root or an <IDENTITY> fails to
-// parse. Neither validates topology — call validatePatch() afterwards.
+// both round-trip plugin state and control bindings identically. patchFromXml
+// also accepts the legacy <ACTIVE_PATCH> tag written by pre-Phase-2 builds, and
+// older files with no <MAPPINGS> load cleanly (empty mapping tables). A single
+// <MIDI_MAP> with an unknown source kind is dropped, not fatal — the rest of the
+// patch still loads. Returns nullptr only if the element is not a recognised
+// patch root or an <IDENTITY> fails to parse. Neither validates topology — call
+// validatePatch() afterwards.
 std::unique_ptr<juce::XmlElement> patchToXml(const Patch&);
 std::unique_ptr<Patch> patchFromXml(const juce::XmlElement&);
 
