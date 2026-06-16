@@ -97,11 +97,13 @@ Without the SDK, Windows builds use WASAPI/DirectSound only (no error).
   it once (pin `<ver>` to the actual SDK version, matching the CI URL):
 
   ```bash
-  curl --header "PRIVATE-TOKEN: <token>" --upload-file asio-sdk.zip \
-    "https://gitlab.com/api/v4/projects/${CI_PROJECT_ID}/packages/generic/asio-sdk/<ver>/asio-sdk.zip"
+  curl --header "PRIVATE-TOKEN: <token>" \
+    --upload-file ASIO-SDK_2.3.4_2025-10-15.zip \
+    "https://gitlab.com/api/v4/projects/${CI_PROJECT_ID}/packages/generic/asio-sdk/2.3.4/ASIO-SDK_2.3.4_2025-10-15.zip"
   ```
 
-  Verify it took: the next `build:windows` log should print
+  The `build:windows` job's fetch URL must match this package path/version. Verify
+  it took: the next `build:windows` log prints
   `Pedalboard 3: ASIO SDK found … — enabling JUCE_ASIO=1`.
 
 ## What an agent may run without confirmation

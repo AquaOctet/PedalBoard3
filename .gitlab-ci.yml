@@ -331,7 +331,7 @@ build:windows:
       # continues with WASAPI/DirectSound only — this step never fails the job.
       # curl's non-zero exit does NOT throw in PowerShell, so check $LASTEXITCODE.
       $asioDest = "app-v3/asio_sdk"
-      $asioUrl  = "$($env:CI_API_V4_URL)/projects/$($env:CI_PROJECT_ID)/packages/generic/asio-sdk/2.3/asio-sdk.zip"
+      $asioUrl  = "$($env:CI_API_V4_URL)/projects/$($env:CI_PROJECT_ID)/packages/generic/asio-sdk/2.3.4/ASIO-SDK_2.3.4_2025-10-15.zip"
       curl.exe --fail --silent --show-error --location --header "JOB-TOKEN: $($env:CI_JOB_TOKEN)" --output asio-sdk.zip $asioUrl
       if ($LASTEXITCODE -eq 0 -and (Test-Path asio-sdk.zip)) {
           try {
