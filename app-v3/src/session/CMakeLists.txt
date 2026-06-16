@@ -24,6 +24,8 @@ add_library(pb3_session_core STATIC
     v2_import/PdlV2Importer.h
     ControlParameterApplier.cpp
     ControlParameterApplier.h
+    ControlHub.cpp
+    ControlHub.h
     NodeId.h
 )
 
@@ -66,4 +68,5 @@ pb3_apply_strict_warnings(pb3_session_core
     PdlSerializer.cpp
     v2_import/PdlV2Importer.cpp
     ControlParameterApplier.cpp
+    ControlHub.cpp
 )
