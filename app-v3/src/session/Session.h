@@ -141,6 +141,17 @@ public:
     void setNodeBypass(NodeId, bool);
     void setNodeCustomName(NodeId, juce::String);
 
+    // ---- Free-routing edits (interactive canvas, message thread) -----------
+
+    // Create a user-authored connection. Returns false (patch unchanged) if the
+    // edge is invalid: cross-signal (audio<->MIDI), a duplicate, a self-loop, or
+    // would make the graph fail validatePatch (cycle / dangling / bad channel).
+    bool addConnection(NodeId src, int srcChannel, NodeId dst, int dstChannel);
+    void removeConnection(NodeId src, int srcChannel, NodeId dst, int dstChannel);
+
+    // Update a node's canvas position (no graph impact; persisted on save).
+    void setNodePosition(NodeId, float x, float y);
+
     // ---- Snapshot accessors (message thread) -------------------------------
 
     Patch getActivePatch() const; // heavyweight copy
@@ -227,8 +238,11 @@ private:
     // handling + Idle->Building transition).
     void enqueueAddRequest(AddPluginRequest);
 
-    // Helpers used during incremental mutation on the message thread.
-    void recomputeLinearConnections(); // mutate activePatch_.connections
+    // Helpers used during incremental mutation on the message thread. Connections
+    // are user-authored (free graph), so adds/removes mutate them surgically
+    // rather than recomputing a linear chain.
+    void autoConnectNewNode(NodeId newId);          // splice a new node before the graph output
+    void pruneAndBridgeConnections(NodeId removed); // drop a node's edges, bridge its neighbours
     void applyConnectionsToLiveGraph();
 
     static int stereoChannel(int ch) noexcept { return ch; }

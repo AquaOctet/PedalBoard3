@@ -40,14 +40,6 @@ DeviceConfig deriveConfig(engine::AudioEngine& eng)
     return {kFallbackSampleRate, kFallbackBlockSize};
 }
 
-// Recompute a linear-chain `connections` vector from a node ordering.
-// Single source of truth lives in session::linearChainConnections (Patch.cpp)
-// so App's saved-patch restore rebuilds the exact same topology.
-std::vector<PatchConnection> computeLinearConnections(const std::vector<PatchNode>& nodes)
-{
-    return linearChainConnections(nodes);
-}
-
 } // namespace
 
 // -------- Result updater ---------------------------------------------------
@@ -317,7 +309,7 @@ void Session::removeNode(NodeId id)
     if (idx >= 0)
         activePatch_.nodes.erase(activePatch_.nodes.begin() + idx);
 
-    recomputeLinearConnections();
+    pruneAndBridgeConnections(id);
     applyConnectionsToLiveGraph();
 
     bumpVersionAndNotify();
@@ -325,8 +317,10 @@ void Session::removeNode(NodeId id)
 
 void Session::moveNode(NodeId id, int newIndex)
 {
-    // Same dangling-graph guard as removeNode: reordering re-wires the live
-    // graph and reads cached Node*s that can be freed mid-rebuild. Idle only.
+    // Reorders the node list only. Under the free-routing model, topology is
+    // defined by `connections` (by NodeId), not list order, so a reorder leaves
+    // the live graph untouched — no rewire. Kept for any order-sensitive views;
+    // the canvas positions nodes by x/y, not order. Idle-gated for consistency.
     if (getState() != State::Idle)
         return;
 
@@ -343,9 +337,6 @@ void Session::moveNode(NodeId id, int newIndex)
     auto node = activePatch_.nodes[static_cast<size_t>(curIdx)];
     activePatch_.nodes.erase(activePatch_.nodes.begin() + curIdx);
     activePatch_.nodes.insert(activePatch_.nodes.begin() + target, std::move(node));
-
-    recomputeLinearConnections();
-    applyConnectionsToLiveGraph();
 
     bumpVersionAndNotify();
 }
@@ -540,9 +531,150 @@ void Session::rearmWorkerIfQueueNonEmpty()
     }
 }
 
-void Session::recomputeLinearConnections()
+namespace
 {
-    activePatch_.connections = computeLinearConnections(activePatch_.nodes);
+// The channels a node is wired on by the auto-connect convenience: stereo audio
+// (0, 1) plus the MIDI pin. Mirrors linearChainConnections' threading.
+constexpr int kAutoChannels[] = {0, 1, AudioGraph::midiChannelIndex};
+
+bool connectionExists(const std::vector<PatchConnection>& v, const PatchConnection& c)
+{
+    return std::find(v.begin(), v.end(), c) != v.end();
+}
+} // namespace
+
+void Session::autoConnectNewNode(NodeId newId)
+{
+    auto& conns = activePatch_.connections;
+
+    // Sources currently feeding the graph output, per channel.
+    std::vector<PatchConnection> toOut;
+    for (const auto& c : conns)
+        if (c.dst == graphIO)
+            toOut.push_back(c);
+
+    if (toOut.empty())
+    {
+        // Empty graph (or nothing reaches the output): wire input -> new -> output.
+        for (int ch : kAutoChannels)
+        {
+            conns.push_back({graphIO, ch, newId, ch});
+            conns.push_back({newId, ch, graphIO, ch});
+        }
+        return;
+    }
+
+    // Splice the new node in front of the output: drop each X -> out edge, add
+    // X -> new, then add new -> out once per channel that fed the output. This
+    // appends the node to the end of the signal flow while preserving every
+    // other user-authored edge.
+    conns.erase(std::remove_if(conns.begin(), conns.end(), [](const PatchConnection& c) { return c.dst == graphIO; }),
+                conns.end());
+
+    for (const auto& c : toOut)
+    {
+        PatchConnection intoNew{c.src, c.srcChannel, newId, c.dstChannel};
+        if (!connectionExists(conns, intoNew))
+            conns.push_back(intoNew);
+    }
+    for (int ch : kAutoChannels)
+    {
+        const bool fedThisChannel =
+            std::any_of(toOut.begin(), toOut.end(), [ch](const PatchConnection& c) { return c.dstChannel == ch; });
+        if (fedThisChannel)
+            conns.push_back({newId, ch, graphIO, ch});
+    }
+}
+
+void Session::pruneAndBridgeConnections(NodeId removed)
+{
+    auto& conns = activePatch_.connections;
+
+    // Capture the removed node's in/out edges before dropping them, so we can
+    // bridge its neighbours (remove a middle node -> its source feeds its sink).
+    std::vector<PatchConnection> inEdges, outEdges;
+    for (const auto& c : conns)
+    {
+        if (c.dst == removed)
+            inEdges.push_back(c);
+        if (c.src == removed)
+            outEdges.push_back(c);
+    }
+
+    conns.erase(std::remove_if(conns.begin(),
+                               conns.end(),
+                               [removed](const PatchConnection& c) { return c.src == removed || c.dst == removed; }),
+                conns.end());
+
+    // Bridge across the removed node, matching its pin channel (in.dst == out.src).
+    for (const auto& in : inEdges)
+        for (const auto& out : outEdges)
+        {
+            if (in.dstChannel != out.srcChannel)
+                continue;
+            PatchConnection bridge{in.src, in.srcChannel, out.dst, out.dstChannel};
+            if (bridge.src != bridge.dst && !connectionExists(conns, bridge))
+                conns.push_back(bridge);
+        }
+}
+
+bool Session::addConnection(NodeId src, int srcChannel, NodeId dst, int dstChannel)
+{
+    if (getState() != State::Idle)
+        return false;
+
+    // Cross-signal (audio<->MIDI) connections are never valid.
+    const bool srcMidi = (srcChannel == AudioGraph::midiChannelIndex);
+    const bool dstMidi = (dstChannel == AudioGraph::midiChannelIndex);
+    if (srcMidi != dstMidi)
+        return false;
+
+    std::lock_guard<std::mutex> lk(statusMutex_);
+
+    const PatchConnection c{src, srcChannel, dst, dstChannel};
+    if (connectionExists(activePatch_.connections, c))
+        return false;
+
+    // Trial-validate: rejects self-loops on real nodes, cycles, dangling
+    // endpoints, and negative channels (graphIO -> graphIO passthrough is fine).
+    Patch trial = activePatch_;
+    trial.connections.push_back(c);
+    if (validatePatch(trial) != PatchValidation::Ok)
+        return false;
+
+    activePatch_.connections.push_back(c);
+    applyConnectionsToLiveGraph();
+    bumpVersionAndNotify();
+    return true;
+}
+
+void Session::removeConnection(NodeId src, int srcChannel, NodeId dst, int dstChannel)
+{
+    if (getState() != State::Idle)
+        return;
+
+    std::lock_guard<std::mutex> lk(statusMutex_);
+
+    const PatchConnection c{src, srcChannel, dst, dstChannel};
+    auto& v = activePatch_.connections;
+    const auto it = std::remove(v.begin(), v.end(), c);
+    if (it == v.end())
+        return; // nothing matched
+
+    v.erase(it, v.end());
+    applyConnectionsToLiveGraph();
+    bumpVersionAndNotify();
+}
+
+void Session::setNodePosition(NodeId id, float x, float y)
+{
+    std::lock_guard<std::mutex> lk(statusMutex_);
+    auto* n = activePatch_.findNode(id);
+    if (n == nullptr)
+        return;
+    n->x = x;
+    n->y = y;
+    bumpVersionAndNotify();
 }
 
 void Session::applyConnectionsToLiveGraph()
@@ -713,7 +845,7 @@ void Session::commitAddPlugin(AddPluginResult&& result)
 
         nodes_[newId] = PreparedGraph::NodeRefs{wrapPtr, hostedPtr, graphNode.get()};
 
-        recomputeLinearConnections();
+        autoConnectNewNode(newId);
     }
 
     applyConnectionsToLiveGraph();
