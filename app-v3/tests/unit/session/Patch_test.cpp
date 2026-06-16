@@ -530,13 +530,16 @@ TEST_CASE("Patch: node x/y round-trips through XML when set", "[session][patch][
     p.nodes.push_back(a);
     p.nodes.push_back(makeNode(2, "Reverb")); // left unpositioned
 
-    auto* nodesEl = session::patchToXml(p)->getChildByName("NODES");
+    // Hold the unique_ptr in a local — getChildByName returns a raw pointer into
+    // the tree, which a temporary patchToXml(p) would free at the semicolon.
+    auto xml = session::patchToXml(p);
+    auto* nodesEl = xml->getChildByName("NODES");
     REQUIRE(nodesEl != nullptr);
     REQUIRE(nodesEl->getFirstChildElement()->hasAttribute("x"));
     // The unpositioned node writes no x/y.
     REQUIRE_FALSE(nodesEl->getChildElement(1)->hasAttribute("x"));
 
-    auto rt = session::patchFromXml(*session::patchToXml(p));
+    auto rt = session::patchFromXml(*xml);
     REQUIRE(rt != nullptr);
     REQUIRE(rt->nodes[0].hasPosition());
     REQUIRE(rt->nodes[0].x == 120.5f);
