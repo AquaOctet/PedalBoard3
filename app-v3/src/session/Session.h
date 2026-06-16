@@ -89,6 +89,11 @@ public:
         juce::String name;
         bool bypassed{false};
         juce::String customName;
+
+        // Canvas position (NaN = unpositioned → SignalCanvas auto-lays-out).
+        float x{std::numeric_limits<float>::quiet_NaN()};
+        float y{std::numeric_limits<float>::quiet_NaN()};
+        bool hasPosition() const noexcept { return !std::isnan(x) && !std::isnan(y); }
     };
 
     // The seam Unit 3 calls out: the function the worker thread invokes

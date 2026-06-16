@@ -431,6 +431,8 @@ std::vector<Session::NodeSnapshot> Session::getNodeSnapshots() const
         }
         s.bypassed = n.bypass;
         s.customName = n.customName;
+        s.x = n.x;
+        s.y = n.y;
         snaps.push_back(std::move(s));
     }
     return snaps;

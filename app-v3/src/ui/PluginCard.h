@@ -39,6 +39,8 @@ public:
         std::function<void(NodeId)> onMoveUp;
         std::function<void(NodeId)> onMoveDown;
         std::function<void(NodeId)> onRemove;
+        // Fired on drag-release with the card's new top-left in canvas space.
+        std::function<void(NodeId, juce::Point<int>)> onMoved;
     };
 
     PluginCard(NodeSnapshot initialSnapshot, Callbacks callbacks);
@@ -65,13 +67,28 @@ public:
     // (0x1000) = MIDI.
     juce::Point<int> getPortCentre(bool isInput, int channel) const noexcept;
 
+    // Stored canvas position from the snapshot (NaN = unpositioned).
+    bool hasStoredPosition() const noexcept { return snapshot_.hasPosition(); }
+    juce::Point<int> storedPosition() const noexcept
+    {
+        return {static_cast<int>(snapshot_.x), static_cast<int>(snapshot_.y)};
+    }
+
     void paint(juce::Graphics&) override;
     void resized() override;
+
+    // Drag-to-move on the card body (buttons consume their own clicks).
+    void mouseDown(const juce::MouseEvent&) override;
+    void mouseDrag(const juce::MouseEvent&) override;
+    void mouseUp(const juce::MouseEvent&) override;
 
 private:
     NodeSnapshot snapshot_;
     Callbacks callbacks_;
     juce::Colour accent_{tokens::accentPrimary};
+
+    juce::ComponentDragger dragger_;
+    bool didDrag_{false};
 
     juce::Label nameLabel_;
     juce::TextButton bypassButton_{"BYP"};

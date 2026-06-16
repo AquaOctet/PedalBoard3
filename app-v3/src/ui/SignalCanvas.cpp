@@ -148,35 +148,56 @@ std::unique_ptr<PluginCard> SignalCanvas::makeCard(const PluginCard::NodeSnapsho
         [this](NodeId id) { onCardMoveUp(id); },
         [this](NodeId id) { onCardMoveDown(id); },
         [this](NodeId id) { onCardRemove(id); },
+        [this](NodeId id, juce::Point<int> p) { onCardMoved(id, p); },
     };
     return std::make_unique<PluginCard>(s, std::move(cb));
 }
 
 void SignalCanvas::layoutCards()
 {
-    const int centreY = juce::jmax(getHeight() / 2, kCanvasMarginY + kCardHeight / 2);
-    const int cardY = centreY - kCardHeight / 2;
-    int x = kCanvasMarginX;
-
-    inputCardBounds_ = {x, cardY, kEndpointWidth, kCardHeight};
-    x += kEndpointWidth + kCardSpacingX;
+    // Free positioning: a card sits at its stored (x, y); an unpositioned card
+    // (freshly added, or a pre-position patch) falls back to a left-to-right
+    // auto-slot so it never stacks at the origin. The user's drags persist real
+    // positions via onCardMoved -> Session::setNodePosition.
+    const int rowY = juce::jmax(kCanvasMarginY, getParentHeight() / 2 - kCardHeight / 2);
+    int autoX = kCanvasMarginX + kEndpointWidth + kCardSpacingX;
 
     idToIndex_.clear();
     idToIndex_.reserve(cards_.size());
+
+    int contentRight = autoX;
+    int contentBottom = rowY + kCardHeight;
     for (std::size_t i = 0; i < cards_.size(); ++i)
     {
-        cards_[i]->setBounds(x, cardY, kCardWidth, kCardHeight);
+        int cx, cy;
+        if (cards_[i]->hasStoredPosition())
+        {
+            const auto p = cards_[i]->storedPosition();
+            cx = p.getX();
+            cy = p.getY();
+        }
+        else
+        {
+            cx = autoX;
+            cy = rowY;
+            autoX += kCardWidth + kCardSpacingX;
+        }
+        cards_[i]->setBounds(cx, cy, kCardWidth, kCardHeight);
         idToIndex_[cards_[i]->getNodeId()] = i;
-        x += kCardWidth + kCardSpacingX;
+        contentRight = juce::jmax(contentRight, cx + kCardWidth);
+        contentBottom = juce::jmax(contentBottom, cy + kCardHeight);
     }
 
-    outputCardBounds_ = {x, cardY, kEndpointWidth, kCardHeight};
-    const int rightEdge = outputCardBounds_.getRight() + kCanvasMarginX;
+    // Endpoints anchor the I/O at the canvas extremes, vertically centred.
+    const int endpointY = rowY;
+    inputCardBounds_ = {kCanvasMarginX, endpointY, kEndpointWidth, kCardHeight};
+    const int outX = juce::jmax(contentRight + kCardSpacingX, inputCardBounds_.getRight() + kCardSpacingX);
+    outputCardBounds_ = {outX, endpointY, kEndpointWidth, kCardHeight};
 
-    // Grow canvas width to fit; juce::Viewport handles horizontal
-    // scrolling on long chains.
-    const int targetWidth = juce::jmax(rightEdge, getParentWidth());
-    setSize(targetWidth, juce::jmax(kCardHeight + 2 * kCanvasMarginY, getParentHeight()));
+    // Grow canvas to fit all content; the parent juce::Viewport scrolls.
+    const int targetWidth = juce::jmax(outputCardBounds_.getRight() + kCanvasMarginX, getParentWidth());
+    const int targetHeight = juce::jmax(contentBottom + kCanvasMarginY, getParentHeight());
+    setSize(targetWidth, targetHeight);
 
     rebuildCables();
     repaint();
@@ -352,6 +373,16 @@ void SignalCanvas::onCardRemove(NodeId id)
     // message, so a listener-side close would be too late.
     editors_.erase(id);
     ctx_.session.removeNode(id);
+}
+
+void SignalCanvas::onCardMoved(NodeId id, juce::Point<int> newPos)
+{
+    // Clamp to the canvas margins so a card can't be dragged off the top-left
+    // out of reach, then persist. The resulting change message re-runs
+    // layoutCards, which re-reads the stored position (no jump).
+    const int x = juce::jmax(kCanvasMarginX, newPos.getX());
+    const int y = juce::jmax(kCanvasMarginY, newPos.getY());
+    ctx_.session.setNodePosition(id, static_cast<float>(x), static_cast<float>(y));
 }
 
 } // namespace pedalboard3::ui

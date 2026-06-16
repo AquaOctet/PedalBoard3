@@ -261,4 +261,34 @@ void PluginCard::resized()
     moveDownButton_.setBounds(moveRow.removeFromLeft(moveBtnW));
 }
 
+// ----- Drag-to-move ----------------------------------------------------------
+// The card body is draggable; the child TextButtons consume their own clicks
+// and nameLabel_ has intercepts disabled, so a drag that starts on the body
+// (or a port) repositions the card. SignalCanvas persists the new position on
+// release via Session::setNodePosition.
+
+void PluginCard::mouseDown(const juce::MouseEvent& e)
+{
+    didDrag_ = false;
+    dragger_.startDraggingComponent(this, e);
+}
+
+void PluginCard::mouseDrag(const juce::MouseEvent& e)
+{
+    // Only treat it as a drag once the pointer has actually moved, so a plain
+    // click on the body doesn't nudge the card.
+    if (e.getDistanceFromDragStart() > 3)
+    {
+        didDrag_ = true;
+        dragger_.dragComponent(this, e, nullptr);
+    }
+}
+
+void PluginCard::mouseUp(const juce::MouseEvent&)
+{
+    if (didDrag_ && callbacks_.onMoved)
+        callbacks_.onMoved(snapshot_.id, getPosition());
+    didDrag_ = false;
+}
+
 } // namespace pedalboard3::ui

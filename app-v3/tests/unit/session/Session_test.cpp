@@ -569,4 +569,13 @@ TEST_CASE("Session: setNodePosition updates the snapshot", "[session][routing]")
     REQUIRE(n->hasPosition());
     REQUIRE(n->x == 320.0f);
     REQUIRE(n->y == 96.0f);
+
+    // The position also flows through the UI-facing snapshot (U3: SignalCanvas
+    // reads positions from getNodeSnapshots to lay out / drag cards).
+    const auto snaps = f.s.getNodeSnapshots();
+    const auto it = std::find_if(snaps.begin(), snaps.end(), [](const auto& s) { return s.id == 2; });
+    REQUIRE(it != snaps.end());
+    REQUIRE(it->hasPosition());
+    REQUIRE(it->x == 320.0f);
+    REQUIRE(it->y == 96.0f);
 }

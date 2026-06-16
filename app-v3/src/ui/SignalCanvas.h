@@ -16,13 +16,12 @@ namespace pedalboard3::ui
 
 // SignalCanvas — read-only signal-flow view for Path γ.
 //
-// Renders the active patch as a left-to-right sequence of cards
-// (virtual "Input" endpoint → user plugin cards → virtual "Output"
-// endpoint), with bezier audio + MIDI cables drawn between adjacent
-// cards' ports. Path γ ships read-only: ports are drawn but not
-// click-to-connect; cards have per-card buttons but are not draggable.
-// Phase 3 grows this into the full editor (drag-rearrange, port-click
-// connections, lasso, zoom).
+// Renders the active patch as a free 2D graph of cards (virtual "Input"
+// endpoint → user plugin cards → virtual "Output" endpoint), with bezier
+// audio + MIDI cables drawn between ports. Cards are draggable: each carries a
+// persisted (x, y); an unpositioned card auto-lays-out left-to-right until
+// dragged. Ports are still drawn-only here — port drag-to-connect lands in the
+// next unit (U4); zoom/pan follows.
 //
 // Threading: message thread only.
 //
@@ -84,6 +83,7 @@ private:
     void onCardMoveUp(NodeId);
     void onCardMoveDown(NodeId);
     void onCardRemove(NodeId);
+    void onCardMoved(NodeId, juce::Point<int> newPos);
 
     // Map a graphIO sentinel to either the input or output endpoint
     // bounds; map any other NodeId to its card's index in cards_.
