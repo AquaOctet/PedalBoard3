@@ -194,3 +194,24 @@ TEST_CASE("pdl: write then read round-trips an internal node", "[session][pdl][i
 
     file.deleteFile();
 }
+
+TEST_CASE("pdl: write then read round-trips node canvas positions", "[session][pdl][position]")
+{
+    const auto file = tempPdl("positions");
+
+    auto p = makeChain(); // single node "EQ"
+    p.nodes[0].x = 256.0f;
+    p.nodes[0].y = 96.5f;
+
+    REQUIRE(session::pdl::writePatch(p, file).wasOk());
+
+    auto loaded = session::pdl::readPatch(file);
+    REQUIRE(loaded.patch != nullptr);
+    REQUIRE(loaded.error.isEmpty());
+    REQUIRE(loaded.patch->nodes.size() == 1);
+    REQUIRE(loaded.patch->nodes[0].hasPosition());
+    REQUIRE(loaded.patch->nodes[0].x == 256.0f);
+    REQUIRE(loaded.patch->nodes[0].y == 96.5f);
+
+    file.deleteFile();
+}

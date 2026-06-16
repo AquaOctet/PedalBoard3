@@ -43,6 +43,13 @@ bool samePatch(const Patch& a, const Patch& b) noexcept
             return false;
         if (a.nodes[i].customName != b.nodes[i].customName)
             return false;
+        // Canvas position — a drag must trigger a persist. Two unpositioned
+        // nodes (both NaN) compare equal; a positioned/unpositioned mismatch or
+        // a moved node compares different.
+        if (a.nodes[i].hasPosition() != b.nodes[i].hasPosition())
+            return false;
+        if (a.nodes[i].hasPosition() && (a.nodes[i].x != b.nodes[i].x || a.nodes[i].y != b.nodes[i].y))
+            return false;
     }
     return a.connections == b.connections;
 }

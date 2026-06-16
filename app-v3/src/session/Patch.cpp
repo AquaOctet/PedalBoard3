@@ -240,6 +240,14 @@ std::unique_ptr<juce::XmlElement> patchToXml(const Patch& p)
         nodeEl->setAttribute("bypass", n.bypass);
         nodeEl->setAttribute("customName", n.customName);
 
+        // Canvas position — only written when set, so unpositioned nodes (and
+        // pre-position files) stay attribute-free and auto-lay-out on load.
+        if (n.hasPosition())
+        {
+            nodeEl->setAttribute("x", static_cast<double>(n.x));
+            nodeEl->setAttribute("y", static_cast<double>(n.y));
+        }
+
         if (n.kind == NodeKind::Internal)
         {
             // Built-in node: identity is the type token; no <IDENTITY> plugin
@@ -334,6 +342,14 @@ std::unique_ptr<Patch> patchFromXml(const juce::XmlElement& root)
             n.id = nodeEl->getIntAttribute("id");
             n.bypass = nodeEl->getBoolAttribute("bypass");
             n.customName = nodeEl->getStringAttribute("customName");
+
+            // Canvas position — absent attributes leave x/y as NaN (unpositioned),
+            // so pre-position files auto-lay-out. Both must be present to count.
+            if (nodeEl->hasAttribute("x") && nodeEl->hasAttribute("y"))
+            {
+                n.x = static_cast<float>(nodeEl->getDoubleAttribute("x"));
+                n.y = static_cast<float>(nodeEl->getDoubleAttribute("y"));
+            }
 
             // `kind` absent => Plugin (back-compat with pre-discriminator files).
             if (nodeEl->getStringAttribute("kind", "plugin") == "internal")

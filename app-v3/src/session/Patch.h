@@ -7,6 +7,8 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_core/juce_core.h>
 
+#include <cmath>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -24,8 +26,8 @@ enum class NodeKind
 };
 
 // One slot in a Patch — a plugin OR a built-in node, plus per-instance state
-// (bypass + custom display name + the plugin's own opaque state blob).
-// Phase 3 will add an (x,y) position for the canvas.
+// (bypass + custom display name + the plugin's own opaque state blob) and the
+// interactive-canvas position.
 struct PatchNode
 {
     NodeId id{0};
@@ -38,6 +40,15 @@ struct PatchNode
 
     bool bypass{false};
     juce::String customName;
+
+    // Canvas position for the interactive signal-graph editor. NaN means
+    // "unpositioned" — SignalCanvas seeds it from auto-layout, then a drag
+    // persists a real value. Additive + back-compatible: pre-position files
+    // carry no x/y attributes and read back as NaN (auto-laid-out).
+    float x{std::numeric_limits<float>::quiet_NaN()};
+    float y{std::numeric_limits<float>::quiet_NaN()};
+
+    bool hasPosition() const noexcept { return !std::isnan(x) && !std::isnan(y); }
 
     // The plugin's getStateInformation() blob (knob settings, presets,
     // etc.). Empty for a freshly-added plugin, an internal node (no state
