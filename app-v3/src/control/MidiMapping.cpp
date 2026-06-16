@@ -71,4 +71,34 @@ float applyRange(const MidiMapping& mapping, float normalizedSource) noexcept
     return mapping.rangeMin + s * (mapping.rangeMax - mapping.rangeMin);
 }
 
+std::optional<MidiSource> sourceFromMessage(const juce::MidiMessage& msg) noexcept
+{
+    MidiSource s;
+    s.channel = msg.getChannel(); // 1..16 for channel messages, 0 otherwise
+
+    if (msg.isController())
+    {
+        s.kind = MidiSourceKind::ControlChange;
+        s.controller = msg.getControllerNumber();
+        return s;
+    }
+    if (msg.isNoteOn())
+    {
+        s.kind = MidiSourceKind::Note;
+        s.controller = msg.getNoteNumber();
+        return s;
+    }
+    if (msg.isProgramChange())
+    {
+        s.kind = MidiSourceKind::ProgramChange;
+        return s;
+    }
+    if (msg.isPitchWheel())
+    {
+        s.kind = MidiSourceKind::PitchBend;
+        return s;
+    }
+    return std::nullopt;
+}
+
 } // namespace pedalboard3::control

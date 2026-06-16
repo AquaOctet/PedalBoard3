@@ -14,6 +14,8 @@ add_library(pb3_control_core STATIC
     MidiMapping.h
     MidiRouter.cpp
     MidiRouter.h
+    MidiControlSurface.cpp
+    MidiControlSurface.h
 )
 
 target_include_directories(pb3_control_core PUBLIC
@@ -36,4 +38,5 @@ target_link_libraries(pb3_control_core
 pb3_apply_strict_warnings(pb3_control_core
     MidiMapping.cpp
     MidiRouter.cpp
+    MidiControlSurface.cpp
 )

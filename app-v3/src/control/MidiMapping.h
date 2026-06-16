@@ -107,4 +107,12 @@ std::optional<float> rawNormalized(MidiSourceKind kind, const juce::MidiMessage&
 // transform.
 float applyRange(const MidiMapping& mapping, float normalizedSource) noexcept;
 
+// Build the MidiSource a MIDI-learn flow would capture from `msg`: the kind +
+// channel (the message's actual 1..16 channel, not omni) + controller/note that
+// identifies this control. Returns nullopt for messages that don't map to a
+// learnable source (note-off, aftertouch, clock, transport, etc.) — a learn
+// captures the press, not the release, so note-ON is learnable and note-OFF is
+// not.
+std::optional<MidiSource> sourceFromMessage(const juce::MidiMessage& msg) noexcept;
+
 } // namespace pedalboard3::control
