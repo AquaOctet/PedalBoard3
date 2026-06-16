@@ -24,12 +24,9 @@ class MidiRouter
 public:
     // A computed change: set `target` to `value` (PluginParameter values are
     // normalized 0..1; PatchSelect/AppCommand carry the value for handlers that
-    // want it, e.g. a fader driving a continuous app command).
-    struct Update
-    {
-        MidiTarget target;
-        float value{0.0f};
-    };
+    // want it, e.g. a fader driving a continuous app command). Shared with the
+    // OSC router via control::ParameterUpdate (defined in MidiMapping.h).
+    using Update = ParameterUpdate;
 
     MidiRouter() = default;
 

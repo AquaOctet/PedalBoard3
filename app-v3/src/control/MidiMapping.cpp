@@ -63,12 +63,17 @@ std::optional<float> rawNormalized(MidiSourceKind kind, const juce::MidiMessage&
     return std::nullopt;
 }
 
-float applyRange(const MidiMapping& mapping, float normalizedSource) noexcept
+float scaleToRange(float normalizedSource, float rangeMin, float rangeMax, bool inverted) noexcept
 {
     float s = juce::jlimit(0.0f, 1.0f, normalizedSource);
-    if (mapping.inverted)
+    if (inverted)
         s = 1.0f - s;
-    return mapping.rangeMin + s * (mapping.rangeMax - mapping.rangeMin);
+    return rangeMin + s * (rangeMax - rangeMin);
+}
+
+float applyRange(const MidiMapping& mapping, float normalizedSource) noexcept
+{
+    return scaleToRange(normalizedSource, mapping.rangeMin, mapping.rangeMax, mapping.inverted);
 }
 
 std::optional<MidiSource> sourceFromMessage(const juce::MidiMessage& msg) noexcept
