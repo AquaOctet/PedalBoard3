@@ -2,6 +2,7 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include <optional>
 #include <unordered_map>
 
 namespace pedalboard3::session::v2
@@ -89,6 +90,42 @@ bool orderNodesBySignalFlow(std::vector<PatchNode>& nodes, const std::vector<Pat
     const bool fullyLinear = ordered.size() == nodes.size() && static_cast<size_t>(guard) <= nodes.size();
     nodes = std::move(ordered);
     return fullyLinear;
+}
+
+// Resolve a v2 <MidiMapping>/<OscMapping>'s pluginId + parameter to a v3 target,
+// keyed through the importer's v2-uid -> v3-NodeId map. Returns nullopt (with a
+// reason) when the target cannot be represented in v3: an unknown plugin id, the
+// graph-IO endpoint, or the v2 bypass-toggle sentinel (parameter == -1, which v3's
+// MidiTargetKind has no equivalent for yet).
+std::optional<control::MidiTarget> resolveMappingTarget(const juce::XmlElement& mappingEl,
+                                                        const std::unordered_map<int, NodeId>& v2ToV3,
+                                                        juce::String& dropReason)
+{
+    const int pluginId = mappingEl.getIntAttribute("pluginId");
+    const auto it = v2ToV3.find(pluginId);
+    if (it == v2ToV3.end())
+    {
+        dropReason = "Dropped a mapping referencing an unknown plugin.";
+        return std::nullopt;
+    }
+    if (it->second == graphIO)
+    {
+        dropReason = "Dropped a mapping targeting the graph I/O endpoint.";
+        return std::nullopt;
+    }
+
+    const int param = mappingEl.getIntAttribute("parameter");
+    if (param == -1)
+    {
+        dropReason = "Dropped a mapping for a plugin bypass toggle (not yet supported in v3).";
+        return std::nullopt;
+    }
+
+    control::MidiTarget t;
+    t.kind = control::MidiTargetKind::PluginParameter;
+    t.node = it->second;
+    t.parameterIndex = param;
+    return t;
 }
 
 } // namespace
@@ -200,6 +237,53 @@ ImportResult importPedalboard2Patch(const juce::XmlElement& root)
                 continue;
             if (auto* pn = patch->findNode(it->second))
                 pn->customName = nameEl->getStringAttribute("val");
+        }
+    }
+
+    // Mappings: <Mappings> is a child of <Patch> (sibling of <FILTERGRAPH>), holding
+    // <MidiMapping>/<OscMapping> entries. Translate each to a v3 per-patch mapping,
+    // resolving its plugin id through v2ToV3 (now fully built). Per-patch only — v2's
+    // app-command mappings live in a separate global file, never here.
+    if (auto* mappingsEl = patchEl->getChildByName("Mappings"))
+    {
+        for (auto* el : mappingsEl->getChildIterator())
+        {
+            const bool isMidi = el->hasTagName("MidiMapping");
+            const bool isOsc = el->hasTagName("OscMapping");
+            if (!isMidi && !isOsc)
+                continue;
+
+            juce::String dropReason;
+            auto target = resolveMappingTarget(*el, v2ToV3, dropReason);
+            if (!target)
+            {
+                result.warnings.add(dropReason);
+                continue;
+            }
+
+            if (isMidi)
+            {
+                control::MidiMapping m;
+                m.source.kind = control::MidiSourceKind::ControlChange; // v2 MidiMapping is always CC
+                m.source.channel = el->getIntAttribute("channel", 0);   // 0 == omni, matches v3
+                m.source.controller = el->getIntAttribute("cc", 0);
+                m.rangeMin = static_cast<float>(el->getDoubleAttribute("lowerBound", 0.0));
+                // Default 1.0 (vs v2's bare 0.0) only matters for a hand-edited file missing
+                // the attribute — v2 always writes both bounds; 1.0 avoids a degenerate 0..0 range.
+                m.rangeMax = static_cast<float>(el->getDoubleAttribute("upperBound", 1.0));
+                m.inverted = false; // v2 inversion rides a swapped range; scaleToRange honours min>max
+                m.latch = el->getBoolAttribute("latch", false);
+                m.target = *target;
+                patch->midiMappings.push_back(std::move(m));
+            }
+            else
+            {
+                control::OscMapping o;
+                o.address = el->getStringAttribute("address");
+                o.argumentIndex = el->getIntAttribute("parameterIndex", 0); // v2 OSC arg index (not the plugin param)
+                o.target = *target; // rangeMin/rangeMax/inverted keep v3 defaults (v2 OSC has no range)
+                patch->oscMappings.push_back(std::move(o));
+            }
         }
     }
 
