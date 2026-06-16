@@ -19,7 +19,12 @@ public:
                                    .withInput("In", juce::AudioChannelSet::stereo(), true)
                                    .withOutput("Out", juce::AudioChannelSet::stereo(), true))
     {
-        addParameter(gainParam = new juce::AudioParameterFloat(juce::ParameterID{"gain", 1}, "Gain", 0.0f, 1.0f, 1.0f));
+        // Explicit NormalisableRange(0..1), interval 0 = CONTINUOUS. The
+        // (min, max, default) convenience ctor injects a 0.01 step that would
+        // snap automation values (CC 64/127 -> 0.50 instead of 0.50394), making
+        // a faithful parameter-automation test vehicle impossible.
+        addParameter(gainParam = new juce::AudioParameterFloat(
+                         juce::ParameterID{"gain", 1}, "Gain", juce::NormalisableRange<float>(0.0f, 1.0f), 1.0f));
     }
 
     const juce::String getName() const override { return "TestParam"; }
