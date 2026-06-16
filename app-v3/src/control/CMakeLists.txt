@@ -1,10 +1,10 @@
 # control/ — Phase 4 control surface (MIDI / OSC / mappings).
 #
-# This increment lands the headless MIDI mapping core: the MidiMapping data
-# model + pure value transform, and MidiRouter (MIDI message -> parameter-update
-# intents, owning latch state). No audio-engine or device-I/O dependency yet —
-# that wiring is a later increment — so the whole thing is unit-testable from
-# the Linux dev box.
+# Headless control core: MIDI (MidiMapping model + transform, MidiRouter,
+# MidiControlSurface incl. learn) and OSC (OscMapping model + address match +
+# value, MIDI-over-OSC, multicast validation, OscRouter). No audio-engine or
+# device-I/O dependency — binding sockets / feeding the live graph is a later
+# increment — so the whole thing is unit-testable from the Linux dev box.
 #
 # STATIC library so pb3_apply_strict_warnings() can apply our warning flags
 # per-source without touching JUCE's INTERFACE_SOURCES.
@@ -16,6 +16,10 @@ add_library(pb3_control_core STATIC
     MidiRouter.h
     MidiControlSurface.cpp
     MidiControlSurface.h
+    OscMapping.cpp
+    OscMapping.h
+    OscRouter.cpp
+    OscRouter.h
 )
 
 target_include_directories(pb3_control_core PUBLIC
@@ -25,6 +29,7 @@ target_include_directories(pb3_control_core PUBLIC
 target_link_libraries(pb3_control_core
     PUBLIC
         juce::juce_audio_basics # juce::MidiMessage
+        juce::juce_osc          # juce::OSCMessage / OSCAddress (pure data use)
         juce::juce_core
         # JUCE module flags (JUCE_WEB_BROWSER=0 etc.) must reach any JUCE
         # sources compiled into this lib, matching the other pb3_*_core libs.
@@ -39,4 +44,6 @@ pb3_apply_strict_warnings(pb3_control_core
     MidiMapping.cpp
     MidiRouter.cpp
     MidiControlSurface.cpp
+    OscMapping.cpp
+    OscRouter.cpp
 )

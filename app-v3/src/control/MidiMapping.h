@@ -64,6 +64,15 @@ struct MidiTarget
     bool operator==(const MidiTarget&) const noexcept = default;
 };
 
+// A computed change a router emits: set `target` to `value` (PluginParameter
+// values are normalized 0..1). Shared by the MIDI and OSC routers so the engine
+// sink has one update type to apply regardless of the control source.
+struct ParameterUpdate
+{
+    MidiTarget target;
+    float value{0.0f};
+};
+
 // One source → target binding with value shaping.
 //
 //   rangeMin/rangeMax  normalized 0..1 parameter span the source maps onto;
@@ -102,9 +111,14 @@ bool matches(const MidiSource& source, const juce::MidiMessage& msg) noexcept;
 // source handed a non-note message).
 std::optional<float> rawNormalized(MidiSourceKind kind, const juce::MidiMessage& msg) noexcept;
 
+// Low-level value shaper shared by MIDI and OSC: clamp `normalizedSource` to
+// 0..1, optionally invert, then linearly map onto [rangeMin, rangeMax]
+// (rangeMin > rangeMax is allowed and inverts). Pure.
+float scaleToRange(float normalizedSource, float rangeMin, float rangeMax, bool inverted) noexcept;
+
 // Map a normalized-0..1 source value through invert + [rangeMin,rangeMax].
 // Pure; clamps the input to 0..1 first. This is the continuous (non-latch)
-// transform.
+// transform. Thin wrapper over scaleToRange using the mapping's fields.
 float applyRange(const MidiMapping& mapping, float normalizedSource) noexcept;
 
 // Build the MidiSource a MIDI-learn flow would capture from `msg`: the kind +
