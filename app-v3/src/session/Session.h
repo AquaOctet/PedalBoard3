@@ -130,6 +130,11 @@ public:
     // message; the active patch is unchanged on failure.
     void addPlugin(juce::PluginDescription);
 
+    // Append a built-in (internal) node to the active patch's chain, by its
+    // typeId (e.g. "LevelProcessor"). Same worker pipeline as addPlugin — the
+    // worker calls PluginHost::createInternalInstance instead of createInstance.
+    void addInternalNode(juce::String internalType);
+
     // Synchronous: take effect before the call returns.
     void removeNode(NodeId);
     void moveNode(NodeId, int newIndex);
@@ -150,7 +155,10 @@ public:
     std::vector<NodeSnapshot> getNodeSnapshots() const;
 
     bool hasNode(NodeId) const noexcept;
-    juce::AudioPluginInstance* getHostedPlugin(NodeId) const noexcept;
+    // The live processor for a node, or nullptr. juce::AudioProcessor (not
+    // AudioPluginInstance) so it covers internal nodes too; callers wanting
+    // plugin-only APIs must dynamic_cast.
+    juce::AudioProcessor* getHostedPlugin(NodeId) const noexcept;
     bool isNodeBypassed(NodeId) const noexcept;
     int getNodeCount() const noexcept;
 
@@ -178,7 +186,9 @@ private:
 
     struct AddPluginRequest
     {
-        juce::PluginDescription desc;
+        juce::PluginDescription desc; // used when kind == Plugin
+        NodeKind kind{NodeKind::Plugin};
+        juce::String internalType; // used when kind == Internal
     };
 
     struct LoadPatchResult
@@ -190,9 +200,11 @@ private:
 
     struct AddPluginResult
     {
-        juce::PluginDescription desc;
+        juce::PluginDescription desc; // used when kind == Plugin
+        NodeKind kind{NodeKind::Plugin};
+        juce::String internalType; // used when kind == Internal
         std::unique_ptr<engine::BypassableInstance> wrapped;
-        juce::AudioPluginInstance* hosted{nullptr};
+        juce::AudioProcessor* hosted{nullptr};
         juce::String errorOut;
     };
 
@@ -210,6 +222,10 @@ private:
 
     void commitLoadPatch(LoadPatchResult&&);
     void commitAddPlugin(AddPluginResult&&);
+
+    // Shared enqueue path for addPlugin / addInternalNode (bounded FIFO + drop
+    // handling + Idle->Building transition).
+    void enqueueAddRequest(AddPluginRequest);
 
     // Helpers used during incremental mutation on the message thread.
     void recomputeLinearConnections(); // mutate activePatch_.connections

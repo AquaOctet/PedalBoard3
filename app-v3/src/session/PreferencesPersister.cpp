@@ -28,6 +28,13 @@ bool samePatch(const Patch& a, const Patch& b) noexcept
     {
         if (a.nodes[i].id != b.nodes[i].id)
             return false;
+        // Kind/type distinguish internal nodes, whose desc is empty — without
+        // this a Level->VU swap at the same position would read as "unchanged"
+        // and silently fail to persist.
+        if (a.nodes[i].kind != b.nodes[i].kind)
+            return false;
+        if (a.nodes[i].internalType != b.nodes[i].internalType)
+            return false;
         if (a.nodes[i].desc.pluginFormatName != b.nodes[i].desc.pluginFormatName)
             return false;
         if (a.nodes[i].desc.fileOrIdentifier != b.nodes[i].desc.fileOrIdentifier)

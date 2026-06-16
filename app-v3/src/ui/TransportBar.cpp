@@ -279,34 +279,50 @@ void TransportBar::openAddPluginMenu()
     // Kontakt-class plugins during construction. See
     // PluginHost::getKnownEffects for the rationale.
     const auto effects = ctx_.pluginHost.getKnownEffects();
+    const auto internals = ctx_.pluginHost.getInternalNodeTypes();
+
+    juce::PopupMenu menu;
+
+    // Effects (scanned plugins) take ids 1..effects.size(). A disabled hint
+    // stands in when none are scanned — built-in nodes are still available below,
+    // so an empty plugin list must NOT block the Add menu.
+    int id = 1;
     if (effects.isEmpty())
     {
         const auto allKnown = ctx_.pluginHost.getKnownPlugins().size();
-        const auto message = allKnown > 0
-                                 ? "All scanned plugins are instruments — Pedalboard 3 only loads effects in v3.0. "
-                                   "Open the Plugin List dialog to scan for effect plugins."
-                                 : "No plugins scanned yet. Open the Plugin List dialog to scan.";
-        const auto opts = juce::MessageBoxOptions{}
-                              .withIconType(juce::MessageBoxIconType::InfoIcon)
-                              .withTitle("Add plugin")
-                              .withMessage(message)
-                              .withButton("OK");
-        juce::AlertWindow::showAsync(opts, nullptr);
-        return;
+        menu.addItem(juce::PopupMenu::Item(allKnown > 0 ? "(All scanned plugins are instruments)"
+                                                        : "(No effects scanned — open Plugin List)")
+                         .setEnabled(false));
+    }
+    else
+    {
+        for (const auto& desc : effects)
+            menu.addItem(id++, desc.name + "  [" + desc.pluginFormatName + "]");
     }
 
-    juce::PopupMenu menu;
-    int id = 1;
-    for (const auto& desc : effects)
-        menu.addItem(id++, desc.name + "  [" + desc.pluginFormatName + "]");
+    // Built-in nodes (Level, VU, ...) in their own submenu, with ids offset past
+    // the effects so the two id spaces never collide.
+    const int internalIdBase = id;
+    juce::PopupMenu internalMenu;
+    for (int i = 0; i < internals.size(); ++i)
+        internalMenu.addItem(internalIdBase + i, internals.getReference(i).displayName);
+    menu.addSubMenu("Built-in", internalMenu);
 
     auto opts = juce::PopupMenu::Options{}.withTargetComponent(addPluginButton_);
     menu.showMenuAsync(opts,
-                       [this, effects](int chosen)
+                       [this, effects, internals, internalIdBase](int chosen)
                        {
-                           if (chosen <= 0 || chosen > effects.size())
+                           if (chosen <= 0)
                                return;
-                           ctx_.session.addPlugin(effects.getReference(chosen - 1));
+                           if (chosen < internalIdBase)
+                           {
+                               if (chosen <= effects.size())
+                                   ctx_.session.addPlugin(effects.getReference(chosen - 1));
+                               return;
+                           }
+                           const int internalIdx = chosen - internalIdBase;
+                           if (internalIdx >= 0 && internalIdx < internals.size())
+                               ctx_.session.addInternalNode(internals.getReference(internalIdx).typeId);
                        });
 }
 
@@ -609,7 +625,7 @@ void TransportBar::openPatch()
             patch.nodes.erase(std::remove_if(patch.nodes.begin(),
                                              patch.nodes.end(),
                                              [this](const session::PatchNode& n)
-                                             { return !ctx_.pluginHost.isDescriptorSafeForChain(n.desc); }),
+                                             { return !session::isNodeSafeForChain(ctx_.pluginHost, n); }),
                               patch.nodes.end());
             if (patch.nodes.size() != countBefore)
                 patch.connections = session::linearChainConnections(patch.nodes);

@@ -223,6 +223,11 @@ TEST_CASE("PluginHost: isDescriptorSafeForChain gates instruments and blackliste
     // A blacklisted effect (known crash-on-construct) is not safe either.
     host.getKnownPluginList().addToBlacklist(effect.fileOrIdentifier);
     REQUIRE_FALSE(host.isDescriptorSafeForChain(effect));
+
+    // An empty descriptor (no fileOrIdentifier) can never be instantiated -> not
+    // safe. Guards corrupt .pdl files and the forward-compat case where an
+    // internal node read by an older binary degrades to an empty-desc plugin.
+    REQUIRE_FALSE(host.isDescriptorSafeForChain(juce::PluginDescription{}));
 }
 
 TEST_CASE("PluginHost: getKnownEffects filters out PluginDescription::isInstrument", "[engine][plugin-host][effects]")
@@ -350,4 +355,47 @@ TEST_CASE("PluginHost: applyKnownProblemBlacklist is idempotent", "[engine][plug
     const bool added = host.applyKnownProblemBlacklist();
     REQUIRE_FALSE(added);
     REQUIRE(list.getBlacklistedFiles().contains(synthetic));
+}
+
+// ---- Internal (built-in) node factory --------------------------------------
+
+TEST_CASE("PluginHost: createInternalInstance builds known types, rejects unknown", "[engine][plugin-host][internal]")
+{
+    engine::PluginHost host;
+
+    juce::String err;
+    auto level = host.createInternalInstance("LevelProcessor", 48000.0, 256, err);
+    REQUIRE(level != nullptr);
+    REQUIRE(level->getName() == "Level");
+    REQUIRE(err.isEmpty());
+
+    err.clear();
+    auto vu = host.createInternalInstance("VuMeterProcessor", 48000.0, 256, err);
+    REQUIRE(vu != nullptr);
+    REQUIRE(vu->getName() == "VU Meter");
+    REQUIRE(err.isEmpty());
+
+    err.clear();
+    auto nope = host.createInternalInstance("Nonexistent", 48000.0, 256, err);
+    REQUIRE(nope == nullptr);
+    REQUIRE(err.isNotEmpty());
+}
+
+TEST_CASE("PluginHost: getInternalNodeTypes lists the built-in nodes", "[engine][plugin-host][internal]")
+{
+    engine::PluginHost host;
+    const auto types = host.getInternalNodeTypes();
+    REQUIRE(types.size() == 2);
+
+    bool hasLevel = false;
+    bool hasVu = false;
+    for (const auto& t : types)
+    {
+        if (t.typeId == "LevelProcessor" && t.displayName == "Level")
+            hasLevel = true;
+        if (t.typeId == "VuMeterProcessor" && t.displayName == "VU Meter")
+            hasVu = true;
+    }
+    REQUIRE(hasLevel);
+    REQUIRE(hasVu);
 }

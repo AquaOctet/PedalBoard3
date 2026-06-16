@@ -64,24 +64,34 @@ PreparedGraph buildPreparedGraph(
         return result;
     }
 
-    // Plugin nodes.
+    // Plugin + internal nodes. Both end up wrapped in a BypassableInstance; the
+    // only difference is how the processor is constructed (host.createInstance
+    // for a scanned plugin vs host.createInternalInstance for a built-in node).
     for (const auto& patchNode : patch.nodes)
     {
-        auto plugin = host.createInstance(patchNode.desc, sampleRate, blockSize, errorOut);
-        if (plugin == nullptr)
+        const auto nodeLabel = (patchNode.kind == NodeKind::Internal) ? patchNode.internalType : patchNode.desc.name;
+
+        std::unique_ptr<juce::AudioProcessor> proc;
+        if (patchNode.kind == NodeKind::Internal)
+            proc = host.createInternalInstance(patchNode.internalType, sampleRate, blockSize, errorOut);
+        else
+            proc = host.createInstance(patchNode.desc, sampleRate, blockSize, errorOut);
+
+        if (proc == nullptr)
         {
-            errorOut = patchNode.desc.name + ": " + errorOut;
+            errorOut = nodeLabel + ": " + errorOut;
             return result;
         }
 
-        // Phase 2: restore the plugin's saved state (knob settings) before
-        // prepareToPlay. Best-effort — a plugin that rejects a stale blob
-        // simply starts at its defaults; we don't fail the whole load.
+        // Phase 2: restore the saved state (knob settings) before prepareToPlay.
+        // Best-effort — a plugin that rejects a stale blob simply starts at its
+        // defaults; we don't fail the whole load. Internal nodes have no state
+        // today, so the guard skips them.
         if (patchNode.state.getSize() > 0)
-            plugin->setStateInformation(patchNode.state.getData(), static_cast<int>(patchNode.state.getSize()));
+            proc->setStateInformation(patchNode.state.getData(), static_cast<int>(patchNode.state.getSize()));
 
-        auto* hostedPtr = plugin.get();
-        auto wrapped = std::make_unique<engine::BypassableInstance>(std::move(plugin));
+        auto* hostedPtr = proc.get();
+        auto wrapped = std::make_unique<engine::BypassableInstance>(std::move(proc));
         if (patchNode.bypass)
             wrapped->setBypass(true);
         auto* wrapPtr = wrapped.get();
@@ -89,7 +99,7 @@ PreparedGraph buildPreparedGraph(
         auto graphNode = graph->addNode(std::move(wrapped), {}, UpdateKind::async);
         if (graphNode == nullptr)
         {
-            errorOut = patchNode.desc.name + ": failed to add node to graph";
+            errorOut = nodeLabel + ": failed to add node to graph";
             return result;
         }
 
@@ -147,6 +157,18 @@ PreparedGraph buildPreparedGraph(
 
     result.graph = std::move(graph);
     return result;
+}
+
+bool isNodeSafeForChain(const engine::PluginHost& host, const PatchNode& node)
+{
+    if (node.kind == NodeKind::Internal)
+    {
+        for (const auto& t : host.getInternalNodeTypes())
+            if (t.typeId == node.internalType)
+                return true;
+        return false; // unrecognized internal type — drop rather than abort the build
+    }
+    return host.isDescriptorSafeForChain(node.desc);
 }
 
 } // namespace pedalboard3::session

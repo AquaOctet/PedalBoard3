@@ -13,20 +13,37 @@
 namespace pedalboard3::session
 {
 
-// One slot in a Patch — a plugin description plus per-instance state
+// Whether a PatchNode hosts a scanned plugin or a built-in (internal)
+// processor. `Plugin` is the default so the field is additive and
+// back-compatible: a node deserialized from a pre-discriminator file has no
+// `kind` attribute and reads back as `Plugin`.
+enum class NodeKind
+{
+    Plugin,  // identity is `desc` (juce::PluginDescription); instantiated via host.createInstance
+    Internal // identity is `internalType`; instantiated via host.createInternalInstance
+};
+
+// One slot in a Patch — a plugin OR a built-in node, plus per-instance state
 // (bypass + custom display name + the plugin's own opaque state blob).
 // Phase 3 will add an (x,y) position for the canvas.
 struct PatchNode
 {
     NodeId id{0};
+
+    // For kind == Plugin, `desc` is the node's identity; for kind == Internal it
+    // is unused and `internalType` (e.g. "LevelProcessor") is the identity.
+    NodeKind kind{NodeKind::Plugin};
     juce::PluginDescription desc;
+    juce::String internalType;
+
     bool bypass{false};
     juce::String customName;
 
     // The plugin's getStateInformation() blob (knob settings, presets,
-    // etc.). Empty for a freshly-added plugin or a patch built before
-    // state capture. buildPreparedGraph applies it via setStateInformation
-    // after instantiation; getActivePatchWithState() captures it on save.
+    // etc.). Empty for a freshly-added plugin, an internal node (no state
+    // today), or a patch built before state capture. buildPreparedGraph
+    // applies it via setStateInformation after instantiation;
+    // getActivePatchWithState() captures it on save.
     juce::MemoryBlock state;
 };
 
