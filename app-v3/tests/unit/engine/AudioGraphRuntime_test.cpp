@@ -232,6 +232,16 @@ TEST_CASE("AudioGraphRuntime: swap flushes all-notes-off on outgoing MIDI receiv
     // commit live_.
     auto prev = rt.swapPreparedGraph(std::move(incoming.graph));
 
+    // Wait until the pump thread has actually run the post-swap block that
+    // performs the flush, rather than assuming it was scheduled before we stop
+    // it -- that assumption races on a loaded CI runner and spuriously fails.
+    // Bounded so a genuine regression (flush never happens) still fails fast
+    // instead of hanging. Once the flush runs, live_ points to incoming and
+    // outgoingProc is never called again, so the count is sticky.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (outgoingProc->lastMidiEventCount.load() == 0 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
     stop.store(true, std::memory_order_release);
     pump.join();
 
