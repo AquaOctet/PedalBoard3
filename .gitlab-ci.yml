@@ -347,6 +347,10 @@ build:windows:
           Write-Warning "ASIO SDK package not available at $asioUrl; building WASAPI/DirectSound only."
       }
       Remove-Item asio-sdk.zip -ErrorAction SilentlyContinue
+      # curl --fail exits non-zero on a 404, and GitLab's PowerShell executor
+      # fails the whole step if $LASTEXITCODE != 0 at the block's end. This fetch
+      # is best-effort and must never fail the build, so reset the exit code.
+      cmd /c "exit 0"
     # Patch JUCE to delay-load dcomp.dll. Pipeline #140 confirmed
     # saas-windows-medium-amd64 doesn't ship DirectComposition's
     # dcomp.dll and there's no Microsoft FoD or vendored copy on the
