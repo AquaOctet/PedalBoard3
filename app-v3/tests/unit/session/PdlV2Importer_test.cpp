@@ -4,6 +4,7 @@
 // endpoints, real plugin FILTERs with STATE, an out-of-order FILTER listing
 // whose CONNECTIONs define the true signal chain, and a UserNames override.
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "session/v2_import/PdlV2Importer.h"
@@ -11,6 +12,7 @@
 #include <juce_core/juce_core.h>
 
 using namespace pedalboard3;
+using Catch::Approx;
 
 namespace
 {
@@ -68,6 +70,22 @@ std::unique_ptr<juce::XmlElement> parse(const char* xml)
     return juce::parseXML(juce::String(xml));
 }
 
+// kV2Xml already emits exactly one warning (the state-not-migrated note: the
+// Reverb FILTER carries <STATE>). Mapping-drop warnings add to this baseline.
+constexpr int kBaselineWarnings = 1;
+
+// The kV2Xml fixture with its empty <Mappings/> replaced by a populated block.
+std::unique_ptr<juce::XmlElement> parseWithMappings(const juce::String& inner)
+{
+    return juce::parseXML(juce::String(kV2Xml).replace("<Mappings/>", "<Mappings>" + inner + "</Mappings>"));
+}
+
+// The kV2Xml fixture with the <Mappings> element removed entirely (pre-mappings file).
+std::unique_ptr<juce::XmlElement> parseWithoutMappings()
+{
+    return juce::parseXML(juce::String(kV2Xml).replace("<Mappings/>", ""));
+}
+
 } // namespace
 
 TEST_CASE("v2 import: isPedalboard2Patch detects the root tag", "[session][v2import]")
@@ -108,8 +126,9 @@ TEST_CASE("v2 import: reconstructs the chain in signal order, internal IO -> gra
     // The translated graph is structurally valid (no dangling refs / cycles).
     REQUIRE(session::validatePatch(*res.patch) == session::PatchValidation::Ok);
 
-    // Two FILTERs had <STATE> -> a single "state not migrated" warning.
-    REQUIRE(res.warnings.size() >= 1);
+    // Three FILTERs carry <STATE>, but the two internal-IO ones collapse to graphIO
+    // before the STATE check, so exactly one "state not migrated" warning fires.
+    REQUIRE(res.warnings.size() == kBaselineWarnings);
 }
 
 TEST_CASE("v2 import: rejects a non-v2 root", "[session][v2import]")
@@ -222,4 +241,133 @@ TEST_CASE("v2 import: real-world FabFilter chain reconstructs in signal order", 
     // Structurally valid (no dangling refs / cycles) and the state-drop note fired.
     REQUIRE(session::validatePatch(*res.patch) == session::PatchValidation::Ok);
     REQUIRE(res.warnings.size() >= 1);
+}
+
+// ---- v2 <Mappings> import (uid 8=EQ=nodes[0], 9=Comp=nodes[1], 7=Reverb=nodes[2]) ----
+
+TEST_CASE("v2 import: a CC MidiMapping translates to a v3 MIDI mapping", "[session][v2import]")
+{
+    auto v2 = parseWithMappings(
+        R"(<MidiMapping pluginId="8" parameter="3" cc="7" latch="0" channel="1" lowerBound="0.0" upperBound="1.0"/>)");
+    REQUIRE(v2 != nullptr);
+
+    auto res = session::v2::importPedalboard2Patch(*v2);
+    REQUIRE(res.patch != nullptr);
+    REQUIRE(res.error.isEmpty());
+    REQUIRE(res.patch->midiMappings.size() == 1);
+    REQUIRE(res.patch->oscMappings.empty());
+
+    const auto& m = res.patch->midiMappings[0];
+    REQUIRE(m.source.kind == control::MidiSourceKind::ControlChange);
+    REQUIRE(m.source.channel == 1);
+    REQUIRE(m.source.controller == 7);
+    REQUIRE(m.target.kind == control::MidiTargetKind::PluginParameter);
+    REQUIRE(m.target.parameterIndex == 3);
+    REQUIRE(m.target.node == res.patch->nodes[0].id);  // EQ (uid 8)
+    REQUIRE(res.warnings.size() == kBaselineWarnings); // no drop warning
+}
+
+TEST_CASE("v2 import: an OscMapping translates with address + argument index", "[session][v2import]")
+{
+    auto v2 =
+        parseWithMappings(R"(<OscMapping pluginId="9" parameter="5" address="/pb/comp/thresh" parameterIndex="2"/>)");
+    REQUIRE(v2 != nullptr);
+
+    auto res = session::v2::importPedalboard2Patch(*v2);
+    REQUIRE(res.patch != nullptr);
+    REQUIRE(res.error.isEmpty());
+    REQUIRE(res.patch->oscMappings.size() == 1);
+    REQUIRE(res.patch->midiMappings.empty());
+
+    const auto& o = res.patch->oscMappings[0];
+    REQUIRE(o.address == "/pb/comp/thresh");
+    REQUIRE(o.argumentIndex == 2); // the v2 OSC arg index
+    REQUIRE(o.target.kind == control::MidiTargetKind::PluginParameter);
+    REQUIRE(o.target.parameterIndex == 5);            // the plugin parameter (v2 "parameter")
+    REQUIRE(o.target.node == res.patch->nodes[1].id); // Comp (uid 9)
+}
+
+TEST_CASE("v2 import: a parameter=-1 bypass toggle is dropped with a warning", "[session][v2import]")
+{
+    auto v2 = parseWithMappings(R"(<MidiMapping pluginId="8" parameter="-1" cc="64" latch="1"/>)");
+    REQUIRE(v2 != nullptr);
+
+    auto res = session::v2::importPedalboard2Patch(*v2);
+    REQUIRE(res.patch != nullptr);
+    REQUIRE(res.error.isEmpty());
+    REQUIRE(res.patch->midiMappings.empty()); // never coerced to a real parameter index
+    REQUIRE(res.patch->oscMappings.empty());
+    REQUIRE(res.warnings.size() == kBaselineWarnings + 1);
+
+    bool sawBypassWarning = false;
+    for (const auto& w : res.warnings)
+        if (w.containsIgnoreCase("bypass"))
+            sawBypassWarning = true;
+    REQUIRE(sawBypassWarning);
+}
+
+TEST_CASE("v2 import: mappings to unknown / graph-IO plugins are dropped; valid survives", "[session][v2import]")
+{
+    auto v2 = parseWithMappings(
+        R"(<MidiMapping pluginId="8" parameter="0" cc="1" channel="1" lowerBound="0.0" upperBound="1.0"/>)"
+        R"(<MidiMapping pluginId="999" parameter="0" cc="2" channel="1" lowerBound="0.0" upperBound="1.0"/>)"
+        R"(<MidiMapping pluginId="1" parameter="0" cc="3" channel="1" lowerBound="0.0" upperBound="1.0"/>)");
+    REQUIRE(v2 != nullptr);
+
+    auto res = session::v2::importPedalboard2Patch(*v2);
+    REQUIRE(res.patch != nullptr);
+    REQUIRE(res.error.isEmpty());
+    REQUIRE(res.patch->midiMappings.size() == 1); // only the uid-8 (EQ) mapping survives
+    REQUIRE(res.patch->midiMappings[0].target.node == res.patch->nodes[0].id);
+    REQUIRE(res.warnings.size() == kBaselineWarnings + 2); // unknown-plugin + graph-IO drops
+}
+
+TEST_CASE("v2 import: empty and missing <Mappings> are clean no-ops", "[session][v2import]")
+{
+    SECTION("empty <Mappings/>")
+    {
+        auto v2 = parse(kV2Xml);
+        REQUIRE(v2 != nullptr);
+        auto res = session::v2::importPedalboard2Patch(*v2);
+        REQUIRE(res.patch != nullptr);
+        REQUIRE(res.patch->midiMappings.empty());
+        REQUIRE(res.patch->oscMappings.empty());
+        REQUIRE(res.warnings.size() == kBaselineWarnings);
+    }
+    SECTION("no <Mappings> element at all")
+    {
+        auto v2 = parseWithoutMappings();
+        REQUIRE(v2 != nullptr);
+        auto res = session::v2::importPedalboard2Patch(*v2);
+        REQUIRE(res.patch != nullptr);
+        REQUIRE(res.patch->midiMappings.empty());
+        REQUIRE(res.patch->oscMappings.empty());
+        REQUIRE(res.warnings.size() == kBaselineWarnings);
+    }
+}
+
+TEST_CASE("v2 import: channel + range carry across, including an inverted (lo>hi) range", "[session][v2import]")
+{
+    auto v2 = parseWithMappings(
+        R"(<MidiMapping pluginId="9" parameter="1" cc="11" channel="10" lowerBound="0.2" upperBound="0.8"/>)"
+        R"(<MidiMapping pluginId="7" parameter="2" cc="12" channel="0" lowerBound="0.9" upperBound="0.1"/>)");
+    REQUIRE(v2 != nullptr);
+
+    auto res = session::v2::importPedalboard2Patch(*v2);
+    REQUIRE(res.patch != nullptr);
+    REQUIRE(res.patch->midiMappings.size() == 2);
+
+    const auto& a = res.patch->midiMappings[0]; // Comp (uid 9)
+    REQUIRE(a.source.channel == 10);
+    REQUIRE(a.rangeMin == Approx(0.2f));
+    REQUIRE(a.rangeMax == Approx(0.8f));
+    REQUIRE_FALSE(a.inverted);
+    REQUIRE(a.target.node == res.patch->nodes[1].id);
+
+    const auto& b = res.patch->midiMappings[1]; // Reverb (uid 7)
+    REQUIRE(b.source.channel == 0);             // omni
+    REQUIRE(b.rangeMin == Approx(0.9f));
+    REQUIRE(b.rangeMax == Approx(0.1f)); // lo>hi carried verbatim, inversion rides the range
+    REQUIRE_FALSE(b.inverted);
+    REQUIRE(b.target.node == res.patch->nodes[2].id);
 }
