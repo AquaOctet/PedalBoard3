@@ -129,4 +129,14 @@ float applyRange(const MidiMapping& mapping, float normalizedSource) noexcept;
 // not.
 std::optional<MidiSource> sourceFromMessage(const juce::MidiMessage& msg) noexcept;
 
+// Stable string encodings for the mapping enums, used by .pdl persistence so
+// files stay human-readable and forward-stable: a reordered or newly-added
+// enumerator can never silently re-interpret an old value. The strings are
+// frozen — never rename or reorder them; a new enumerator only appends a new
+// string. fromString is an exact, case-sensitive match; unknown/empty -> nullopt.
+juce::String midiSourceKindToString(MidiSourceKind kind) noexcept;
+std::optional<MidiSourceKind> midiSourceKindFromString(const juce::String& s) noexcept;
+juce::String midiTargetKindToString(MidiTargetKind kind) noexcept;
+std::optional<MidiTargetKind> midiTargetKindFromString(const juce::String& s) noexcept;
+
 } // namespace pedalboard3::control

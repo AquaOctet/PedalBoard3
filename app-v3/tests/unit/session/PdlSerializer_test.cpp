@@ -61,6 +61,65 @@ TEST_CASE("pdl: write then read round-trips a patch with plugin state", "[sessio
     file.deleteFile();
 }
 
+TEST_CASE("pdl: write then read round-trips MIDI and OSC mappings", "[session][pdl]")
+{
+    const auto file = tempPdl("mappings");
+    auto patch = makeChain();
+
+    control::MidiMapping mm;
+    mm.source.kind = control::MidiSourceKind::ControlChange;
+    mm.source.channel = 1;
+    mm.source.controller = 7;
+    mm.rangeMin = 0.1f;
+    mm.rangeMax = 0.9f;
+    mm.inverted = true;
+    mm.latch = true;
+    mm.target.node = 1;
+    mm.target.parameterIndex = 3;
+
+    control::OscMapping om;
+    om.address = "/pb3/gain";
+    om.argumentIndex = 0;
+    om.target.kind = control::MidiTargetKind::AppCommand;
+    // XML metacharacters must escape on write and unescape on parse through the
+    // real .pdl text path (in-memory round-trips never exercise this).
+    om.target.commandId = "a & b < c > \"d\" 'e'/f";
+
+    patch.midiMappings = {mm};
+    patch.oscMappings = {om};
+
+    REQUIRE(session::pdl::writePatch(patch, file).wasOk());
+    auto loaded = session::pdl::readPatch(file);
+    REQUIRE(loaded.patch != nullptr);
+    REQUIRE(loaded.error.isEmpty());
+    REQUIRE(loaded.patch->midiMappings == patch.midiMappings);
+    REQUIRE(loaded.patch->oscMappings == patch.oscMappings);
+
+    file.deleteFile();
+}
+
+TEST_CASE("pdl: a file without <MAPPINGS> reads with empty mapping tables", "[session][pdl]")
+{
+    const auto file = tempPdl("nomaps");
+
+    juce::XmlElement root("PEDALBOARD");
+    root.setAttribute("schemaMajor", session::pdl::kSchemaMajor);
+    root.setAttribute("schemaMinor", 0); // pre-mappings minor
+    auto* patchEl = root.createNewChildElement("PATCH");
+    patchEl->setAttribute("name", "Legacy");
+    patchEl->createNewChildElement("NODES");
+    patchEl->createNewChildElement("CONNECTIONS");
+    REQUIRE(root.writeTo(file));
+
+    auto loaded = session::pdl::readPatch(file);
+    REQUIRE(loaded.patch != nullptr);
+    REQUIRE(loaded.error.isEmpty());
+    REQUIRE(loaded.patch->midiMappings.empty());
+    REQUIRE(loaded.patch->oscMappings.empty());
+
+    file.deleteFile();
+}
+
 TEST_CASE("pdl: a newer schemaMajor is rejected with a friendly error", "[session][pdl]")
 {
     const auto file = tempPdl("newer");

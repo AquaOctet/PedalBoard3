@@ -106,4 +106,58 @@ std::optional<MidiSource> sourceFromMessage(const juce::MidiMessage& msg) noexce
     return std::nullopt;
 }
 
+juce::String midiSourceKindToString(MidiSourceKind kind) noexcept
+{
+    switch (kind)
+    {
+    case MidiSourceKind::ControlChange:
+        return "cc";
+    case MidiSourceKind::Note:
+        return "note";
+    case MidiSourceKind::ProgramChange:
+        return "programChange";
+    case MidiSourceKind::PitchBend:
+        return "pitchBend";
+    }
+    return "cc";
+}
+
+std::optional<MidiSourceKind> midiSourceKindFromString(const juce::String& s) noexcept
+{
+    if (s == "cc")
+        return MidiSourceKind::ControlChange;
+    if (s == "note")
+        return MidiSourceKind::Note;
+    if (s == "programChange")
+        return MidiSourceKind::ProgramChange;
+    if (s == "pitchBend")
+        return MidiSourceKind::PitchBend;
+    return std::nullopt;
+}
+
+juce::String midiTargetKindToString(MidiTargetKind kind) noexcept
+{
+    switch (kind)
+    {
+    case MidiTargetKind::PluginParameter:
+        return "pluginParameter";
+    case MidiTargetKind::PatchSelect:
+        return "patchSelect";
+    case MidiTargetKind::AppCommand:
+        return "appCommand";
+    }
+    return "pluginParameter";
+}
+
+std::optional<MidiTargetKind> midiTargetKindFromString(const juce::String& s) noexcept
+{
+    if (s == "pluginParameter")
+        return MidiTargetKind::PluginParameter;
+    if (s == "patchSelect")
+        return MidiTargetKind::PatchSelect;
+    if (s == "appCommand")
+        return MidiTargetKind::AppCommand;
+    return std::nullopt;
+}
+
 } // namespace pedalboard3::control

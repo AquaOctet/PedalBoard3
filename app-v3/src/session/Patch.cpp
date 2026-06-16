@@ -70,6 +70,111 @@ bool hasCycleFrom(NodeId start,
     return false;
 }
 
+// ---- Mapping (<MAPPINGS>) serialization, shared by patchToXml/patchFromXml ----
+
+// The embedded control::MidiTarget is written as a shared <TARGET> child so the
+// MIDI and OSC map elements reuse one encoding.
+void writeTarget(juce::XmlElement& mapEl, const control::MidiTarget& t)
+{
+    auto* tgt = mapEl.createNewChildElement("TARGET");
+    tgt->setAttribute("kind", control::midiTargetKindToString(t.kind));
+    tgt->setAttribute("node", t.node);
+    tgt->setAttribute("parameterIndex", t.parameterIndex);
+    tgt->setAttribute("patchIndex", t.patchIndex);
+    tgt->setAttribute("commandId", t.commandId);
+}
+
+control::MidiTarget readTarget(const juce::XmlElement& mapEl)
+{
+    control::MidiTarget t; // defaults (PluginParameter, node 0) if <TARGET> absent
+    if (auto* tgt = mapEl.getChildByName("TARGET"))
+    {
+        if (auto kind = control::midiTargetKindFromString(tgt->getStringAttribute("kind")))
+            t.kind = *kind; // unknown target kind keeps the PluginParameter default
+        t.node = tgt->getIntAttribute("node", 0);
+        t.parameterIndex = tgt->getIntAttribute("parameterIndex", 0);
+        t.patchIndex = tgt->getIntAttribute("patchIndex", 0);
+        t.commandId = tgt->getStringAttribute("commandId", "");
+    }
+    return t;
+}
+
+void appendMappings(juce::XmlElement& root,
+                    const std::vector<control::MidiMapping>& midi,
+                    const std::vector<control::OscMapping>& osc)
+{
+    if (midi.empty() && osc.empty())
+        return; // omit <MAPPINGS> entirely when there is nothing to persist
+
+    auto* mapsEl = root.createNewChildElement("MAPPINGS");
+
+    for (const auto& m : midi)
+    {
+        auto* el = mapsEl->createNewChildElement("MIDI_MAP");
+        el->setAttribute("kind", control::midiSourceKindToString(m.source.kind));
+        el->setAttribute("channel", m.source.channel);
+        el->setAttribute("controller", m.source.controller);
+        el->setAttribute("rangeMin", static_cast<double>(m.rangeMin));
+        el->setAttribute("rangeMax", static_cast<double>(m.rangeMax));
+        el->setAttribute("inverted", m.inverted);
+        el->setAttribute("latch", m.latch);
+        writeTarget(*el, m.target);
+    }
+
+    for (const auto& o : osc)
+    {
+        auto* el = mapsEl->createNewChildElement("OSC_MAP"); // OscMapping has no latch
+        el->setAttribute("address", o.address);
+        el->setAttribute("argumentIndex", o.argumentIndex);
+        el->setAttribute("rangeMin", static_cast<double>(o.rangeMin));
+        el->setAttribute("rangeMax", static_cast<double>(o.rangeMax));
+        el->setAttribute("inverted", o.inverted);
+        writeTarget(*el, o.target);
+    }
+}
+
+void readMappings(const juce::XmlElement& root,
+                  std::vector<control::MidiMapping>& outMidi,
+                  std::vector<control::OscMapping>& outOsc)
+{
+    auto* mapsEl = root.getChildByName("MAPPINGS");
+    if (mapsEl == nullptr)
+        return; // no <MAPPINGS> (every pre-Phase-4 file) -> empty tables, no error
+
+    for (auto* el : mapsEl->getChildIterator())
+    {
+        if (el->hasTagName("MIDI_MAP"))
+        {
+            const auto kind = control::midiSourceKindFromString(el->getStringAttribute("kind"));
+            if (!kind)
+                continue; // drop a single mapping with an unknown source kind
+
+            control::MidiMapping m;
+            m.source.kind = *kind;
+            m.source.channel = el->getIntAttribute("channel", 0);
+            m.source.controller = el->getIntAttribute("controller", 0);
+            m.rangeMin = static_cast<float>(el->getDoubleAttribute("rangeMin", 0.0));
+            m.rangeMax = static_cast<float>(el->getDoubleAttribute("rangeMax", 1.0));
+            m.inverted = el->getBoolAttribute("inverted", false);
+            m.latch = el->getBoolAttribute("latch", false);
+            m.target = readTarget(*el);
+            outMidi.push_back(std::move(m));
+        }
+        else if (el->hasTagName("OSC_MAP"))
+        {
+            control::OscMapping o;
+            o.address = el->getStringAttribute("address", "");
+            o.argumentIndex = el->getIntAttribute("argumentIndex", 0);
+            o.rangeMin = static_cast<float>(el->getDoubleAttribute("rangeMin", 0.0));
+            o.rangeMax = static_cast<float>(el->getDoubleAttribute("rangeMax", 1.0));
+            o.inverted = el->getBoolAttribute("inverted", false);
+            o.target = readTarget(*el);
+            outOsc.push_back(std::move(o));
+        }
+        // any other child tag is skipped
+    }
+}
+
 } // namespace
 
 PatchValidation validatePatch(const Patch& p) noexcept
@@ -154,6 +259,8 @@ std::unique_ptr<juce::XmlElement> patchToXml(const Patch& p)
         connEl->setAttribute("dst", c.dst);
         connEl->setAttribute("dstChan", juce::String(c.dstChannel));
     }
+
+    appendMappings(*root, p.midiMappings, p.oscMappings);
 
     return root;
 }
@@ -245,6 +352,8 @@ std::unique_ptr<Patch> patchFromXml(const juce::XmlElement& root)
             patch->connections.push_back(c);
         }
     }
+
+    readMappings(root, patch->midiMappings, patch->oscMappings);
 
     return patch;
 }
