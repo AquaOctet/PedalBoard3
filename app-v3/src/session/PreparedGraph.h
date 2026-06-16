@@ -42,7 +42,10 @@ struct PreparedGraph
     struct NodeRefs
     {
         engine::BypassableInstance* bypass{nullptr};
-        juce::AudioPluginInstance* hosted{nullptr};
+        // The processor inside the BypassableInstance. juce::AudioProcessor (not
+        // AudioPluginInstance) so it covers both hosted plugins and built-in
+        // internal nodes; consumers that want plugin-only APIs must dynamic_cast.
+        juce::AudioProcessor* hosted{nullptr};
         juce::AudioProcessorGraph::Node* graphNode{nullptr};
     };
     std::unordered_map<NodeId, NodeRefs> nodes;
@@ -71,5 +74,13 @@ struct PreparedGraph
 // from the message thread via swapPreparedGraph or by direct ownership.
 PreparedGraph buildPreparedGraph(
     engine::PluginHost& host, const Patch& patch, double sampleRate, int blockSize, juce::String& errorOut);
+
+// True if `node` can be safely materialized into a live chain: a plugin via
+// PluginHost::isDescriptorSafeForChain (drops instruments / blacklisted files);
+// an internal node iff its `internalType` is a recognized built-in. An
+// unrecognized internal type (e.g. a newer schema's node opened by an older
+// binary) returns false, so restore/open paths DROP it instead of letting
+// buildPreparedGraph abort the whole patch. Message-thread only.
+bool isNodeSafeForChain(const engine::PluginHost& host, const PatchNode& node);
 
 } // namespace pedalboard3::session

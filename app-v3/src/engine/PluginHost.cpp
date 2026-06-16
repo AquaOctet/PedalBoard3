@@ -1,6 +1,8 @@
 #include "PluginHost.h"
 
 #include "KnownProblemPlugins.h"
+#include "processors/LevelProcessor.h"
+#include "processors/VuMeterProcessor.h"
 
 namespace pedalboard3::engine
 {
@@ -166,6 +168,16 @@ juce::Array<juce::PluginDescription> PluginHost::getKnownEffects() const
 
 bool PluginHost::isDescriptorSafeForChain(const juce::PluginDescription& desc) const
 {
+    // An empty descriptor can never be instantiated (createInstance would fail
+    // deep in the add/build worker). Drop it here so it degrades gracefully —
+    // the chain is rebuilt over the survivors — instead of aborting the whole
+    // load. This also covers a forward-compat hazard: an internal node written
+    // by a newer build (kind="internal", no <IDENTITY>) read by an older binary
+    // that lacks the kind discriminator deserializes to an empty-desc plugin
+    // node; treating it as unsafe drops it cleanly rather than failing the load.
+    if (desc.fileOrIdentifier.isEmpty())
+        return false;
+
     // Instruments are out of scope for v3.0 and frequently crash on
     // construction (heavy license/online-refresh ctors) — never restore one.
     if (desc.isInstrument)
@@ -187,6 +199,38 @@ std::unique_ptr<juce::AudioPluginInstance> PluginHost::createInstance(const juce
                                                                       juce::String& errorOut)
 {
     return formats_.createPluginInstance(desc, sampleRate, blockSize, errorOut);
+}
+
+juce::Array<InternalNodeType> PluginHost::getInternalNodeTypes() const
+{
+    // The single source of truth for which built-in nodes exist. Keep in sync
+    // with the createInternalInstance switch below. (juce::Array doesn't take a
+    // nested brace-init list the way std::vector does, so add() each entry.)
+    juce::Array<InternalNodeType> types;
+    types.add({"LevelProcessor", "Level"});
+    types.add({"VuMeterProcessor", "VU Meter"});
+    return types;
+}
+
+std::unique_ptr<juce::AudioProcessor> PluginHost::createInternalInstance(const juce::String& type,
+                                                                         double sampleRate,
+                                                                         int blockSize,
+                                                                         juce::String& errorOut)
+{
+    std::unique_ptr<juce::AudioProcessor> proc;
+    if (type == "LevelProcessor")
+        proc = std::make_unique<processors::LevelProcessor>();
+    else if (type == "VuMeterProcessor")
+        proc = std::make_unique<processors::VuMeterProcessor>();
+
+    if (proc == nullptr)
+    {
+        errorOut = "Unknown internal node type: " + type;
+        return nullptr;
+    }
+
+    proc->setRateAndBufferSizeDetails(sampleRate, blockSize);
+    return proc;
 }
 
 juce::File PluginHost::getCrashedPluginsFile() const

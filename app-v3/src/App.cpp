@@ -115,7 +115,7 @@ void App::restoreActivePatchIfAny()
     saved->nodes.erase(std::remove_if(saved->nodes.begin(),
                                       saved->nodes.end(),
                                       [this](const session::PatchNode& n)
-                                      { return !pluginHost->isDescriptorSafeForChain(n.desc); }),
+                                      { return !session::isNodeSafeForChain(*pluginHost, n); }),
                        saved->nodes.end());
 
     if (saved->nodes.size() != savedCount)

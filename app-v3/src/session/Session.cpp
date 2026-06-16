@@ -112,15 +112,24 @@ public:
             else if (addReq.has_value())
             {
                 AddPluginResult ar;
+                ar.kind = addReq->kind;
                 ar.desc = addReq->desc;
+                ar.internalType = addReq->internalType;
 
-                // Direct host.createInstance — bypasses BuildFn so we
-                // get a single AudioPluginInstance back, not a graph.
-                auto plugin = session_.host_.createInstance(addReq->desc, cfg.sampleRate, cfg.blockSize, ar.errorOut);
-                if (plugin != nullptr)
+                // Direct host factory — bypasses BuildFn so we get a single
+                // processor back, not a graph. Internal nodes go through the
+                // internal factory; plugins through createInstance.
+                std::unique_ptr<juce::AudioProcessor> proc;
+                if (addReq->kind == NodeKind::Internal)
+                    proc = session_.host_.createInternalInstance(
+                        addReq->internalType, cfg.sampleRate, cfg.blockSize, ar.errorOut);
+                else
+                    proc = session_.host_.createInstance(addReq->desc, cfg.sampleRate, cfg.blockSize, ar.errorOut);
+
+                if (proc != nullptr)
                 {
-                    ar.hosted = plugin.get();
-                    ar.wrapped = std::make_unique<engine::BypassableInstance>(std::move(plugin));
+                    ar.hosted = proc.get();
+                    ar.wrapped = std::make_unique<engine::BypassableInstance>(std::move(proc));
                     // Pre-warm: prepare the wrapper at the runtime's SR/block
                     // so JUCE's AudioProcessorGraph::addNode (called on the
                     // message thread) doesn't need a slow first-block init
@@ -232,19 +241,15 @@ void Session::clearPatch()
 
 // ---- Public API: incremental ops ------------------------------------------
 
-void Session::addPlugin(juce::PluginDescription desc)
+void Session::enqueueAddRequest(AddPluginRequest req)
 {
     bool dropped = false;
     {
         std::lock_guard<std::mutex> lk(queueMutex_);
         if (addQueue_.size() >= kAddQueueMax)
-        {
             dropped = true;
-        }
         else
-        {
-            addQueue_.push_back(AddPluginRequest{std::move(desc)});
-        }
+            addQueue_.push_back(std::move(req));
     }
 
     if (dropped)
@@ -260,6 +265,21 @@ void Session::addPlugin(juce::PluginDescription desc)
 
     if (worker_ != nullptr)
         worker_->notify();
+}
+
+void Session::addPlugin(juce::PluginDescription desc)
+{
+    AddPluginRequest req;
+    req.desc = std::move(desc);
+    enqueueAddRequest(std::move(req));
+}
+
+void Session::addInternalNode(juce::String internalType)
+{
+    AddPluginRequest req;
+    req.kind = NodeKind::Internal;
+    req.internalType = std::move(internalType);
+    enqueueAddRequest(std::move(req));
 }
 
 void Session::removeNode(NodeId id)
@@ -411,6 +431,13 @@ std::vector<Session::NodeSnapshot> Session::getNodeSnapshots() const
         NodeSnapshot s;
         s.id = n.id;
         s.name = n.desc.name;
+        if (n.kind == NodeKind::Internal)
+        {
+            s.name = n.internalType; // fallback if the type isn't in the table
+            for (const auto& t : host_.getInternalNodeTypes())
+                if (t.typeId == n.internalType)
+                    s.name = t.displayName;
+        }
         s.bypassed = n.bypass;
         s.customName = n.customName;
         snaps.push_back(std::move(s));
@@ -424,7 +451,7 @@ bool Session::hasNode(NodeId id) const noexcept
     return nodes_.find(id) != nodes_.end();
 }
 
-juce::AudioPluginInstance* Session::getHostedPlugin(NodeId id) const noexcept
+juce::AudioProcessor* Session::getHostedPlugin(NodeId id) const noexcept
 {
     std::lock_guard<std::mutex> lk(statusMutex_);
     auto it = nodes_.find(id);
@@ -677,7 +704,11 @@ void Session::commitAddPlugin(AddPluginResult&& result)
         const auto newId = activePatch_.nextNodeId();
         PatchNode pn;
         pn.id = newId;
-        pn.desc = std::move(result.desc);
+        pn.kind = result.kind;
+        if (result.kind == NodeKind::Internal)
+            pn.internalType = std::move(result.internalType);
+        else
+            pn.desc = std::move(result.desc);
         activePatch_.nodes.push_back(std::move(pn));
 
         nodes_[newId] = PreparedGraph::NodeRefs{wrapPtr, hostedPtr, graphNode.get()};

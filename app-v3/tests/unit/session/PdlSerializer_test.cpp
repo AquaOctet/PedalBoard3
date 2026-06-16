@@ -157,3 +157,40 @@ TEST_CASE("pdl: a missing file is rejected", "[session][pdl]")
     REQUIRE(loaded.patch == nullptr);
     REQUIRE(loaded.error.isNotEmpty());
 }
+
+TEST_CASE("pdl: write then read round-trips an internal node", "[session][pdl][internal]")
+{
+    const auto file = tempPdl("internal");
+
+    session::Patch p;
+    p.name = "Built-in Board";
+
+    session::PatchNode level;
+    level.id = 1;
+    level.kind = session::NodeKind::Internal;
+    level.internalType = "LevelProcessor";
+    level.bypass = true;
+    level.customName = "Trim";
+    p.nodes.push_back(level);
+
+    p.connections.push_back({session::graphIO, 0, 1, 0});
+    p.connections.push_back({1, 0, session::graphIO, 0});
+
+    const auto wrote = session::pdl::writePatch(p, file);
+    REQUIRE(wrote.wasOk());
+    REQUIRE(file.existsAsFile());
+
+    auto loaded = session::pdl::readPatch(file);
+    REQUIRE(loaded.patch != nullptr);
+    REQUIRE(loaded.error.isEmpty());
+    REQUIRE(loaded.patch->nodes.size() == 1);
+
+    const auto& n0 = loaded.patch->nodes[0];
+    REQUIRE(n0.kind == session::NodeKind::Internal);
+    REQUIRE(n0.internalType == "LevelProcessor");
+    REQUIRE(n0.bypass);
+    REQUIRE(n0.customName == "Trim");
+    REQUIRE(loaded.patch->connections.size() == 2);
+
+    file.deleteFile();
+}

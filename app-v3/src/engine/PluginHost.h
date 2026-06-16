@@ -7,6 +7,16 @@
 namespace pedalboard3::engine
 {
 
+// A built-in (non-plugin) node type the host can instantiate, as a
+// {serialization typeId, display name} pair. `typeId` is the stable token
+// written to .pdl (<NODE type="...">) and matched at restore; `displayName` is
+// the Add-menu label.
+struct InternalNodeType
+{
+    juce::String typeId;
+    juce::String displayName;
+};
+
 // Thin facade over juce::AudioPluginFormatManager + KnownPluginList.
 //
 // Phase 1.C.3 scope:
@@ -119,6 +129,23 @@ public:
                                                               double sampleRate,
                                                               int blockSize,
                                                               juce::String& errorOut);
+
+    // The built-in node types this host can instantiate (Level, VU, ...). Drives
+    // the Add ▸ Internal menu and the restore-time "is this internal type
+    // recognised?" filter that drops unknown types instead of aborting a load.
+    juce::Array<InternalNodeType> getInternalNodeTypes() const;
+
+    // Construct a built-in processor by its typeId (e.g. "LevelProcessor"). The
+    // internal analogue of createInstance: returns nullptr + fills `errorOut`
+    // for an unknown type (that nullptr IS the safety check — unknown types must
+    // be filtered out before this is reached). Caller takes ownership and wraps
+    // it in a BypassableInstance exactly like a plugin instance. The instance is
+    // configured for `sampleRate`/`blockSize` but prepareToPlay is left to the
+    // graph build / add-worker, matching createInstance.
+    std::unique_ptr<juce::AudioProcessor> createInternalInstance(const juce::String& type,
+                                                                 double sampleRate,
+                                                                 int blockSize,
+                                                                 juce::String& errorOut);
 
     // Escape hatch for code that needs the raw JUCE format manager (e.g.
     // JUCE's own PluginListComponent in a future settings dialog).

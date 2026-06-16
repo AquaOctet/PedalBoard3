@@ -25,6 +25,15 @@ session::PatchNode makeNode(session::NodeId id, const juce::String& name = "Plug
     return n;
 }
 
+session::PatchNode internalNode(session::NodeId id, const juce::String& type)
+{
+    session::PatchNode n;
+    n.id = id;
+    n.kind = session::NodeKind::Internal;
+    n.internalType = type;
+    return n;
+}
+
 session::PatchConnection conn(session::NodeId src, int srcCh, session::NodeId dst, int dstCh)
 {
     return {src, srcCh, dst, dstCh};
@@ -408,4 +417,98 @@ TEST_CASE("Patch: linearChainConnections wires a valid linear chain over survivo
     REQUIRE(has(session::graphIO, 0, 1, 0)); // input -> first node L
     REQUIRE(has(1, 0, 2, 0));                // first -> second L
     REQUIRE(has(2, 0, session::graphIO, 0)); // last node -> output L
+}
+
+// ---- Internal (built-in) node kind --------------------------------------
+
+TEST_CASE("Patch: a default-constructed PatchNode is a Plugin", "[session][patch][internal]")
+{
+    session::PatchNode n;
+    REQUIRE(n.kind == session::NodeKind::Plugin);
+    REQUIRE(n.internalType.isEmpty());
+}
+
+TEST_CASE("Patch: an internal node round-trips kind + type and skips IDENTITY", "[session][patch][xml][internal]")
+{
+    session::Patch p;
+    p.name = "With Built-ins";
+
+    auto level = internalNode(1, "LevelProcessor");
+    level.bypass = true;
+    level.customName = "Trim";
+    p.nodes.push_back(level);
+    p.nodes.push_back(makeNode(2, "Reverb")); // a normal plugin alongside
+
+    p.connections.push_back(conn(session::graphIO, 0, 1, 0));
+    p.connections.push_back(conn(1, 0, 2, 0));
+
+    auto xml = session::patchToXml(p);
+    REQUIRE(xml != nullptr);
+
+    // The internal node serializes kind/type and omits the plugin IDENTITY.
+    auto* nodesEl = xml->getChildByName("NODES");
+    REQUIRE(nodesEl != nullptr);
+    auto* firstNode = nodesEl->getFirstChildElement();
+    REQUIRE(firstNode != nullptr);
+    REQUIRE(firstNode->getStringAttribute("kind") == "internal");
+    REQUIRE(firstNode->getStringAttribute("type") == "LevelProcessor");
+    REQUIRE(firstNode->getChildByName("IDENTITY") == nullptr);
+
+    auto rt = session::patchFromXml(*xml);
+    REQUIRE(rt != nullptr);
+    REQUIRE(rt->nodes.size() == 2);
+
+    const auto& n0 = rt->nodes[0];
+    REQUIRE(n0.id == 1);
+    REQUIRE(n0.kind == session::NodeKind::Internal);
+    REQUIRE(n0.internalType == "LevelProcessor");
+    REQUIRE(n0.bypass);
+    REQUIRE(n0.customName == "Trim");
+
+    // The plugin node alongside it stays a Plugin.
+    REQUIRE(rt->nodes[1].kind == session::NodeKind::Plugin);
+    REQUIRE(rt->nodes[1].desc.name == "Reverb");
+}
+
+TEST_CASE("Patch: a node with no kind attribute loads as a Plugin (back-compat)", "[session][patch][xml][internal]")
+{
+    // A pre-internal-nodes .pdl has <NODE> with no kind attribute; it must
+    // continue to load as a plugin node.
+    session::Patch p;
+    p.nodes.push_back(makeNode(1, "Legacy"));
+    auto xml = session::patchToXml(p);
+
+    auto* nodesEl = xml->getChildByName("NODES");
+    REQUIRE(nodesEl != nullptr);
+    auto* firstNode = nodesEl->getFirstChildElement();
+    REQUIRE(firstNode != nullptr);
+    REQUIRE_FALSE(firstNode->hasAttribute("kind")); // plugin nodes write no kind attr
+
+    auto rt = session::patchFromXml(*xml);
+    REQUIRE(rt != nullptr);
+    REQUIRE(rt->nodes.size() == 1);
+    REQUIRE(rt->nodes[0].kind == session::NodeKind::Plugin);
+    REQUIRE(rt->nodes[0].desc.name == "Legacy");
+}
+
+TEST_CASE("Patch: patchIdentityString distinguishes internal node types", "[session][patch][internal]")
+{
+    session::Patch level;
+    level.nodes.push_back(internalNode(1, "LevelProcessor"));
+
+    session::Patch vu;
+    vu.nodes.push_back(internalNode(1, "VuMeterProcessor"));
+
+    // Same id, different built-in type -> different identity.
+    REQUIRE(session::patchIdentityString(level) != session::patchIdentityString(vu));
+
+    // Identity is type-keyed, not id-keyed: a different id but the same type matches.
+    session::Patch levelOtherId;
+    levelOtherId.nodes.push_back(internalNode(7, "LevelProcessor"));
+    REQUIRE(session::patchIdentityString(level) == session::patchIdentityString(levelOtherId));
+
+    // An internal node and a plugin node never collide.
+    session::Patch plugin;
+    plugin.nodes.push_back(makeNode(1, "LevelProcessor")); // a plugin literally named "LevelProcessor"
+    REQUIRE(session::patchIdentityString(level) != session::patchIdentityString(plugin));
 }

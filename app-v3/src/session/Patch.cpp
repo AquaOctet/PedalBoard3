@@ -216,7 +216,13 @@ juce::String patchIdentityString(const Patch& p)
     juce::String result;
     for (const auto& n : p.nodes)
     {
-        result << n.desc.pluginFormatName << "::" << n.desc.fileOrIdentifier << "\n";
+        // Internal nodes have an empty desc; key them on their type token so
+        // different built-ins don't collide (both would hash to "::") in the
+        // crash-loop marker.
+        if (n.kind == NodeKind::Internal)
+            result << "internal::" << n.internalType << "\n";
+        else
+            result << n.desc.pluginFormatName << "::" << n.desc.fileOrIdentifier << "\n";
     }
     return result;
 }
@@ -234,7 +240,15 @@ std::unique_ptr<juce::XmlElement> patchToXml(const Patch& p)
         nodeEl->setAttribute("bypass", n.bypass);
         nodeEl->setAttribute("customName", n.customName);
 
-        if (auto descXml = n.desc.createXml())
+        if (n.kind == NodeKind::Internal)
+        {
+            // Built-in node: identity is the type token; no <IDENTITY> plugin
+            // descriptor. Plugin nodes carry no `kind` attribute so existing
+            // plugin-only .pdl output stays byte-identical (read defaults Plugin).
+            nodeEl->setAttribute("kind", "internal");
+            nodeEl->setAttribute("type", n.internalType);
+        }
+        else if (auto descXml = n.desc.createXml())
         {
             // Re-tag from <PLUGIN> to <IDENTITY> so the schema reads
             // cleanly (master plan §4.5 idiom).
@@ -321,7 +335,15 @@ std::unique_ptr<Patch> patchFromXml(const juce::XmlElement& root)
             n.bypass = nodeEl->getBoolAttribute("bypass");
             n.customName = nodeEl->getStringAttribute("customName");
 
-            if (auto* identityEl = nodeEl->getChildByName("IDENTITY"))
+            // `kind` absent => Plugin (back-compat with pre-discriminator files).
+            if (nodeEl->getStringAttribute("kind", "plugin") == "internal")
+            {
+                // Built-in node: identity is the type token, no <IDENTITY> — so a
+                // legitimately absent <IDENTITY> never fails the load.
+                n.kind = NodeKind::Internal;
+                n.internalType = nodeEl->getStringAttribute("type");
+            }
+            else if (auto* identityEl = nodeEl->getChildByName("IDENTITY"))
             {
                 // loadFromXml expects a <PLUGIN> root.
                 juce::XmlElement asPlugin(*identityEl);

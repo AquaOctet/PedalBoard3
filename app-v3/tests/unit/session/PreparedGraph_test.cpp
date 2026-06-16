@@ -10,10 +10,25 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <catch2/catch_approx.hpp>
+
 #include "engine/PluginHost.h"
 #include "session/PreparedGraph.h"
 
 using namespace pedalboard3;
+using Catch::Approx;
+
+namespace
+{
+session::PatchNode internalNode(session::NodeId id, const juce::String& type)
+{
+    session::PatchNode n;
+    n.id = id;
+    n.kind = session::NodeKind::Internal;
+    n.internalType = type;
+    return n;
+}
+} // namespace
 
 TEST_CASE("PreparedGraph: default-constructed is empty and not valid", "[session][prepared-graph]")
 {
@@ -65,4 +80,83 @@ TEST_CASE("buildPreparedGraph: multi-node patch with bogus desc returns empty + 
     REQUIRE_FALSE(prepared.isValid());
     REQUIRE(prepared.nodes.empty());
     REQUIRE(error.contains("First"));
+}
+
+// ---- Internal (built-in) nodes — instantiable headless, unlike plugins ----
+
+TEST_CASE("PreparedGraph: an internal Level node builds and processes audio", "[session][prepared-graph][internal]")
+{
+    engine::PluginHost host;
+
+    session::Patch patch;
+    patch.nodes.push_back(internalNode(1, "LevelProcessor"));
+    patch.connections = session::linearChainConnections(patch.nodes);
+
+    juce::String err;
+    auto pg = session::buildPreparedGraph(host, patch, 48000.0, 256, err);
+    REQUIRE(pg.isValid());
+    REQUIRE(err.isEmpty());
+    REQUIRE(pg.nodes.count(1) == 1);
+    REQUIRE(pg.nodes[1].hosted != nullptr);            // the widened AudioProcessor* is populated
+    REQUIRE(pg.nodes[1].hosted->getName() == "Level"); // it is the internal processor
+
+    // Default level 0.5 == unity; set to 1.0 (2x) and render DC 0.25 through the
+    // whole graph (audioIn -> Level -> audioOut) -> 0.5.
+    pg.nodes[1].hosted->getParameters()[0]->setValueNotifyingHost(1.0f);
+
+    juce::AudioBuffer<float> buf(2, 256);
+    for (int ch = 0; ch < 2; ++ch)
+        for (int n = 0; n < 256; ++n)
+            buf.setSample(ch, n, 0.25f);
+    juce::MidiBuffer midi;
+    pg.graph->processBlock(buf, midi);
+
+    REQUIRE(buf.getSample(0, 128) == Approx(0.5f));
+}
+
+TEST_CASE("PreparedGraph: an unknown internal type aborts the build with an error",
+          "[session][prepared-graph][internal]")
+{
+    engine::PluginHost host;
+
+    session::Patch patch;
+    patch.nodes.push_back(internalNode(1, "NoSuchProcessor"));
+    patch.connections = session::linearChainConnections(patch.nodes);
+
+    juce::String err;
+    auto pg = session::buildPreparedGraph(host, patch, 48000.0, 256, err);
+    REQUIRE_FALSE(pg.isValid());
+    REQUIRE(err.isNotEmpty());
+}
+
+TEST_CASE("PreparedGraph: isNodeSafeForChain accepts known internals, rejects unknown",
+          "[session][prepared-graph][internal]")
+{
+    engine::PluginHost host;
+
+    REQUIRE(session::isNodeSafeForChain(host, internalNode(1, "LevelProcessor")));
+    REQUIRE(session::isNodeSafeForChain(host, internalNode(2, "VuMeterProcessor")));
+    REQUIRE_FALSE(session::isNodeSafeForChain(host, internalNode(3, "NoSuchProcessor")));
+
+    // An internal node with an empty type token is unrecognized -> dropped. This
+    // is the corrupt/hand-edited-.pdl and missing-`type`-attribute case.
+    REQUIRE_FALSE(session::isNodeSafeForChain(host, internalNode(4, "")));
+
+    // A real plugin node (non-empty fileOrIdentifier, not an instrument, not
+    // blacklisted) is safe to materialize into a chain.
+    session::PatchNode plugin;
+    plugin.id = 5;
+    plugin.desc.name = "Comp";
+    plugin.desc.pluginFormatName = "VST3";
+    plugin.desc.fileOrIdentifier = "/fake/Comp.vst3";
+    REQUIRE(session::isNodeSafeForChain(host, plugin));
+
+    // A Plugin-kind node with an EMPTY descriptor can never be instantiated, so
+    // it is unsafe-for-chain -> dropped + chain rebuilt, rather than failing deep
+    // in createInstance. This also covers a forward-compat hazard: an internal
+    // node written by a newer build, read by an older binary that lacks the kind
+    // discriminator, deserializes to exactly this empty-desc plugin node.
+    session::PatchNode emptyPlugin;
+    emptyPlugin.id = 6;
+    REQUIRE_FALSE(session::isNodeSafeForChain(host, emptyPlugin));
 }
