@@ -268,8 +268,10 @@ bool PluginCard::hitTest(int x, int y)
     // card still paints the ports; only the interaction is delegated.
     constexpr int kPortHotspot = 9;
     const juce::Point<int> p{x, y};
+    // midiChannelIndex is an unnamed enum, so cast it to match the int literals
+    // in the braced-init list (otherwise the list's element type can't deduce).
     for (const bool isInput : {true, false})
-        for (const int ch : {0, 1, juce::AudioProcessorGraph::midiChannelIndex})
+        for (const int ch : {0, 1, static_cast<int>(juce::AudioProcessorGraph::midiChannelIndex)})
             if (p.getDistanceFrom(getPortCentre(isInput, ch)) <= kPortHotspot)
                 return false;
     return true;
