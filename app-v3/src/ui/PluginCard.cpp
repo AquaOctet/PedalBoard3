@@ -281,6 +281,8 @@ void PluginCard::mouseDrag(const juce::MouseEvent& e)
     {
         didDrag_ = true;
         dragger_.dragComponent(this, e, nullptr);
+        if (callbacks_.onDragging)
+            callbacks_.onDragging(snapshot_.id); // canvas re-strokes cables live
     }
 }
 

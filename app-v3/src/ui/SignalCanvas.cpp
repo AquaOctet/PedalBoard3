@@ -81,6 +81,7 @@ void SignalCanvas::changeListenerCallback(juce::ChangeBroadcaster*)
 {
     auto snaps = ctx_.session.getNodeSnapshots();
     auto patch = ctx_.session.getActivePatch();
+    connections_ = patch.connections; // cached for per-drag-frame cable rebuilds
 
     // Build new cards_ in snap order, reusing existing PluginCards by
     // NodeId so visual state survives reorder/bypass.
@@ -148,6 +149,7 @@ std::unique_ptr<PluginCard> SignalCanvas::makeCard(const PluginCard::NodeSnapsho
         [this](NodeId id) { onCardMoveUp(id); },
         [this](NodeId id) { onCardMoveDown(id); },
         [this](NodeId id) { onCardRemove(id); },
+        [this](NodeId id) { onCardDragging(id); },
         [this](NodeId id, juce::Point<int> p) { onCardMoved(id, p); },
     };
     return std::make_unique<PluginCard>(s, std::move(cb));
@@ -236,8 +238,7 @@ void SignalCanvas::rebuildCables()
     audioCablesPath_.clear();
     midiCablesPath_.clear();
 
-    auto patch = ctx_.session.getActivePatch();
-    for (const auto& c : patch.connections)
+    for (const auto& c : connections_)
     {
         const auto from = portPositionFor(c.src, c.srcChannel, /*asSource*/ true);
         const auto to = portPositionFor(c.dst, c.dstChannel, /*asSource*/ false);
@@ -383,6 +384,15 @@ void SignalCanvas::onCardMoved(NodeId id, juce::Point<int> newPos)
     const int x = juce::jmax(kCanvasMarginX, newPos.getX());
     const int y = juce::jmax(kCanvasMarginY, newPos.getY());
     ctx_.session.setNodePosition(id, static_cast<float>(x), static_cast<float>(y));
+}
+
+void SignalCanvas::onCardDragging(NodeId)
+{
+    // The card has already moved itself (ComponentDragger); re-stroke the cached
+    // cable paths from the live card positions so they stay glued to it, and
+    // repaint. Cheap: rebuildCables uses the cached connections_, no patch copy.
+    rebuildCables();
+    repaint();
 }
 
 } // namespace pedalboard3::ui

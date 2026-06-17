@@ -84,6 +84,7 @@ private:
     void onCardMoveDown(NodeId);
     void onCardRemove(NodeId);
     void onCardMoved(NodeId, juce::Point<int> newPos);
+    void onCardDragging(NodeId);
 
     // Map a graphIO sentinel to either the input or output endpoint
     // bounds; map any other NodeId to its card's index in cards_.
@@ -98,6 +99,10 @@ private:
 
     juce::Rectangle<int> inputCardBounds_;
     juce::Rectangle<int> outputCardBounds_;
+
+    // Cached on each Session change so rebuildCables() (run per drag-frame to
+    // keep cables glued to a moving card) never re-copies the whole patch.
+    std::vector<session::PatchConnection> connections_;
 
     juce::Path audioCablesPath_;
     juce::Path midiCablesPath_;

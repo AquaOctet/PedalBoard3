@@ -39,7 +39,9 @@ public:
         std::function<void(NodeId)> onMoveUp;
         std::function<void(NodeId)> onMoveDown;
         std::function<void(NodeId)> onRemove;
-        // Fired on drag-release with the card's new top-left in canvas space.
+        // Fired continuously while dragging so the canvas can re-stroke cables
+        // live; onMoved fires once on release with the final top-left.
+        std::function<void(NodeId)> onDragging;
         std::function<void(NodeId, juce::Point<int>)> onMoved;
     };
 
