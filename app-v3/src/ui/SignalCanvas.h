@@ -5,9 +5,12 @@
 #include "PluginCard.h"
 #include "session/NodeId.h"
 
+#include "session/Patch.h"
+
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <memory>
+#include <optional>
 #include <unordered_map>
 #include <vector>
 
@@ -69,6 +72,13 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
 
+    // Port drag-to-connect / cable selection live on the canvas (cards delegate
+    // their port pixels here via hitTest).
+    void mouseDown(const juce::MouseEvent&) override;
+    void mouseDrag(const juce::MouseEvent&) override;
+    void mouseUp(const juce::MouseEvent&) override;
+    bool keyPressed(const juce::KeyPress&) override;
+
 private:
     void changeListenerCallback(juce::ChangeBroadcaster*) override;
 
@@ -91,6 +101,19 @@ private:
     bool isGraphIO(NodeId id) const noexcept;
     juce::Point<int> portPositionFor(NodeId, int channel, bool asSource) const;
 
+    // A single pin on a node or the graphIO endpoints. `isSource` = it emits
+    // signal (a node output, or the Input endpoint); a connection is always
+    // source -> dest.
+    struct PortRef
+    {
+        NodeId node{session::graphIO};
+        int channel{0};
+        bool isSource{false};
+        bool valid{false};
+    };
+    PortRef portAt(juce::Point<int>) const;
+    std::optional<session::PatchConnection> cableAt(juce::Point<int>) const;
+
     AppContext& ctx_;
 
     std::vector<std::unique_ptr<PluginCard>> cards_;
@@ -106,6 +129,12 @@ private:
 
     juce::Path audioCablesPath_;
     juce::Path midiCablesPath_;
+
+    // Interaction state (U4).
+    bool dragging_{false};
+    PortRef dragAnchor_;                                    // the fixed end of a connection drag
+    juce::Point<int> dragCursor_;                           // current cursor in canvas space
+    std::optional<session::PatchConnection> selectedCable_; // for click-select + Delete
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SignalCanvas)
 };

@@ -261,6 +261,20 @@ void PluginCard::resized()
     moveDownButton_.setBounds(moveRow.removeFromLeft(moveBtnW));
 }
 
+bool PluginCard::hitTest(int x, int y)
+{
+    // Port hotspots are owned by SignalCanvas (drag-to-connect): report them as
+    // "not on the card" so the click falls through to the canvas behind. The
+    // card still paints the ports; only the interaction is delegated.
+    constexpr int kPortHotspot = 9;
+    const juce::Point<int> p{x, y};
+    for (const bool isInput : {true, false})
+        for (const int ch : {0, 1, juce::AudioProcessorGraph::midiChannelIndex})
+            if (p.getDistanceFrom(getPortCentre(isInput, ch)) <= kPortHotspot)
+                return false;
+    return true;
+}
+
 // ----- Drag-to-move ----------------------------------------------------------
 // The card body is draggable; the child TextButtons consume their own clicks
 // and nameLabel_ has intercepts disabled, so a drag that starts on the body

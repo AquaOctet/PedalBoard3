@@ -79,6 +79,10 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
 
+    // Port pixels fall through to SignalCanvas (which owns drag-to-connect);
+    // the rest of the card stays interactive (body drag + buttons).
+    bool hitTest(int x, int y) override;
+
     // Drag-to-move on the card body (buttons consume their own clicks).
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;

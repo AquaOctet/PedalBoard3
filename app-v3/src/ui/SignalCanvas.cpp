@@ -54,6 +54,7 @@ bool isInstrumentNode(const session::PatchNode& n) noexcept
 SignalCanvas::SignalCanvas(AppContext& ctx) : ctx_(ctx)
 {
     setOpaque(true);
+    setWantsKeyboardFocus(true); // for Delete-to-remove a selected cable (U4)
     ctx_.session.addChangeListener(this);
 
     // First-paint: pull current snapshot so the canvas isn't empty
@@ -295,6 +296,42 @@ void SignalCanvas::paint(juce::Graphics& g)
     g.strokePath(
         midiCablesPath_,
         juce::PathStrokeType(kCableMidiThickness, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+    // Selected cable — highlighted thicker on top so Delete has a clear target.
+    if (selectedCable_.has_value())
+    {
+        const auto from = portPositionFor(selectedCable_->src, selectedCable_->srcChannel, /*asSource*/ true);
+        const auto to = portPositionFor(selectedCable_->dst, selectedCable_->dstChannel, /*asSource*/ false);
+        if (!from.isOrigin() && !to.isOrigin())
+        {
+            juce::Path hl;
+            appendCableTo(hl,
+                          static_cast<float>(from.getX()),
+                          static_cast<float>(from.getY()),
+                          static_cast<float>(to.getX()),
+                          static_cast<float>(to.getY()));
+            g.setColour(tokens::accentPrimary);
+            g.strokePath(hl, juce::PathStrokeType(kCableThickness + 1.5f, juce::PathStrokeType::curved));
+        }
+    }
+
+    // Live connection-drag preview from the anchored port to the cursor.
+    if (dragging_)
+    {
+        const auto anchor = portPositionFor(dragAnchor_.node, dragAnchor_.channel, dragAnchor_.isSource);
+        if (!anchor.isOrigin())
+        {
+            const auto a = anchor.toFloat();
+            const auto c = dragCursor_.toFloat();
+            juce::Path preview;
+            if (dragAnchor_.isSource)
+                appendCableTo(preview, a.getX(), a.getY(), c.getX(), c.getY());
+            else
+                appendCableTo(preview, c.getX(), c.getY(), a.getX(), a.getY());
+            g.setColour(tokens::accentPrimary.withAlpha(0.7f));
+            g.strokePath(preview, juce::PathStrokeType(kCableThickness, juce::PathStrokeType::curved));
+        }
+    }
 }
 
 // ----- Card delegates --------------------------------------------------------
@@ -393,6 +430,141 @@ void SignalCanvas::onCardDragging(NodeId)
     // repaint. Cheap: rebuildCables uses the cached connections_, no patch copy.
     rebuildCables();
     repaint();
+}
+
+// ----- Port drag-to-connect / cable selection (U4) ---------------------------
+
+SignalCanvas::PortRef SignalCanvas::portAt(juce::Point<int> p) const
+{
+    constexpr int kPortPickRadius = 12;
+    PortRef best;
+    int bestDist = kPortPickRadius + 1;
+
+    auto consider = [&](NodeId node, int channel, bool asSource)
+    {
+        const auto pos = portPositionFor(node, channel, asSource);
+        if (pos.isOrigin())
+            return;
+        const int d = pos.getDistanceFrom(p);
+        if (d < bestDist)
+        {
+            bestDist = d;
+            best = {node, channel, asSource, true};
+        }
+    };
+
+    const int chans[] = {kChannelL, kChannelR, kChannelMidi};
+
+    // graphIO endpoints: Input endpoint emits (asSource), Output endpoint sinks.
+    for (const int ch : chans)
+    {
+        consider(session::graphIO, ch, /*asSource*/ true);
+        consider(session::graphIO, ch, /*asSource*/ false);
+    }
+    // Node ports: outputs (asSource) on the right, inputs (!asSource) on the left.
+    for (const auto& card : cards_)
+    {
+        const NodeId id = card->getNodeId();
+        for (const int ch : chans)
+        {
+            consider(id, ch, /*asSource*/ true);
+            consider(id, ch, /*asSource*/ false);
+        }
+    }
+    return best;
+}
+
+std::optional<session::PatchConnection> SignalCanvas::cableAt(juce::Point<int> p) const
+{
+    constexpr float kCablePickTol = 6.0f;
+    const auto pf = p.toFloat();
+    std::optional<session::PatchConnection> best;
+    float bestDist = kCablePickTol;
+
+    for (const auto& c : connections_)
+    {
+        const auto from = portPositionFor(c.src, c.srcChannel, /*asSource*/ true);
+        const auto to = portPositionFor(c.dst, c.dstChannel, /*asSource*/ false);
+        if (from.isOrigin() || to.isOrigin())
+            continue;
+
+        juce::Path path;
+        appendCableTo(path,
+                      static_cast<float>(from.getX()),
+                      static_cast<float>(from.getY()),
+                      static_cast<float>(to.getX()),
+                      static_cast<float>(to.getY()));
+        juce::Point<float> nearest;
+        path.getNearestPoint(pf, nearest);
+        const float d = nearest.getDistanceFrom(pf);
+        if (d < bestDist)
+        {
+            bestDist = d;
+            best = c;
+        }
+    }
+    return best;
+}
+
+void SignalCanvas::mouseDown(const juce::MouseEvent& e)
+{
+    grabKeyboardFocus();
+    const auto p = e.getPosition();
+
+    if (const auto port = portAt(p); port.valid)
+    {
+        // Begin a connection drag anchored at this port.
+        dragging_ = true;
+        dragAnchor_ = port;
+        dragCursor_ = p;
+        selectedCable_.reset();
+        repaint();
+        return;
+    }
+
+    // Background click: select a cable under the cursor (or clear selection).
+    selectedCable_ = cableAt(p);
+    repaint();
+}
+
+void SignalCanvas::mouseDrag(const juce::MouseEvent& e)
+{
+    if (!dragging_)
+        return;
+    dragCursor_ = e.getPosition();
+    repaint();
+}
+
+void SignalCanvas::mouseUp(const juce::MouseEvent& e)
+{
+    if (!dragging_)
+        return;
+    dragging_ = false;
+
+    const auto target = portAt(e.getPosition());
+    // A valid edge needs the two ends to be opposite directions (one source,
+    // one dest). Session::addConnection enforces the rest (out->in, same signal,
+    // no self/duplicate/cycle).
+    if (target.valid && target.isSource != dragAnchor_.isSource)
+    {
+        const PortRef& src = dragAnchor_.isSource ? dragAnchor_ : target;
+        const PortRef& dst = dragAnchor_.isSource ? target : dragAnchor_;
+        ctx_.session.addConnection(src.node, src.channel, dst.node, dst.channel);
+        // The Session change message rebuilds cables; just clear the preview.
+    }
+    repaint();
+}
+
+bool SignalCanvas::keyPressed(const juce::KeyPress& key)
+{
+    if (selectedCable_.has_value() && (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey))
+    {
+        const auto c = *selectedCable_;
+        selectedCable_.reset();
+        ctx_.session.removeConnection(c.src, c.srcChannel, c.dst, c.dstChannel);
+        return true;
+    }
+    return false;
 }
 
 } // namespace pedalboard3::ui
