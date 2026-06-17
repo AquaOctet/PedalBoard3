@@ -12,6 +12,7 @@
 #include <memory>
 #include <optional>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace pedalboard3::ui
@@ -46,15 +47,13 @@ namespace pedalboard3::ui
 // is defensive only (catches restore-on-launch and other UI-bypassing
 // paths).
 //
-// Cable derivation (D2, D3):
-// --------------------------
-// `rebuildCables()` runs once per `layoutCards()` (which runs from
-// the listener and from `resized()`), builds two cached
-// `juce::Path` members (audioCablesPath_, midiCablesPath_), and
-// `paint()` makes 2 stroke calls per material regardless of N. The
-// paths are derived from `activePatch_.connections` (not from chain
-// adjacency) so Phase 3's arbitrary-topology canvas reuses the same
-// rendering.
+// Cable rendering:
+// ----------------
+// `paint()` draws one stroke per connection (from the cached `connections_`
+// vector + live card positions) so each cable can carry its own amber->teal
+// gradient (audio), cyan (MIDI), dimming (bypassed source), or selection
+// highlight. Derived from `connections_` (arbitrary topology), not chain
+// adjacency.
 class SignalCanvas : public juce::Component, private juce::ChangeListener
 {
 public:
@@ -83,7 +82,10 @@ private:
     void changeListenerCallback(juce::ChangeBroadcaster*) override;
 
     void layoutCards();
-    void rebuildCables();
+    // Stroke one cable (gradient for audio, cyan for MIDI; dashed when its
+    // source node is bypassed; highlighted when selected).
+    void strokeCable(
+        juce::Graphics&, juce::Point<int> from, juce::Point<int> to, bool midi, bool bypassed, bool selected) const;
 
     std::unique_ptr<PluginCard> makeCard(const PluginCard::NodeSnapshot&);
 
@@ -123,12 +125,11 @@ private:
     juce::Rectangle<int> inputCardBounds_;
     juce::Rectangle<int> outputCardBounds_;
 
-    // Cached on each Session change so rebuildCables() (run per drag-frame to
-    // keep cables glued to a moving card) never re-copies the whole patch.
+    // Cached on each Session change so paint() (which redraws cables per
+    // drag-frame to keep them glued to a moving card) never re-copies the whole
+    // patch. bypassedNodes_ drives dashed cables for bypassed sources.
     std::vector<session::PatchConnection> connections_;
-
-    juce::Path audioCablesPath_;
-    juce::Path midiCablesPath_;
+    std::unordered_set<NodeId> bypassedNodes_;
 
     // Interaction state (U4).
     bool dragging_{false};

@@ -30,11 +30,6 @@ constexpr int kChannelL = 0;
 constexpr int kChannelR = 1;
 const int kChannelMidi = juce::AudioProcessorGraph::midiChannelIndex;
 
-juce::Colour cableColourFor(int channel)
-{
-    return channel == kChannelMidi ? tokens::accentInfo : tokens::fgMuted;
-}
-
 // Cubic bezier from (x1,y1) to (x2,y2) with horizontal control
 // points at the midpoint — gives the curving signal-cable look the
 // mockup uses.
@@ -83,6 +78,11 @@ void SignalCanvas::changeListenerCallback(juce::ChangeBroadcaster*)
     auto snaps = ctx_.session.getNodeSnapshots();
     auto patch = ctx_.session.getActivePatch();
     connections_ = patch.connections; // cached for per-drag-frame cable rebuilds
+
+    bypassedNodes_.clear();
+    for (const auto& s : snaps)
+        if (s.bypassed)
+            bypassedNodes_.insert(s.id);
 
     // Build new cards_ in snap order, reusing existing PluginCards by
     // NodeId so visual state survives reorder/bypass.
@@ -202,8 +202,7 @@ void SignalCanvas::layoutCards()
     const int targetHeight = juce::jmax(contentBottom + kCanvasMarginY, getParentHeight());
     setSize(targetWidth, targetHeight);
 
-    rebuildCables();
-    repaint();
+    repaint(); // cables are drawn per-cable in paint() from connections_ + live positions
 }
 
 juce::Point<int> SignalCanvas::portPositionFor(NodeId id, int channel, bool asSource) const
@@ -234,25 +233,45 @@ juce::Point<int> SignalCanvas::portPositionFor(NodeId id, int channel, bool asSo
     return card.getPosition() + card.getPortCentre(/*isInput*/ !asSource, channel);
 }
 
-void SignalCanvas::rebuildCables()
+void SignalCanvas::strokeCable(
+    juce::Graphics& g, juce::Point<int> from, juce::Point<int> to, bool midi, bool bypassed, bool selected) const
 {
-    audioCablesPath_.clear();
-    midiCablesPath_.clear();
+    juce::Path path;
+    appendCableTo(path,
+                  static_cast<float>(from.getX()),
+                  static_cast<float>(from.getY()),
+                  static_cast<float>(to.getX()),
+                  static_cast<float>(to.getY()));
 
-    for (const auto& c : connections_)
+    const float thickness = selected ? 4.0f : (midi ? kCableMidiThickness : 3.0f);
+    const juce::PathStrokeType stroke(thickness, juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
+
+    if (selected)
     {
-        const auto from = portPositionFor(c.src, c.srcChannel, /*asSource*/ true);
-        const auto to = portPositionFor(c.dst, c.dstChannel, /*asSource*/ false);
-        if (from.isOrigin() || to.isOrigin())
-            continue;
-
-        auto& target = (c.srcChannel == kChannelMidi) ? midiCablesPath_ : audioCablesPath_;
-        appendCableTo(target,
-                      static_cast<float>(from.getX()),
-                      static_cast<float>(from.getY()),
-                      static_cast<float>(to.getX()),
-                      static_cast<float>(to.getY()));
+        g.setColour(tokens::accentPrimary);
+        g.strokePath(path, stroke);
+        return;
     }
+
+    if (midi)
+    {
+        g.setColour(bypassed ? tokens::accentInfo.withAlpha(0.4f) : tokens::accentInfo);
+        g.strokePath(path, stroke);
+        return;
+    }
+
+    // Audio: amber -> teal gradient along the cable, the demo's signature look.
+    // A bypassed source dims its cables so the "off" node reads at a glance.
+    auto start = tokens::accentWarning;
+    auto end = tokens::accentPrimary;
+    if (bypassed)
+    {
+        start = start.withAlpha(0.4f);
+        end = end.withAlpha(0.4f);
+    }
+    juce::ColourGradient grad(start, from.toFloat(), end, to.toFloat(), /*isRadial*/ false);
+    g.setGradientFill(grad);
+    g.strokePath(path, stroke);
 }
 
 void SignalCanvas::resized()
@@ -288,31 +307,19 @@ void SignalCanvas::paint(juce::Graphics& g)
     drawEndpoint(inputCardBounds_, "Input");
     drawEndpoint(outputCardBounds_, "Output");
 
-    // Cables — two paths, two strokes, regardless of N. Audio first
-    // (drawn underneath), MIDI on top so it reads even when stacked.
-    g.setColour(cableColourFor(kChannelL));
-    g.strokePath(audioCablesPath_, juce::PathStrokeType(kCableThickness));
-    g.setColour(cableColourFor(kChannelMidi));
-    g.strokePath(
-        midiCablesPath_,
-        juce::PathStrokeType(kCableMidiThickness, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-
-    // Selected cable — highlighted thicker on top so Delete has a clear target.
-    if (selectedCable_.has_value())
+    // Cables — one stroke per connection so each carries its own amber->teal
+    // gradient (audio), cyan (MIDI), dashing (bypassed source), or selection
+    // highlight. Cheap enough at interactive graph sizes; drawn behind the cards.
+    for (const auto& c : connections_)
     {
-        const auto from = portPositionFor(selectedCable_->src, selectedCable_->srcChannel, /*asSource*/ true);
-        const auto to = portPositionFor(selectedCable_->dst, selectedCable_->dstChannel, /*asSource*/ false);
-        if (!from.isOrigin() && !to.isOrigin())
-        {
-            juce::Path hl;
-            appendCableTo(hl,
-                          static_cast<float>(from.getX()),
-                          static_cast<float>(from.getY()),
-                          static_cast<float>(to.getX()),
-                          static_cast<float>(to.getY()));
-            g.setColour(tokens::accentPrimary);
-            g.strokePath(hl, juce::PathStrokeType(kCableThickness + 1.5f, juce::PathStrokeType::curved));
-        }
+        const auto from = portPositionFor(c.src, c.srcChannel, /*asSource*/ true);
+        const auto to = portPositionFor(c.dst, c.dstChannel, /*asSource*/ false);
+        if (from.isOrigin() || to.isOrigin())
+            continue;
+        const bool midi = (c.srcChannel == kChannelMidi);
+        const bool bypassed = (bypassedNodes_.find(c.src) != bypassedNodes_.end());
+        const bool selected = (selectedCable_.has_value() && *selectedCable_ == c);
+        strokeCable(g, from, to, midi, bypassed, selected);
     }
 
     // Live connection-drag preview from the anchored port to the cursor.
@@ -425,10 +432,9 @@ void SignalCanvas::onCardMoved(NodeId id, juce::Point<int> newPos)
 
 void SignalCanvas::onCardDragging(NodeId)
 {
-    // The card has already moved itself (ComponentDragger); re-stroke the cached
-    // cable paths from the live card positions so they stay glued to it, and
-    // repaint. Cheap: rebuildCables uses the cached connections_, no patch copy.
-    rebuildCables();
+    // The card has already moved itself (ComponentDragger); cables are drawn
+    // per-cable in paint() from the live card positions, so a repaint glues them
+    // to the moving card.
     repaint();
 }
 
