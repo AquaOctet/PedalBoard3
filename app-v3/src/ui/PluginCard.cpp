@@ -10,6 +10,7 @@ namespace
 constexpr float kCardCornerRadius = 6.0f;
 constexpr float kCardBorderThickness = 1.0f;
 constexpr float kAccentBorderWidth = 4.0f;
+constexpr int kAccentInset = 4; // integer form of kAccentBorderWidth for pixel layout
 
 // Layout constants (the card is a fixed 170 × 140 from SignalCanvas's
 // layoutCards; rows here add up to that). Defined privately rather
@@ -20,7 +21,7 @@ constexpr int kPortRowHeight = 22;
 constexpr int kMidiRowHeight = 18;
 constexpr int kMoveRowHeight = 28;
 
-constexpr int kPortRadius = 5;
+constexpr int kPortRadius = 6;
 constexpr int kPortStripeInset = 12; // distance from L/R edge to port centre
 
 constexpr int kPaddingX = 8;
@@ -184,17 +185,19 @@ void PluginCard::paint(juce::Graphics& g)
     const int portRowL = portsTopY + kPortRowHeight / 2;
     const int portRowR = portsTopY + kPortRowHeight + kPortRowHeight / 2;
 
+    // Solid coloured dots so it's obvious where to grab a cable (a dark ring
+    // separates the dot from the card body).
     auto drawPort = [&](int cx, int cy, juce::Colour c)
     {
         auto box = juce::Rectangle<float>(0.0f, 0.0f, kPortRadius * 2.0f, kPortRadius * 2.0f)
                        .withCentre({static_cast<float>(cx), static_cast<float>(cy)});
-        g.setColour(tokens::bgWindow);
-        g.fillEllipse(box);
         g.setColour(c);
+        g.fillEllipse(box);
+        g.setColour(tokens::bgWindow);
         g.drawEllipse(box, 1.5f);
     };
 
-    const int leftPortX = static_cast<int>(bounds.getX()) + kAccentBorderWidth + kPortStripeInset;
+    const int leftPortX = static_cast<int>(bounds.getX()) + kAccentInset + kPortStripeInset;
     const int rightPortX = static_cast<int>(bounds.getRight()) - kPortStripeInset;
 
     // Audio L (input + output) — input port colour = primary teal,
@@ -216,12 +219,12 @@ void PluginCard::paint(juce::Graphics& g)
     g.drawHorizontalLine(midiY, bounds.getX() + kAccentBorderWidth, bounds.getRight());
     g.setColour(tokens::fgMuted);
     g.drawText("MIDI",
-               static_cast<int>(bounds.getX()) + kAccentBorderWidth + kPaddingX,
+               static_cast<int>(bounds.getX()) + kAccentInset + kPaddingX,
                midiY + 2,
                40,
                kMidiRowHeight - 4,
                juce::Justification::centredLeft);
-    drawPort(static_cast<int>(bounds.getX()) + kAccentBorderWidth + kPaddingX + 36,
+    drawPort(static_cast<int>(bounds.getX()) + kAccentInset + kPaddingX + 36,
              midiY + kMidiRowHeight / 2,
              tokens::accentInfo);
 
@@ -266,7 +269,8 @@ bool PluginCard::hitTest(int x, int y)
     // Port hotspots are owned by SignalCanvas (drag-to-connect): report them as
     // "not on the card" so the click falls through to the canvas behind. The
     // card still paints the ports; only the interaction is delegated.
-    constexpr int kPortHotspot = 9;
+    // Generous so a port grab reliably wins over a card-body drag.
+    constexpr int kPortHotspot = 16;
     const juce::Point<int> p{x, y};
     // midiChannelIndex is an unnamed enum, so cast it to match the int literals
     // in the braced-init list (otherwise the list's element type can't deduce).

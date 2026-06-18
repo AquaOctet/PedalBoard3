@@ -442,7 +442,7 @@ void SignalCanvas::onCardDragging(NodeId)
 
 SignalCanvas::PortRef SignalCanvas::portAt(juce::Point<int> p) const
 {
-    constexpr int kPortPickRadius = 12;
+    constexpr int kPortPickRadius = 16;
     PortRef best;
     int bestDist = kPortPickRadius + 1;
 
@@ -512,6 +512,14 @@ std::optional<session::PatchConnection> SignalCanvas::cableAt(juce::Point<int> p
     return best;
 }
 
+std::optional<session::PatchConnection> SignalCanvas::connectionInto(const PortRef& port) const
+{
+    for (const auto& c : connections_)
+        if (c.dst == port.node && c.dstChannel == port.channel)
+            return c;
+    return std::nullopt;
+}
+
 void SignalCanvas::mouseDown(const juce::MouseEvent& e)
 {
     grabKeyboardFocus();
@@ -519,11 +527,27 @@ void SignalCanvas::mouseDown(const juce::MouseEvent& e)
 
     if (const auto port = portAt(p); port.valid)
     {
-        // Begin a connection drag anchored at this port.
+        selectedCable_.reset();
+
+        // Grabbing a connected destination port detaches its cable and re-drags
+        // from the original source, so you can pull a cable off and drop it
+        // somewhere else. (A source port instead starts a fresh fan-out drag.)
+        if (!port.isSource)
+        {
+            if (const auto existing = connectionInto(port))
+            {
+                ctx_.session.removeConnection(existing->src, existing->srcChannel, existing->dst, existing->dstChannel);
+                dragAnchor_ = PortRef{existing->src, existing->srcChannel, /*isSource*/ true, /*valid*/ true};
+                dragging_ = true;
+                dragCursor_ = p;
+                repaint();
+                return;
+            }
+        }
+
         dragging_ = true;
         dragAnchor_ = port;
         dragCursor_ = p;
-        selectedCable_.reset();
         repaint();
         return;
     }

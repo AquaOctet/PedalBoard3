@@ -115,6 +115,8 @@ private:
     };
     PortRef portAt(juce::Point<int>) const;
     std::optional<session::PatchConnection> cableAt(juce::Point<int>) const;
+    // The connection feeding a destination port (for grab-to-detach), if any.
+    std::optional<session::PatchConnection> connectionInto(const PortRef&) const;
 
     AppContext& ctx_;
 
