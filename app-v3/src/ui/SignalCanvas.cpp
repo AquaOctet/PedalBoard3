@@ -116,11 +116,9 @@ void SignalCanvas::changeListenerCallback(juce::ChangeBroadcaster*)
     // NodeIds — letting the unique_ptrs fall out of scope destroys them.
     cards_ = std::move(next);
 
-    // Apply move-button enable state + accent colour from patch metadata.
+    // Apply accent colour from patch metadata.
     for (std::size_t i = 0; i < cards_.size(); ++i)
     {
-        cards_[i]->setMovableUp(i > 0);
-        cards_[i]->setMovableDown(i + 1 < cards_.size());
         const auto* pn = patch.findNode(cards_[i]->getNodeId());
         if (pn != nullptr)
             cards_[i]->setAccentColour(isInstrumentNode(*pn) ? tokens::accentWarning : tokens::accentPrimary);
@@ -147,8 +145,6 @@ std::unique_ptr<PluginCard> SignalCanvas::makeCard(const PluginCard::NodeSnapsho
     PluginCard::Callbacks cb{
         [this](NodeId id) { onCardBypassToggle(id); },
         [this](NodeId id) { onCardEdit(id); },
-        [this](NodeId id) { onCardMoveUp(id); },
-        [this](NodeId id) { onCardMoveDown(id); },
         [this](NodeId id) { onCardRemove(id); },
         [this](NodeId id) { onCardDragging(id); },
         [this](NodeId id, juce::Point<int> p) { onCardMoved(id, p); },
@@ -292,6 +288,16 @@ void SignalCanvas::paint(juce::Graphics& g)
         for (int gx = clip.getX() - (clip.getX() % gridStep); gx < clip.getRight(); gx += gridStep)
             g.fillRect(gx, gy, 1, 1);
 
+    // Soft drop shadow behind each card — drawn here (under the cards, which are
+    // child components painted on top) so the blurred halo extends past the card
+    // bounds for the lifted, modern look.
+    for (const auto& card : cards_)
+    {
+        juce::Path cardPath;
+        cardPath.addRoundedRectangle(card->getBounds().toFloat(), 6.0f);
+        juce::DropShadow(juce::Colours::black.withAlpha(0.35f), 12, {0, 3}).drawForPath(g, cardPath);
+    }
+
     // Endpoint card frames.
     auto drawEndpoint = [&g](const juce::Rectangle<int>& r, const juce::String& label)
     {
@@ -391,22 +397,6 @@ void SignalCanvas::onCardEdit(NodeId id)
 
     auto onClose = [this, id] { editors_.erase(id); };
     editors_[id] = std::make_unique<EditorWindow>(title, editor, std::move(onClose));
-}
-
-void SignalCanvas::onCardMoveUp(NodeId id)
-{
-    auto it = idToIndex_.find(id);
-    if (it == idToIndex_.end() || it->second == 0)
-        return;
-    ctx_.session.moveNode(id, static_cast<int>(it->second) - 1);
-}
-
-void SignalCanvas::onCardMoveDown(NodeId id)
-{
-    auto it = idToIndex_.find(id);
-    if (it == idToIndex_.end() || it->second + 1 >= cards_.size())
-        return;
-    ctx_.session.moveNode(id, static_cast<int>(it->second) + 1);
 }
 
 void SignalCanvas::onCardRemove(NodeId id)

@@ -19,7 +19,6 @@ constexpr int kAccentInset = 4; // integer form of kAccentBorderWidth for pixel 
 constexpr int kHeaderHeight = 28;
 constexpr int kPortRowHeight = 22;
 constexpr int kMidiRowHeight = 18;
-constexpr int kMoveRowHeight = 28;
 
 constexpr int kPortRadius = 6;
 constexpr int kPortStripeInset = 12; // distance from L/R edge to port centre
@@ -46,8 +45,6 @@ PluginCard::PluginCard(NodeSnapshot initialSnapshot, Callbacks callbacks)
     wireSmallButton(bypassButton_);
     wireSmallButton(editButton_);
     wireSmallButton(removeButton_);
-    wireSmallButton(moveUpButton_);
-    wireSmallButton(moveDownButton_);
 
     removeButton_.setColour(juce::TextButton::textColourOffId, tokens::accentDestructive);
 
@@ -65,16 +62,6 @@ PluginCard::PluginCard(NodeSnapshot initialSnapshot, Callbacks callbacks)
     {
         if (callbacks_.onRemove)
             callbacks_.onRemove(snapshot_.id);
-    };
-    moveUpButton_.onClick = [this]
-    {
-        if (callbacks_.onMoveUp)
-            callbacks_.onMoveUp(snapshot_.id);
-    };
-    moveDownButton_.onClick = [this]
-    {
-        if (callbacks_.onMoveDown)
-            callbacks_.onMoveDown(snapshot_.id);
     };
 
     refreshFromSnapshot();
@@ -102,16 +89,6 @@ void PluginCard::setAccentColour(juce::Colour c)
         return;
     accent_ = c;
     repaint();
-}
-
-void PluginCard::setMovableUp(bool ok)
-{
-    moveUpButton_.setEnabled(ok);
-}
-
-void PluginCard::setMovableDown(bool ok)
-{
-    moveDownButton_.setEnabled(ok);
 }
 
 void PluginCard::refreshFromSnapshot()
@@ -166,9 +143,9 @@ void PluginCard::paint(juce::Graphics& g)
                                      false);
     g.fillPath(accentStripe);
 
-    // Outer border.
-    g.setColour(tokens::borderDefault);
-    g.drawRoundedRectangle(bounds, kCardCornerRadius, kCardBorderThickness);
+    // Outer border — brightens to the accent on hover for a "liftable" feel.
+    g.setColour(hovered_ ? accent_.withAlpha(0.8f) : tokens::borderDefault);
+    g.drawRoundedRectangle(bounds, kCardCornerRadius, hovered_ ? 1.5f : kCardBorderThickness);
 
     // Header divider line below the title row.
     const auto y1 = static_cast<float>(kHeaderHeight);
@@ -227,11 +204,6 @@ void PluginCard::paint(juce::Graphics& g)
     drawPort(static_cast<int>(bounds.getX()) + kAccentInset + kPaddingX + 36,
              midiY + kMidiRowHeight / 2,
              tokens::accentInfo);
-
-    // Bottom divider.
-    const int moveRowTop = midiY + kMidiRowHeight;
-    g.setColour(tokens::borderMuted);
-    g.drawHorizontalLine(moveRowTop, bounds.getX() + kAccentBorderWidth, bounds.getRight());
 }
 
 void PluginCard::resized()
@@ -251,17 +223,8 @@ void PluginCard::resized()
     buttonStrip.removeFromLeft(btnGap);
     removeButton_.setBounds(buttonStrip.removeFromLeft(btnW));
 
-    // Port rows + MIDI row are paint-only; skip vertical space.
-    bounds.removeFromTop(2 * kPortRowHeight + kMidiRowHeight + 4);
-
-    // Move row — two buttons centred.
-    auto moveRow = bounds.removeFromTop(kMoveRowHeight).reduced(kPaddingX, 4);
-    const int moveBtnW = 28;
-    const int spacing = 8;
-    auto moveLeft = moveRow.removeFromLeft((moveRow.getWidth() - 2 * moveBtnW - spacing) / 2 + moveBtnW);
-    moveUpButton_.setBounds(moveLeft.removeFromRight(moveBtnW));
-    moveRow.removeFromLeft(spacing);
-    moveDownButton_.setBounds(moveRow.removeFromLeft(moveBtnW));
+    // Port rows + MIDI row are paint-only; no further child layout (the old
+    // Move ↑/↓ row was removed — dragging the card body repositions it).
 }
 
 bool PluginCard::hitTest(int x, int y)
@@ -311,6 +274,18 @@ void PluginCard::mouseUp(const juce::MouseEvent&)
     if (didDrag_ && callbacks_.onMoved)
         callbacks_.onMoved(snapshot_.id, getPosition());
     didDrag_ = false;
+}
+
+void PluginCard::mouseEnter(const juce::MouseEvent&)
+{
+    hovered_ = true;
+    repaint();
+}
+
+void PluginCard::mouseExit(const juce::MouseEvent&)
+{
+    hovered_ = false;
+    repaint();
 }
 
 } // namespace pedalboard3::ui

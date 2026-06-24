@@ -92,8 +92,6 @@ private:
     // Card-side delegates wired through PluginCard::Callbacks.
     void onCardBypassToggle(NodeId);
     void onCardEdit(NodeId);
-    void onCardMoveUp(NodeId);
-    void onCardMoveDown(NodeId);
     void onCardRemove(NodeId);
     void onCardMoved(NodeId, juce::Point<int> newPos);
     void onCardDragging(NodeId);
