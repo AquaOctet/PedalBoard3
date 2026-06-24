@@ -442,10 +442,10 @@ class PluginRescanThread : public juce::ThreadWithProgressWindow
 {
 public:
     PluginRescanThread(AppContext& ctx, juce::File helperBinary)
-        : juce::ThreadWithProgressWindow("Scanning plugins…", /*hasProgressBar*/ true, /*hasCancelButton*/ true),
+        : juce::ThreadWithProgressWindow("Scanning plugins...", /*hasProgressBar*/ true, /*hasCancelButton*/ true),
           ctx_(ctx), scanner_(ctx_.pluginHost, std::move(helperBinary))
     {
-        setStatusMessage("Enumerating plugin search paths…");
+        setStatusMessage("Enumerating plugin search paths...");
     }
 
     void run() override
@@ -519,7 +519,7 @@ void TransportBar::rescanPlugins()
                               .withIconType(juce::MessageBoxIconType::WarningIcon)
                               .withTitle("Out-of-process scanner unavailable")
                               .withMessage("pb3-scanner-helper binary was not found next to the host executable. "
-                                           "Falling back to the in-process scan via Plugin List → Options. "
+                                           "Falling back to the in-process scan via Plugin List > Options. "
                                            "Known-problem plugins are still skipped via the shipping floor list.")
                               .withButton("OK");
         juce::AlertWindow::showAsync(opts, nullptr);

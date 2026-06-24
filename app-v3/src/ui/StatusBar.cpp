@@ -91,11 +91,11 @@ void StatusBar::refresh()
     switch (state)
     {
     case session::Session::State::Building:
-        stateText = "Loading…";
+        stateText = "Loading...";
         stateDotColour_ = tokens::statusBuilding;
         break;
     case session::Session::State::Swapping:
-        stateText = "Swapping…";
+        stateText = "Swapping...";
         stateDotColour_ = tokens::statusSwapping;
         break;
     case session::Session::State::Idle:
