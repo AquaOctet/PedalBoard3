@@ -679,6 +679,23 @@ void Session::setNodePosition(NodeId id, float x, float y)
     bumpVersionAndNotify();
 }
 
+void Session::seedNodePositions(const std::vector<NodePositionSeed>& seeds)
+{
+    std::lock_guard<std::mutex> lk(statusMutex_);
+    bool applied = false;
+    for (const auto& seed : seeds)
+    {
+        auto* n = activePatch_.findNode(seed.id);
+        if (n == nullptr || n->hasPosition())
+            continue; // never overwrite a user-authored (or already-seeded) position
+        n->x = seed.x;
+        n->y = seed.y;
+        applied = true;
+    }
+    if (applied)
+        bumpVersionAndNotify();
+}
+
 void Session::applyConnectionsToLiveGraph()
 {
     // Same staleness defence as commitAddPlugin — refresh from the

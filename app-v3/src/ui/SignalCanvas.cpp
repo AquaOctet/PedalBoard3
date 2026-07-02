@@ -155,14 +155,19 @@ std::unique_ptr<PluginCard> SignalCanvas::makeCard(const PluginCard::NodeSnapsho
 void SignalCanvas::layoutCards()
 {
     // Free positioning: a card sits at its stored (x, y); an unpositioned card
-    // (freshly added, or a pre-position patch) falls back to a left-to-right
-    // auto-slot so it never stacks at the origin. The user's drags persist real
-    // positions via onCardMoved -> Session::setNodePosition.
+    // (freshly added, or a pre-position patch) takes a left-to-right auto-slot,
+    // and that slot is immediately seeded back into the Session as the card's
+    // real position. Without the seed, auto-slots are assigned by a running
+    // counter over the *unpositioned* cards only — so the first drag of any
+    // card shifts every remaining auto card one slot left on the next relayout,
+    // piling cards on top of each other.
     const int rowY = juce::jmax(kCanvasMarginY, getParentHeight() / 2 - kCardHeight / 2);
     int autoX = kCanvasMarginX + kEndpointWidth + kCardSpacingX;
 
     idToIndex_.clear();
     idToIndex_.reserve(cards_.size());
+
+    std::vector<session::Session::NodePositionSeed> seeds;
 
     int contentRight = autoX;
     int contentBottom = rowY + kCardHeight;
@@ -180,12 +185,20 @@ void SignalCanvas::layoutCards()
             cx = autoX;
             cy = rowY;
             autoX += kCardWidth + kCardSpacingX;
+            seeds.push_back({cards_[i]->getNodeId(), static_cast<float>(cx), static_cast<float>(cy)});
         }
         cards_[i]->setBounds(cx, cy, kCardWidth, kCardHeight);
         idToIndex_[cards_[i]->getNodeId()] = i;
         contentRight = juce::jmax(contentRight, cx + kCardWidth);
         contentBottom = juce::jmax(contentBottom, cy + kCardHeight);
     }
+
+    // Persist the auto-slots (async change message re-enters layoutCards once,
+    // finds every card positioned, and seeds nothing — no loop). Skip while
+    // parentless: the constructor's first layout runs before the Viewport
+    // adopts the canvas, and would bake positions from zero-sized geometry.
+    if (!seeds.empty() && getParentComponent() != nullptr)
+        ctx_.session.seedNodePositions(seeds);
 
     // Endpoints anchor the I/O at the canvas extremes, vertically centred.
     const int endpointY = rowY;

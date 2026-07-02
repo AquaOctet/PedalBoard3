@@ -157,6 +157,20 @@ public:
     // Update a node's canvas position (no graph impact; persisted on save).
     void setNodePosition(NodeId, float x, float y);
 
+    // Seed canvas positions for nodes that don't have one yet, as a single
+    // batch (one change message). SignalCanvas calls this with its first
+    // auto-layout so every card immediately owns a real, persisted position —
+    // otherwise a later drag of one card reflows the remaining auto-slotted
+    // cards underneath it. Nodes that already have a position, and unknown
+    // ids, are left untouched; a no-op batch sends no change message.
+    struct NodePositionSeed
+    {
+        NodeId id;
+        float x;
+        float y;
+    };
+    void seedNodePositions(const std::vector<NodePositionSeed>& seeds);
+
     // ---- Snapshot accessors (message thread) -------------------------------
 
     Patch getActivePatch() const; // heavyweight copy

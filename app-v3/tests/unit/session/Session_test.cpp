@@ -579,3 +579,34 @@ TEST_CASE("Session: setNodePosition updates the snapshot", "[session][routing]")
     REQUIRE(it->x == 320.0f);
     REQUIRE(it->y == 96.0f);
 }
+
+TEST_CASE("Session: seedNodePositions fills only unpositioned nodes", "[session][routing]")
+{
+    ChainFixture f;
+
+    // Node 2 already has a user-authored position; the seed must not clobber it.
+    f.s.setNodePosition(2, 320.0f, 96.0f);
+
+    f.s.seedNodePositions({
+        {1, 190.0f, 60.0f},
+        {2, 999.0f, 999.0f}, // stale auto-slot for an already-positioned node
+        {3, 440.0f, 60.0f},
+        {999, 1.0f, 1.0f}, // unknown id: ignored
+    });
+
+    const auto p = f.s.getActivePatch();
+    REQUIRE(p.findNode(1)->hasPosition());
+    REQUIRE(p.findNode(1)->x == 190.0f);
+    REQUIRE(p.findNode(1)->y == 60.0f);
+    REQUIRE(p.findNode(2)->x == 320.0f); // untouched
+    REQUIRE(p.findNode(2)->y == 96.0f);
+    REQUIRE(p.findNode(3)->hasPosition());
+    REQUIRE(p.findNode(3)->x == 440.0f);
+
+    // Re-seeding after everything is positioned is a no-op (the SignalCanvas
+    // relayout cycle relies on this to terminate).
+    const auto versionBefore = f.s.getStatus().version;
+    f.s.seedNodePositions({{1, 5.0f, 5.0f}, {3, 5.0f, 5.0f}});
+    REQUIRE(f.s.getActivePatch().findNode(1)->x == 190.0f);
+    REQUIRE(f.s.getStatus().version == versionBefore);
+}
