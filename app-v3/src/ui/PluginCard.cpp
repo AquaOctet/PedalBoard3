@@ -190,20 +190,23 @@ void PluginCard::paint(juce::Graphics& g)
     g.drawText("In R", leftPortX + kPortRadius + 4, portRowR - 7, 30, 14, juce::Justification::centredLeft);
     g.drawText("Out R", rightPortX - kPortRadius - 34, portRowR - 7, 30, 14, juce::Justification::centredRight);
 
-    // MIDI activity strip — placeholder (no router yet).
+    // MIDI row: in/out ports at the card edges — the same anchors
+    // getPortCentre reports, so the visible dot is exactly where a cable
+    // terminates and where the canvas's grab hotspot lives. (The old single
+    // mid-card dot sat ~30px away from the interaction point.)
     const int midiY = kHeaderHeight + 2 * kPortRowHeight + 4;
     g.setColour(tokens::borderMuted);
     g.drawHorizontalLine(midiY, bounds.getX() + kAccentBorderWidth, bounds.getRight());
     g.setColour(tokens::fgMuted);
     g.drawText("MIDI",
-               static_cast<int>(bounds.getX()) + kAccentInset + kPaddingX,
+               static_cast<int>(bounds.getX()) + kAccentInset + kPaddingX + kPortRadius * 2,
                midiY + 2,
                40,
                kMidiRowHeight - 4,
                juce::Justification::centredLeft);
-    drawPort(static_cast<int>(bounds.getX()) + kAccentInset + kPaddingX + 36,
-             midiY + kMidiRowHeight / 2,
-             tokens::accentInfo);
+    const int midiPortY = midiY + kMidiRowHeight / 2;
+    drawPort(leftPortX, midiPortY, tokens::accentInfo);
+    drawPort(rightPortX, midiPortY, tokens::accentInfo);
 }
 
 void PluginCard::resized()
