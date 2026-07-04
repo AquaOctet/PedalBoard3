@@ -186,6 +186,18 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas) : ctx_(ctx), c
 TransportBar::~TransportBar()
 {
     ctx_.session.removeChangeListener(this);
+
+    // Join any in-flight rescan before AppContext/Session/PluginHost tear down
+    // (crash-hunt #8). The scan worker holds references into ctx_; letting it
+    // outlive us was the fire-and-forget use-after-free. stopThread(-1) signals
+    // exit and joins without force-killing — a scan subprocess wait is
+    // cooperatively interruptible, so this returns promptly.
+    if (rescanThread_ != nullptr)
+    {
+        rescanThread_->signalThreadShouldExit();
+        rescanThread_->stopThread(-1);
+        rescanThread_.reset();
+    }
 }
 
 void TransportBar::changeListenerCallback(juce::ChangeBroadcaster*)
@@ -441,9 +453,17 @@ namespace
 class PluginRescanThread : public juce::ThreadWithProgressWindow
 {
 public:
-    PluginRescanThread(AppContext& ctx, juce::File helperBinary)
+    // `blacklistSnapshot` is captured by the caller on the message thread and
+    // handed in by value: the worker must never read the live KnownPluginList
+    // (crash-hunt #6). `onDone` fires on the message thread when the worker
+    // exits — the owner (TransportBar) uses it to release its unique_ptr.
+    PluginRescanThread(AppContext& ctx,
+                       juce::File helperBinary,
+                       juce::StringArray blacklistSnapshot,
+                       std::function<void()> onDone)
         : juce::ThreadWithProgressWindow("Scanning plugins...", /*hasProgressBar*/ true, /*hasCancelButton*/ true),
-          ctx_(ctx), scanner_(ctx_.pluginHost, std::move(helperBinary))
+          ctx_(ctx), scanner_(ctx_.pluginHost, std::move(helperBinary)),
+          blacklistSnapshot_(std::move(blacklistSnapshot)), onDone_(std::move(onDone))
     {
         setStatusMessage("Enumerating plugin search paths...");
     }
@@ -452,9 +472,9 @@ public:
     {
         // Worker thread: subprocess scans ONLY. Collect results here and do
         // NOT touch KnownPluginList — it is committed on the message thread in
-        // threadComplete(). Mutating the list from this worker races the
-        // list's message-thread ChangeListeners (instrument sweep, prefs
-        // persist) and corrupts it (the scan-crash bug this fixes).
+        // threadComplete(). The blacklist to skip was snapshotted on the
+        // message thread and passed in, so the worker never reads the live
+        // list (its ChangeListeners run on the message thread; crash-hunt #6).
         results_ = scanner_.scanAllDefaultPaths(
             [this](int idx, int total, const juce::String& path)
             {
@@ -462,7 +482,8 @@ public:
                     return;
                 setProgress(static_cast<double>(idx) / static_cast<double>(total));
                 setStatusMessage("Scanning: " + juce::File(path).getFileName());
-            });
+            },
+            blacklistSnapshot_);
     }
 
     void threadComplete(bool userPressedCancel) override
@@ -470,7 +491,9 @@ public:
         // Message thread. Commit the collected results to the KnownPluginList
         // HERE — this is the single writer of the list on the scan path, so it
         // runs serialised with the list's ChangeListeners. Then persist +
-        // summarise + self-delete.
+        // summarise. Note: no `delete this` — TransportBar owns this object
+        // and releases it via onDone_ (crash-hunt #8: a quit mid-scan must be
+        // able to join us, which a self-deleting thread can't support).
         added_ = scanner_.applyScanResults(results_);
 
         if (auto xml = ctx_.pluginHost.createKnownListXml())
@@ -491,13 +514,16 @@ public:
                               .withButton("OK");
         juce::AlertWindow::showAsync(opts, nullptr);
 
-        delete this;
+        if (onDone_)
+            onDone_();
     }
 
 private:
     AppContext& ctx_;
     engine::PluginScanner scanner_;
+    juce::StringArray blacklistSnapshot_;                    // message-thread capture
     std::vector<engine::PluginScanner::ScanResult> results_; // worker -> message thread
+    std::function<void()> onDone_;                           // fires on message thread at exit
     int added_{0};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginRescanThread)
@@ -507,31 +533,54 @@ private:
 
 void TransportBar::rescanPlugins()
 {
+    // One scan at a time — the owned thread is single-slot.
+    if (rescanThread_ != nullptr)
+        return;
+
     auto helper = engine::PluginScanner::findHelperBinary();
     if (!helper.existsAsFile())
     {
-        // Helper missing — happens on dev builds where POST_BUILD copy
-        // hasn't run, or installs missing the bundled helper. Fall
-        // back to the existing JUCE-driven scan via Plugin List dialog
-        // (which still has the in-process scanner + our shipping
-        // KnownProblemPlugins.h floor list as best-effort protection).
+        // Helper missing — happens on dev builds where POST_BUILD copy hasn't
+        // run, or installs missing the bundled helper. Do NOT route the user
+        // to the in-process scan (crash-hunt #6): JUCE's PluginListComponent
+        // scanner constructs every plugin in the host process, so a
+        // construction-crashing plugin not on the floor list takes the host
+        // down. Scanning is simply unavailable until the helper is present.
         const auto opts = juce::MessageBoxOptions{}
                               .withIconType(juce::MessageBoxIconType::WarningIcon)
-                              .withTitle("Out-of-process scanner unavailable")
-                              .withMessage("pb3-scanner-helper binary was not found next to the host executable. "
-                                           "Falling back to the in-process scan via Plugin List > Options. "
-                                           "Known-problem plugins are still skipped via the shipping floor list.")
+                              .withTitle("Plugin scanning unavailable")
+                              .withMessage("pb3-scanner-helper binary was not found next to the host executable, "
+                                           "so out-of-process scanning is disabled. Reinstall Pedalboard 3 (or "
+                                           "rebuild so the helper is copied next to the app) to scan for plugins. "
+                                           "Already-known plugins remain usable.")
                               .withButton("OK");
         juce::AlertWindow::showAsync(opts, nullptr);
         return;
     }
 
-    // Heap-allocated; deletes itself in threadComplete on the message
-    // thread after the user dismisses the result alert. launchThread
-    // returns immediately — TransportBar message-thread responsiveness
-    // is preserved while the scan walks the user's plugin paths.
-    auto* runner = new PluginRescanThread(ctx_, std::move(helper));
-    runner->launchThread();
+    // Capture the blacklist HERE, on the message thread, and hand it to the
+    // worker by value (crash-hunt #6): the worker must not read the live
+    // KnownPluginList, whose ChangeListeners mutate it on the message thread.
+    auto blacklistSnapshot = ctx_.pluginHost.getKnownPluginList().getBlacklistedFiles();
+
+    // Owned, not fire-and-forget: ~TransportBar joins it on quit. threadComplete
+    // fires onDone on the message thread; defer the unique_ptr reset (via a
+    // SafePointer, in case the bar was destroyed in between) so we don't
+    // destroy the thread from inside its own completion callback.
+    juce::Component::SafePointer<TransportBar> safeThis(this);
+    rescanThread_ = std::make_unique<PluginRescanThread>(ctx_,
+                                                         std::move(helper),
+                                                         std::move(blacklistSnapshot),
+                                                         [safeThis]
+                                                         {
+                                                             juce::MessageManager::callAsync(
+                                                                 [safeThis]
+                                                                 {
+                                                                     if (safeThis != nullptr)
+                                                                         safeThis->rescanThread_.reset();
+                                                                 });
+                                                         });
+    rescanThread_->launchThread();
 }
 
 void TransportBar::openFileMenu()

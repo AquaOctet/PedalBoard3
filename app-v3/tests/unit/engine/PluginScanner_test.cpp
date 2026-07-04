@@ -167,7 +167,7 @@ TEST_CASE("PluginScanner: scanAllDefaultPaths returns no results when no helper 
 
     int progressCalls = 0;
     const auto results =
-        scanner.scanAllDefaultPaths([&progressCalls](int, int, const juce::String&) { ++progressCalls; });
+        scanner.scanAllDefaultPaths([&progressCalls](int, int, const juce::String&) { ++progressCalls; }, {});
 
     REQUIRE(results.empty());
     REQUIRE(progressCalls == 0); // no scan loop runs without helper
@@ -234,6 +234,64 @@ TEST_CASE("effectDescriptionsFromScanXml keeps effects and drops instruments", "
     {
         juce::XmlElement root("PB3_SCAN_RESULT");
         REQUIRE(engine::effectDescriptionsFromScanXml(root).isEmpty());
+    }
+}
+
+// -----------------------------------------------------------------------
+// Completion-sentinel gate (crash-hunt #6) -- no helper required
+// -----------------------------------------------------------------------
+
+// A signal-killed helper reports exit code 0 on POSIX, so parseHelperOutput
+// must refuse a result that lacks the completion sentinel even when the XML
+// parses. This is the seam that stops a teardown-crashing plugin from being
+// whitelisted and later constructed in the host.
+TEST_CASE("parseHelperOutput requires the completion sentinel", "[engine][plugin-scanner]")
+{
+    juce::PluginDescription effect;
+    effect.name = "DemoEQ";
+    effect.pluginFormatName = "VST3";
+    effect.fileOrIdentifier = "/plugins/DemoEQ.vst3";
+    effect.isInstrument = false;
+
+    juce::XmlElement root("PB3_SCAN_RESULT");
+    root.addChildElement(effect.createXml().release());
+    const auto xml = root.toString(juce::XmlElement::TextFormat{}.singleLine());
+
+    SECTION("valid XML followed by the sentinel is accepted")
+    {
+        engine::PluginScanner::ScanResult result;
+        const bool ok = engine::parseHelperOutput(xml + "\n" + engine::kScanOkSentinel + "\n", result);
+        REQUIRE(ok);
+        REQUIRE_FALSE(result.helperCrashed);
+        REQUIRE(result.descriptions.size() == 1);
+        CHECK(result.descriptions[0].name == "DemoEQ");
+    }
+
+    SECTION("valid XML WITHOUT the sentinel is treated as a teardown crash")
+    {
+        engine::PluginScanner::ScanResult result;
+        const bool ok = engine::parseHelperOutput(xml + "\n", result); // no sentinel
+        REQUIRE_FALSE(ok);
+        REQUIRE(result.helperCrashed);
+        REQUIRE(result.descriptions.isEmpty()); // -> scanFile sets shouldBlacklist
+    }
+
+    SECTION("the sentinel alone (empty scan) with no PB3_SCAN_RESULT still fails to parse")
+    {
+        engine::PluginScanner::ScanResult result;
+        const bool ok = engine::parseHelperOutput(juce::String(engine::kScanOkSentinel) + "\n", result);
+        REQUIRE_FALSE(ok);
+        REQUIRE(result.helperCrashed);
+    }
+
+    SECTION("an empty scan result with the sentinel parses to zero descriptions")
+    {
+        juce::XmlElement empty("PB3_SCAN_RESULT");
+        const auto emptyXml = empty.toString(juce::XmlElement::TextFormat{}.singleLine());
+        engine::PluginScanner::ScanResult result;
+        const bool ok = engine::parseHelperOutput(emptyXml + "\n" + engine::kScanOkSentinel, result);
+        REQUIRE(ok);
+        REQUIRE(result.descriptions.isEmpty());
     }
 }
 

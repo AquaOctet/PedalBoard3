@@ -82,6 +82,14 @@ private:
     // Held as a member so it outlives the async launchAsync callback.
     std::unique_ptr<juce::FileChooser> fileChooser_;
 
+    // The rescan worker is OWNED here, not fire-and-forget (crash-hunt #8):
+    // the old `new ...; launchThread()` self-delete pattern let a quit
+    // mid-scan destroy AppContext/Session/PluginHost out from under the
+    // running thread. ~TransportBar signals + joins it; threadComplete
+    // hands the object back via the onDone callback. Base-class pointer —
+    // the concrete type lives in TransportBar.cpp's anonymous namespace.
+    std::unique_ptr<juce::ThreadWithProgressWindow> rescanThread_;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TransportBar)
 };
 

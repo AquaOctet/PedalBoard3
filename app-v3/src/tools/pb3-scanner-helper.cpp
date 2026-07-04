@@ -57,44 +57,58 @@ int main(int argc, char** argv)
         return kExitUsage;
     }
 
-    // Helper runs without a MessageManager — JUCE plugin loading is
-    // fine without one for the format-scan code path. If a plugin's
-    // ctor demands a MessageManager (rare), the scan will fail fast
-    // and we'll exit non-zero, which the parent treats as "crashed".
-    const juce::ScopedJuceInitialiser_GUI scopedJuce;
-
-    juce::AudioPluginFormatManager formats;
-    formats.addDefaultFormats();
-
-    juce::OwnedArray<juce::PluginDescription> descriptions;
-
-    for (int f = 0; f < formats.getNumFormats(); ++f)
     {
-        auto* format = formats.getFormat(f);
-        if (format == nullptr || !format->canScanForPlugins())
-            continue;
+        // Helper runs without a MessageManager — JUCE plugin loading is
+        // fine without one for the format-scan code path. If a plugin's
+        // ctor demands a MessageManager (rare), the scan will fail fast
+        // and we'll exit non-zero, which the parent treats as "crashed".
+        const juce::ScopedJuceInitialiser_GUI scopedJuce;
 
-        if (!format->fileMightContainThisPluginType(pluginPath))
-            continue;
+        juce::AudioPluginFormatManager formats;
+        formats.addDefaultFormats();
 
-        // findAllTypesForFile is the call that may crash inside the
-        // plugin's own constructor (Current.vst3's MKURequestManager
-        // pure-virtual call, etc). If it crashes, the OS kills this
-        // process with a signal — parent detects via exit code.
-        format->findAllTypesForFile(descriptions, pluginPath);
+        juce::OwnedArray<juce::PluginDescription> descriptions;
+
+        for (int f = 0; f < formats.getNumFormats(); ++f)
+        {
+            auto* format = formats.getFormat(f);
+            if (format == nullptr || !format->canScanForPlugins())
+                continue;
+
+            if (!format->fileMightContainThisPluginType(pluginPath))
+                continue;
+
+            // findAllTypesForFile is the call that may crash inside the
+            // plugin's own constructor (Current.vst3's MKURequestManager
+            // pure-virtual call, etc). If it crashes, the OS kills this
+            // process with a signal — parent detects via exit code.
+            format->findAllTypesForFile(descriptions, pluginPath);
+        }
+
+        juce::XmlElement root("PB3_SCAN_RESULT");
+        for (const auto* desc : descriptions)
+        {
+            if (auto descXml = desc->createXml())
+                root.addChildElement(descXml.release());
+        }
+
+        // Print the XML to stdout. The parent reads this stream verbatim
+        // and parses with juce::parseXML.
+        const auto serialised = root.toString(juce::XmlElement::TextFormat{}.singleLine());
+        std::cout << serialised.toStdString() << std::endl;
+
+        // Block closes here: ScopedJuceInitialiser_GUI tears JUCE down, and
+        // a plugin's lingering worker threads / static destructors often
+        // crash in exactly this window (Kontakt's BusinessAnalytics
+        // async-deinit abort). On POSIX a signal-kill reports exit code 0
+        // to the parent, so the crash would otherwise go unnoticed.
     }
 
-    juce::XmlElement root("PB3_SCAN_RESULT");
-    for (const auto* desc : descriptions)
-    {
-        if (auto descXml = desc->createXml())
-            root.addChildElement(descXml.release());
-    }
-
-    // Print the XML to stdout. The parent reads this stream verbatim
-    // and parses with juce::parseXML.
-    const auto serialised = root.toString(juce::XmlElement::TextFormat{}.singleLine());
-    std::cout << serialised.toStdString() << std::endl;
+    // Completion sentinel — the parent (PluginScanner::parseHelperOutput)
+    // refuses to trust the result without it, even on exit code 0. Printed
+    // only after JUCE teardown survived. Keep in sync with
+    // engine::kScanOkSentinel in PluginScanner.h.
+    std::cout << "<PB3_SCAN_OK/>" << std::endl;
 
     return kExitOk;
 }

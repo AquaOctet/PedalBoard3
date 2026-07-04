@@ -137,7 +137,27 @@ bool PluginScanner::runHelper(const juce::String& pluginPath, ScanResult& result
         return false;
     }
 
-    auto root = juce::parseXML(stdoutText);
+    return parseHelperOutput(stdoutText, result);
+}
+
+bool parseHelperOutput(const juce::String& stdoutText, PluginScanner::ScanResult& result)
+{
+    // Sentinel gate first (crash-hunt #6): the helper prints kScanOkSentinel
+    // only after its JUCE teardown completed. A signal-killed helper reports
+    // exit code 0 on POSIX, and a plugin can flush valid descriptors before
+    // dying in teardown — so exit code + parseable XML alone would whitelist
+    // a plugin that then crashes the host in-process. No sentinel = crash;
+    // descriptions stay empty so the caller blacklists the path.
+    const int sentinelPos = stdoutText.indexOf(kScanOkSentinel);
+    if (sentinelPos < 0)
+    {
+        result.error = "helper died before printing the completion sentinel (teardown crash?); output: " +
+                       stdoutText.substring(0, 256).trim();
+        result.helperCrashed = true;
+        return false;
+    }
+
+    auto root = juce::parseXML(stdoutText.substring(0, sentinelPos));
     if (root == nullptr || !root->hasTagName("PB3_SCAN_RESULT"))
     {
         result.error = "helper produced unparseable output: " + stdoutText.substring(0, 256).trim();
@@ -207,7 +227,8 @@ int PluginScanner::applyScanResults(const std::vector<ScanResult>& results)
     return added;
 }
 
-std::vector<PluginScanner::ScanResult> PluginScanner::scanAllDefaultPaths(ProgressCallback onProgress)
+std::vector<PluginScanner::ScanResult> PluginScanner::scanAllDefaultPaths(ProgressCallback onProgress,
+                                                                          juce::StringArray blacklistSnapshot)
 {
     std::vector<ScanResult> results;
     if (!isHelperAvailable())
@@ -237,12 +258,13 @@ std::vector<PluginScanner::ScanResult> PluginScanner::scanAllDefaultPaths(Progre
         }
     }
 
-    // Snapshot the current blacklist ONCE up front (a cheap StringArray copy)
-    // rather than reading the live KnownPluginList inside the loop. The worker
-    // must not touch the list concurrently with the message thread; nothing in
-    // this method mutates it either (results are committed later via
-    // applyScanResults on the message thread).
-    const juce::StringArray blacklisted = host_.getKnownPluginList().getBlacklistedFiles();
+    // The blacklist snapshot arrives from the CALLER, captured on the message
+    // thread (crash-hunt #6): reading the live KnownPluginList here — this
+    // method runs on the scan worker — raced concurrent addToBlacklist calls
+    // from the message thread (instrument sweep, Plugin List dialog). Nothing
+    // in this method touches the live list; results are committed later via
+    // applyScanResults on the message thread.
+    const juce::StringArray& blacklisted = blacklistSnapshot;
 
     const int total = uniquePaths.size();
     results.reserve(static_cast<size_t>(total));
