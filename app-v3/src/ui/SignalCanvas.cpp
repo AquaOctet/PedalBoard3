@@ -30,11 +30,6 @@ constexpr int kChannelL = 0;
 constexpr int kChannelR = 1;
 const int kChannelMidi = juce::AudioProcessorGraph::midiChannelIndex;
 
-juce::Colour cableColourFor(int channel)
-{
-    return channel == kChannelMidi ? tokens::accentInfo : tokens::fgMuted;
-}
-
 // Cubic bezier from (x1,y1) to (x2,y2) with horizontal control
 // points at the midpoint — gives the curving signal-cable look the
 // mockup uses.
@@ -54,6 +49,7 @@ bool isInstrumentNode(const session::PatchNode& n) noexcept
 SignalCanvas::SignalCanvas(AppContext& ctx) : ctx_(ctx)
 {
     setOpaque(true);
+    setWantsKeyboardFocus(true); // for Delete-to-remove a selected cable (U4)
     ctx_.session.addChangeListener(this);
 
     // First-paint: pull current snapshot so the canvas isn't empty
@@ -81,6 +77,12 @@ void SignalCanvas::changeListenerCallback(juce::ChangeBroadcaster*)
 {
     auto snaps = ctx_.session.getNodeSnapshots();
     auto patch = ctx_.session.getActivePatch();
+    connections_ = patch.connections; // cached for per-drag-frame cable rebuilds
+
+    bypassedNodes_.clear();
+    for (const auto& s : snaps)
+        if (s.bypassed)
+            bypassedNodes_.insert(s.id);
 
     // Build new cards_ in snap order, reusing existing PluginCards by
     // NodeId so visual state survives reorder/bypass.
@@ -114,11 +116,9 @@ void SignalCanvas::changeListenerCallback(juce::ChangeBroadcaster*)
     // NodeIds — letting the unique_ptrs fall out of scope destroys them.
     cards_ = std::move(next);
 
-    // Apply move-button enable state + accent colour from patch metadata.
+    // Apply accent colour from patch metadata.
     for (std::size_t i = 0; i < cards_.size(); ++i)
     {
-        cards_[i]->setMovableUp(i > 0);
-        cards_[i]->setMovableDown(i + 1 < cards_.size());
         const auto* pn = patch.findNode(cards_[i]->getNodeId());
         if (pn != nullptr)
             cards_[i]->setAccentColour(isInstrumentNode(*pn) ? tokens::accentWarning : tokens::accentPrimary);
@@ -145,41 +145,73 @@ std::unique_ptr<PluginCard> SignalCanvas::makeCard(const PluginCard::NodeSnapsho
     PluginCard::Callbacks cb{
         [this](NodeId id) { onCardBypassToggle(id); },
         [this](NodeId id) { onCardEdit(id); },
-        [this](NodeId id) { onCardMoveUp(id); },
-        [this](NodeId id) { onCardMoveDown(id); },
         [this](NodeId id) { onCardRemove(id); },
+        [this](NodeId id) { onCardDragging(id); },
+        [this](NodeId id, juce::Point<int> p) { onCardMoved(id, p); },
     };
     return std::make_unique<PluginCard>(s, std::move(cb));
 }
 
 void SignalCanvas::layoutCards()
 {
-    const int centreY = juce::jmax(getHeight() / 2, kCanvasMarginY + kCardHeight / 2);
-    const int cardY = centreY - kCardHeight / 2;
-    int x = kCanvasMarginX;
-
-    inputCardBounds_ = {x, cardY, kEndpointWidth, kCardHeight};
-    x += kEndpointWidth + kCardSpacingX;
+    // Free positioning: a card sits at its stored (x, y); an unpositioned card
+    // (freshly added, or a pre-position patch) takes a left-to-right auto-slot,
+    // and that slot is immediately seeded back into the Session as the card's
+    // real position. Without the seed, auto-slots are assigned by a running
+    // counter over the *unpositioned* cards only — so the first drag of any
+    // card shifts every remaining auto card one slot left on the next relayout,
+    // piling cards on top of each other.
+    const int rowY = juce::jmax(kCanvasMarginY, getParentHeight() / 2 - kCardHeight / 2);
+    int autoX = kCanvasMarginX + kEndpointWidth + kCardSpacingX;
 
     idToIndex_.clear();
     idToIndex_.reserve(cards_.size());
+
+    std::vector<session::Session::NodePositionSeed> seeds;
+
+    int contentRight = autoX;
+    int contentBottom = rowY + kCardHeight;
     for (std::size_t i = 0; i < cards_.size(); ++i)
     {
-        cards_[i]->setBounds(x, cardY, kCardWidth, kCardHeight);
+        int cx, cy;
+        if (cards_[i]->hasStoredPosition())
+        {
+            const auto p = cards_[i]->storedPosition();
+            cx = p.getX();
+            cy = p.getY();
+        }
+        else
+        {
+            cx = autoX;
+            cy = rowY;
+            autoX += kCardWidth + kCardSpacingX;
+            seeds.push_back({cards_[i]->getNodeId(), static_cast<float>(cx), static_cast<float>(cy)});
+        }
+        cards_[i]->setBounds(cx, cy, kCardWidth, kCardHeight);
         idToIndex_[cards_[i]->getNodeId()] = i;
-        x += kCardWidth + kCardSpacingX;
+        contentRight = juce::jmax(contentRight, cx + kCardWidth);
+        contentBottom = juce::jmax(contentBottom, cy + kCardHeight);
     }
 
-    outputCardBounds_ = {x, cardY, kEndpointWidth, kCardHeight};
-    const int rightEdge = outputCardBounds_.getRight() + kCanvasMarginX;
+    // Persist the auto-slots (async change message re-enters layoutCards once,
+    // finds every card positioned, and seeds nothing — no loop). Skip while
+    // parentless: the constructor's first layout runs before the Viewport
+    // adopts the canvas, and would bake positions from zero-sized geometry.
+    if (!seeds.empty() && getParentComponent() != nullptr)
+        ctx_.session.seedNodePositions(seeds);
 
-    // Grow canvas width to fit; juce::Viewport handles horizontal
-    // scrolling on long chains.
-    const int targetWidth = juce::jmax(rightEdge, getParentWidth());
-    setSize(targetWidth, juce::jmax(kCardHeight + 2 * kCanvasMarginY, getParentHeight()));
+    // Endpoints anchor the I/O at the canvas extremes, vertically centred.
+    const int endpointY = rowY;
+    inputCardBounds_ = {kCanvasMarginX, endpointY, kEndpointWidth, kCardHeight};
+    const int outX = juce::jmax(contentRight + kCardSpacingX, inputCardBounds_.getRight() + kCardSpacingX);
+    outputCardBounds_ = {outX, endpointY, kEndpointWidth, kCardHeight};
 
-    rebuildCables();
-    repaint();
+    // Grow canvas to fit all content; the parent juce::Viewport scrolls.
+    const int targetWidth = juce::jmax(outputCardBounds_.getRight() + kCanvasMarginX, getParentWidth());
+    const int targetHeight = juce::jmax(contentBottom + kCanvasMarginY, getParentHeight());
+    setSize(targetWidth, targetHeight);
+
+    repaint(); // cables are drawn per-cable in paint() from connections_ + live positions
 }
 
 juce::Point<int> SignalCanvas::portPositionFor(NodeId id, int channel, bool asSource) const
@@ -210,26 +242,45 @@ juce::Point<int> SignalCanvas::portPositionFor(NodeId id, int channel, bool asSo
     return card.getPosition() + card.getPortCentre(/*isInput*/ !asSource, channel);
 }
 
-void SignalCanvas::rebuildCables()
+void SignalCanvas::strokeCable(
+    juce::Graphics& g, juce::Point<int> from, juce::Point<int> to, bool midi, bool bypassed, bool selected) const
 {
-    audioCablesPath_.clear();
-    midiCablesPath_.clear();
+    juce::Path path;
+    appendCableTo(path,
+                  static_cast<float>(from.getX()),
+                  static_cast<float>(from.getY()),
+                  static_cast<float>(to.getX()),
+                  static_cast<float>(to.getY()));
 
-    auto patch = ctx_.session.getActivePatch();
-    for (const auto& c : patch.connections)
+    const float thickness = selected ? 4.0f : (midi ? kCableMidiThickness : 3.0f);
+    const juce::PathStrokeType stroke(thickness, juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
+
+    if (selected)
     {
-        const auto from = portPositionFor(c.src, c.srcChannel, /*asSource*/ true);
-        const auto to = portPositionFor(c.dst, c.dstChannel, /*asSource*/ false);
-        if (from.isOrigin() || to.isOrigin())
-            continue;
-
-        auto& target = (c.srcChannel == kChannelMidi) ? midiCablesPath_ : audioCablesPath_;
-        appendCableTo(target,
-                      static_cast<float>(from.getX()),
-                      static_cast<float>(from.getY()),
-                      static_cast<float>(to.getX()),
-                      static_cast<float>(to.getY()));
+        g.setColour(tokens::accentPrimary);
+        g.strokePath(path, stroke);
+        return;
     }
+
+    if (midi)
+    {
+        g.setColour(bypassed ? tokens::accentInfo.withAlpha(0.4f) : tokens::accentInfo);
+        g.strokePath(path, stroke);
+        return;
+    }
+
+    // Audio: amber -> teal gradient along the cable, the demo's signature look.
+    // A bypassed source dims its cables so the "off" node reads at a glance.
+    auto start = tokens::accentWarning;
+    auto end = tokens::accentPrimary;
+    if (bypassed)
+    {
+        start = start.withAlpha(0.4f);
+        end = end.withAlpha(0.4f);
+    }
+    juce::ColourGradient grad(start, from.toFloat(), end, to.toFloat(), /*isRadial*/ false);
+    g.setGradientFill(grad);
+    g.strokePath(path, stroke);
 }
 
 void SignalCanvas::resized()
@@ -250,6 +301,16 @@ void SignalCanvas::paint(juce::Graphics& g)
         for (int gx = clip.getX() - (clip.getX() % gridStep); gx < clip.getRight(); gx += gridStep)
             g.fillRect(gx, gy, 1, 1);
 
+    // Soft drop shadow behind each card — drawn here (under the cards, which are
+    // child components painted on top) so the blurred halo extends past the card
+    // bounds for the lifted, modern look.
+    for (const auto& card : cards_)
+    {
+        juce::Path cardPath;
+        cardPath.addRoundedRectangle(card->getBounds().toFloat(), 6.0f);
+        juce::DropShadow(juce::Colours::black.withAlpha(0.35f), 12, {0, 3}).drawForPath(g, cardPath);
+    }
+
     // Endpoint card frames.
     auto drawEndpoint = [&g](const juce::Rectangle<int>& r, const juce::String& label)
     {
@@ -265,14 +326,38 @@ void SignalCanvas::paint(juce::Graphics& g)
     drawEndpoint(inputCardBounds_, "Input");
     drawEndpoint(outputCardBounds_, "Output");
 
-    // Cables — two paths, two strokes, regardless of N. Audio first
-    // (drawn underneath), MIDI on top so it reads even when stacked.
-    g.setColour(cableColourFor(kChannelL));
-    g.strokePath(audioCablesPath_, juce::PathStrokeType(kCableThickness));
-    g.setColour(cableColourFor(kChannelMidi));
-    g.strokePath(
-        midiCablesPath_,
-        juce::PathStrokeType(kCableMidiThickness, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    // Cables — one stroke per connection so each carries its own amber->teal
+    // gradient (audio), cyan (MIDI), dashing (bypassed source), or selection
+    // highlight. Cheap enough at interactive graph sizes; drawn behind the cards.
+    for (const auto& c : connections_)
+    {
+        const auto from = portPositionFor(c.src, c.srcChannel, /*asSource*/ true);
+        const auto to = portPositionFor(c.dst, c.dstChannel, /*asSource*/ false);
+        if (from.isOrigin() || to.isOrigin())
+            continue;
+        const bool midi = (c.srcChannel == kChannelMidi);
+        const bool bypassed = (bypassedNodes_.find(c.src) != bypassedNodes_.end());
+        const bool selected = (selectedCable_.has_value() && *selectedCable_ == c);
+        strokeCable(g, from, to, midi, bypassed, selected);
+    }
+
+    // Live connection-drag preview from the anchored port to the cursor.
+    if (dragging_)
+    {
+        const auto anchor = portPositionFor(dragAnchor_.node, dragAnchor_.channel, dragAnchor_.isSource);
+        if (!anchor.isOrigin())
+        {
+            const auto a = anchor.toFloat();
+            const auto c = dragCursor_.toFloat();
+            juce::Path preview;
+            if (dragAnchor_.isSource)
+                appendCableTo(preview, a.getX(), a.getY(), c.getX(), c.getY());
+            else
+                appendCableTo(preview, c.getX(), c.getY(), a.getX(), a.getY());
+            g.setColour(tokens::accentPrimary.withAlpha(0.7f));
+            g.strokePath(preview, juce::PathStrokeType(kCableThickness, juce::PathStrokeType::curved));
+        }
+    }
 }
 
 // ----- Card delegates --------------------------------------------------------
@@ -327,22 +412,6 @@ void SignalCanvas::onCardEdit(NodeId id)
     editors_[id] = std::make_unique<EditorWindow>(title, editor, std::move(onClose));
 }
 
-void SignalCanvas::onCardMoveUp(NodeId id)
-{
-    auto it = idToIndex_.find(id);
-    if (it == idToIndex_.end() || it->second == 0)
-        return;
-    ctx_.session.moveNode(id, static_cast<int>(it->second) - 1);
-}
-
-void SignalCanvas::onCardMoveDown(NodeId id)
-{
-    auto it = idToIndex_.find(id);
-    if (it == idToIndex_.end() || it->second + 1 >= cards_.size())
-        return;
-    ctx_.session.moveNode(id, static_cast<int>(it->second) + 1);
-}
-
 void SignalCanvas::onCardRemove(NodeId id)
 {
     // CALLER-MANAGED EDITOR LIFECYCLE (D1b / AC-UI-P): close any open
@@ -352,6 +421,183 @@ void SignalCanvas::onCardRemove(NodeId id)
     // message, so a listener-side close would be too late.
     editors_.erase(id);
     ctx_.session.removeNode(id);
+}
+
+void SignalCanvas::onCardMoved(NodeId id, juce::Point<int> newPos)
+{
+    // Clamp to the canvas margins so a card can't be dragged off the top-left
+    // out of reach, then persist. The resulting change message re-runs
+    // layoutCards, which re-reads the stored position (no jump).
+    const int x = juce::jmax(kCanvasMarginX, newPos.getX());
+    const int y = juce::jmax(kCanvasMarginY, newPos.getY());
+    ctx_.session.setNodePosition(id, static_cast<float>(x), static_cast<float>(y));
+}
+
+void SignalCanvas::onCardDragging(NodeId)
+{
+    // The card has already moved itself (ComponentDragger); cables are drawn
+    // per-cable in paint() from the live card positions, so a repaint glues them
+    // to the moving card.
+    repaint();
+}
+
+// ----- Port drag-to-connect / cable selection (U4) ---------------------------
+
+SignalCanvas::PortRef SignalCanvas::portAt(juce::Point<int> p) const
+{
+    constexpr int kPortPickRadius = 16;
+    PortRef best;
+    int bestDist = kPortPickRadius + 1;
+
+    auto consider = [&](NodeId node, int channel, bool asSource)
+    {
+        const auto pos = portPositionFor(node, channel, asSource);
+        if (pos.isOrigin())
+            return;
+        const int d = pos.getDistanceFrom(p);
+        if (d < bestDist)
+        {
+            bestDist = d;
+            best = {node, channel, asSource, true};
+        }
+    };
+
+    const int chans[] = {kChannelL, kChannelR, kChannelMidi};
+
+    // graphIO endpoints: Input endpoint emits (asSource), Output endpoint sinks.
+    for (const int ch : chans)
+    {
+        consider(session::graphIO, ch, /*asSource*/ true);
+        consider(session::graphIO, ch, /*asSource*/ false);
+    }
+    // Node ports: outputs (asSource) on the right, inputs (!asSource) on the left.
+    for (const auto& card : cards_)
+    {
+        const NodeId id = card->getNodeId();
+        for (const int ch : chans)
+        {
+            consider(id, ch, /*asSource*/ true);
+            consider(id, ch, /*asSource*/ false);
+        }
+    }
+    return best;
+}
+
+std::optional<session::PatchConnection> SignalCanvas::cableAt(juce::Point<int> p) const
+{
+    constexpr float kCablePickTol = 6.0f;
+    const auto pf = p.toFloat();
+    std::optional<session::PatchConnection> best;
+    float bestDist = kCablePickTol;
+
+    for (const auto& c : connections_)
+    {
+        const auto from = portPositionFor(c.src, c.srcChannel, /*asSource*/ true);
+        const auto to = portPositionFor(c.dst, c.dstChannel, /*asSource*/ false);
+        if (from.isOrigin() || to.isOrigin())
+            continue;
+
+        juce::Path path;
+        appendCableTo(path,
+                      static_cast<float>(from.getX()),
+                      static_cast<float>(from.getY()),
+                      static_cast<float>(to.getX()),
+                      static_cast<float>(to.getY()));
+        juce::Point<float> nearest;
+        path.getNearestPoint(pf, nearest);
+        const float d = nearest.getDistanceFrom(pf);
+        if (d < bestDist)
+        {
+            bestDist = d;
+            best = c;
+        }
+    }
+    return best;
+}
+
+std::optional<session::PatchConnection> SignalCanvas::connectionInto(const PortRef& port) const
+{
+    for (const auto& c : connections_)
+        if (c.dst == port.node && c.dstChannel == port.channel)
+            return c;
+    return std::nullopt;
+}
+
+void SignalCanvas::mouseDown(const juce::MouseEvent& e)
+{
+    grabKeyboardFocus();
+    const auto p = e.getPosition();
+
+    if (const auto port = portAt(p); port.valid)
+    {
+        selectedCable_.reset();
+
+        // Grabbing a connected destination port detaches its cable and re-drags
+        // from the original source, so you can pull a cable off and drop it
+        // somewhere else. (A source port instead starts a fresh fan-out drag.)
+        if (!port.isSource)
+        {
+            if (const auto existing = connectionInto(port))
+            {
+                ctx_.session.removeConnection(existing->src, existing->srcChannel, existing->dst, existing->dstChannel);
+                dragAnchor_ = PortRef{existing->src, existing->srcChannel, /*isSource*/ true, /*valid*/ true};
+                dragging_ = true;
+                dragCursor_ = p;
+                repaint();
+                return;
+            }
+        }
+
+        dragging_ = true;
+        dragAnchor_ = port;
+        dragCursor_ = p;
+        repaint();
+        return;
+    }
+
+    // Background click: select a cable under the cursor (or clear selection).
+    selectedCable_ = cableAt(p);
+    repaint();
+}
+
+void SignalCanvas::mouseDrag(const juce::MouseEvent& e)
+{
+    if (!dragging_)
+        return;
+    dragCursor_ = e.getPosition();
+    repaint();
+}
+
+void SignalCanvas::mouseUp(const juce::MouseEvent& e)
+{
+    if (!dragging_)
+        return;
+    dragging_ = false;
+
+    const auto target = portAt(e.getPosition());
+    // A valid edge needs the two ends to be opposite directions (one source,
+    // one dest). Session::addConnection enforces the rest (out->in, same signal,
+    // no self/duplicate/cycle).
+    if (target.valid && target.isSource != dragAnchor_.isSource)
+    {
+        const PortRef& src = dragAnchor_.isSource ? dragAnchor_ : target;
+        const PortRef& dst = dragAnchor_.isSource ? target : dragAnchor_;
+        ctx_.session.addConnection(src.node, src.channel, dst.node, dst.channel);
+        // The Session change message rebuilds cables; just clear the preview.
+    }
+    repaint();
+}
+
+bool SignalCanvas::keyPressed(const juce::KeyPress& key)
+{
+    if (selectedCable_.has_value() && (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey))
+    {
+        const auto c = *selectedCable_;
+        selectedCable_.reset();
+        ctx_.session.removeConnection(c.src, c.srcChannel, c.dst, c.dstChannel);
+        return true;
+    }
+    return false;
 }
 
 } // namespace pedalboard3::ui

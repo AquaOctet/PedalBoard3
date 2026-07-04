@@ -5,10 +5,14 @@
 #include "PluginCard.h"
 #include "session/NodeId.h"
 
+#include "session/Patch.h"
+
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <memory>
+#include <optional>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace pedalboard3::ui
@@ -16,13 +20,12 @@ namespace pedalboard3::ui
 
 // SignalCanvas — read-only signal-flow view for Path γ.
 //
-// Renders the active patch as a left-to-right sequence of cards
-// (virtual "Input" endpoint → user plugin cards → virtual "Output"
-// endpoint), with bezier audio + MIDI cables drawn between adjacent
-// cards' ports. Path γ ships read-only: ports are drawn but not
-// click-to-connect; cards have per-card buttons but are not draggable.
-// Phase 3 grows this into the full editor (drag-rearrange, port-click
-// connections, lasso, zoom).
+// Renders the active patch as a free 2D graph of cards (virtual "Input"
+// endpoint → user plugin cards → virtual "Output" endpoint), with bezier
+// audio + MIDI cables drawn between ports. Cards are draggable: each carries a
+// persisted (x, y); an unpositioned card auto-lays-out left-to-right until
+// dragged. Ports are still drawn-only here — port drag-to-connect lands in the
+// next unit (U4); zoom/pan follows.
 //
 // Threading: message thread only.
 //
@@ -44,15 +47,13 @@ namespace pedalboard3::ui
 // is defensive only (catches restore-on-launch and other UI-bypassing
 // paths).
 //
-// Cable derivation (D2, D3):
-// --------------------------
-// `rebuildCables()` runs once per `layoutCards()` (which runs from
-// the listener and from `resized()`), builds two cached
-// `juce::Path` members (audioCablesPath_, midiCablesPath_), and
-// `paint()` makes 2 stroke calls per material regardless of N. The
-// paths are derived from `activePatch_.connections` (not from chain
-// adjacency) so Phase 3's arbitrary-topology canvas reuses the same
-// rendering.
+// Cable rendering:
+// ----------------
+// `paint()` draws one stroke per connection (from the cached `connections_`
+// vector + live card positions) so each cable can carry its own amber->teal
+// gradient (audio), cyan (MIDI), dimming (bypassed source), or selection
+// highlight. Derived from `connections_` (arbitrary topology), not chain
+// adjacency.
 class SignalCanvas : public juce::Component, private juce::ChangeListener
 {
 public:
@@ -70,25 +71,50 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
 
+    // Port drag-to-connect / cable selection live on the canvas (cards delegate
+    // their port pixels here via hitTest).
+    void mouseDown(const juce::MouseEvent&) override;
+    void mouseDrag(const juce::MouseEvent&) override;
+    void mouseUp(const juce::MouseEvent&) override;
+    bool keyPressed(const juce::KeyPress&) override;
+
 private:
     void changeListenerCallback(juce::ChangeBroadcaster*) override;
 
     void layoutCards();
-    void rebuildCables();
+    // Stroke one cable (gradient for audio, cyan for MIDI; dashed when its
+    // source node is bypassed; highlighted when selected).
+    void strokeCable(
+        juce::Graphics&, juce::Point<int> from, juce::Point<int> to, bool midi, bool bypassed, bool selected) const;
 
     std::unique_ptr<PluginCard> makeCard(const PluginCard::NodeSnapshot&);
 
     // Card-side delegates wired through PluginCard::Callbacks.
     void onCardBypassToggle(NodeId);
     void onCardEdit(NodeId);
-    void onCardMoveUp(NodeId);
-    void onCardMoveDown(NodeId);
     void onCardRemove(NodeId);
+    void onCardMoved(NodeId, juce::Point<int> newPos);
+    void onCardDragging(NodeId);
 
     // Map a graphIO sentinel to either the input or output endpoint
     // bounds; map any other NodeId to its card's index in cards_.
     bool isGraphIO(NodeId id) const noexcept;
     juce::Point<int> portPositionFor(NodeId, int channel, bool asSource) const;
+
+    // A single pin on a node or the graphIO endpoints. `isSource` = it emits
+    // signal (a node output, or the Input endpoint); a connection is always
+    // source -> dest.
+    struct PortRef
+    {
+        NodeId node{session::graphIO};
+        int channel{0};
+        bool isSource{false};
+        bool valid{false};
+    };
+    PortRef portAt(juce::Point<int>) const;
+    std::optional<session::PatchConnection> cableAt(juce::Point<int>) const;
+    // The connection feeding a destination port (for grab-to-detach), if any.
+    std::optional<session::PatchConnection> connectionInto(const PortRef&) const;
 
     AppContext& ctx_;
 
@@ -99,8 +125,17 @@ private:
     juce::Rectangle<int> inputCardBounds_;
     juce::Rectangle<int> outputCardBounds_;
 
-    juce::Path audioCablesPath_;
-    juce::Path midiCablesPath_;
+    // Cached on each Session change so paint() (which redraws cables per
+    // drag-frame to keep them glued to a moving card) never re-copies the whole
+    // patch. bypassedNodes_ drives dashed cables for bypassed sources.
+    std::vector<session::PatchConnection> connections_;
+    std::unordered_set<NodeId> bypassedNodes_;
+
+    // Interaction state (U4).
+    bool dragging_{false};
+    PortRef dragAnchor_;                                    // the fixed end of a connection drag
+    juce::Point<int> dragCursor_;                           // current cursor in canvas space
+    std::optional<session::PatchConnection> selectedCable_; // for click-select + Delete
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SignalCanvas)
 };

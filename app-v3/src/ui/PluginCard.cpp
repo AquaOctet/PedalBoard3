@@ -10,6 +10,7 @@ namespace
 constexpr float kCardCornerRadius = 6.0f;
 constexpr float kCardBorderThickness = 1.0f;
 constexpr float kAccentBorderWidth = 4.0f;
+constexpr int kAccentInset = 4; // integer form of kAccentBorderWidth for pixel layout
 
 // Layout constants (the card is a fixed 170 × 140 from SignalCanvas's
 // layoutCards; rows here add up to that). Defined privately rather
@@ -18,9 +19,8 @@ constexpr float kAccentBorderWidth = 4.0f;
 constexpr int kHeaderHeight = 28;
 constexpr int kPortRowHeight = 22;
 constexpr int kMidiRowHeight = 18;
-constexpr int kMoveRowHeight = 28;
 
-constexpr int kPortRadius = 5;
+constexpr int kPortRadius = 6;
 constexpr int kPortStripeInset = 12; // distance from L/R edge to port centre
 
 constexpr int kPaddingX = 8;
@@ -45,8 +45,6 @@ PluginCard::PluginCard(NodeSnapshot initialSnapshot, Callbacks callbacks)
     wireSmallButton(bypassButton_);
     wireSmallButton(editButton_);
     wireSmallButton(removeButton_);
-    wireSmallButton(moveUpButton_);
-    wireSmallButton(moveDownButton_);
 
     removeButton_.setColour(juce::TextButton::textColourOffId, tokens::accentDestructive);
 
@@ -64,16 +62,6 @@ PluginCard::PluginCard(NodeSnapshot initialSnapshot, Callbacks callbacks)
     {
         if (callbacks_.onRemove)
             callbacks_.onRemove(snapshot_.id);
-    };
-    moveUpButton_.onClick = [this]
-    {
-        if (callbacks_.onMoveUp)
-            callbacks_.onMoveUp(snapshot_.id);
-    };
-    moveDownButton_.onClick = [this]
-    {
-        if (callbacks_.onMoveDown)
-            callbacks_.onMoveDown(snapshot_.id);
     };
 
     refreshFromSnapshot();
@@ -101,16 +89,6 @@ void PluginCard::setAccentColour(juce::Colour c)
         return;
     accent_ = c;
     repaint();
-}
-
-void PluginCard::setMovableUp(bool ok)
-{
-    moveUpButton_.setEnabled(ok);
-}
-
-void PluginCard::setMovableDown(bool ok)
-{
-    moveDownButton_.setEnabled(ok);
 }
 
 void PluginCard::refreshFromSnapshot()
@@ -165,9 +143,9 @@ void PluginCard::paint(juce::Graphics& g)
                                      false);
     g.fillPath(accentStripe);
 
-    // Outer border.
-    g.setColour(tokens::borderDefault);
-    g.drawRoundedRectangle(bounds, kCardCornerRadius, kCardBorderThickness);
+    // Outer border — brightens to the accent on hover for a "liftable" feel.
+    g.setColour(hovered_ ? accent_.withAlpha(0.8f) : tokens::borderDefault);
+    g.drawRoundedRectangle(bounds, kCardCornerRadius, hovered_ ? 1.5f : kCardBorderThickness);
 
     // Header divider line below the title row.
     const auto y1 = static_cast<float>(kHeaderHeight);
@@ -184,17 +162,19 @@ void PluginCard::paint(juce::Graphics& g)
     const int portRowL = portsTopY + kPortRowHeight / 2;
     const int portRowR = portsTopY + kPortRowHeight + kPortRowHeight / 2;
 
+    // Solid coloured dots so it's obvious where to grab a cable (a dark ring
+    // separates the dot from the card body).
     auto drawPort = [&](int cx, int cy, juce::Colour c)
     {
         auto box = juce::Rectangle<float>(0.0f, 0.0f, kPortRadius * 2.0f, kPortRadius * 2.0f)
                        .withCentre({static_cast<float>(cx), static_cast<float>(cy)});
-        g.setColour(tokens::bgWindow);
-        g.fillEllipse(box);
         g.setColour(c);
+        g.fillEllipse(box);
+        g.setColour(tokens::bgWindow);
         g.drawEllipse(box, 1.5f);
     };
 
-    const int leftPortX = static_cast<int>(bounds.getX()) + kAccentBorderWidth + kPortStripeInset;
+    const int leftPortX = static_cast<int>(bounds.getX()) + kAccentInset + kPortStripeInset;
     const int rightPortX = static_cast<int>(bounds.getRight()) - kPortStripeInset;
 
     // Audio L (input + output) — input port colour = primary teal,
@@ -210,25 +190,23 @@ void PluginCard::paint(juce::Graphics& g)
     g.drawText("In R", leftPortX + kPortRadius + 4, portRowR - 7, 30, 14, juce::Justification::centredLeft);
     g.drawText("Out R", rightPortX - kPortRadius - 34, portRowR - 7, 30, 14, juce::Justification::centredRight);
 
-    // MIDI activity strip — placeholder (no router yet).
+    // MIDI row: in/out ports at the card edges — the same anchors
+    // getPortCentre reports, so the visible dot is exactly where a cable
+    // terminates and where the canvas's grab hotspot lives. (The old single
+    // mid-card dot sat ~30px away from the interaction point.)
     const int midiY = kHeaderHeight + 2 * kPortRowHeight + 4;
     g.setColour(tokens::borderMuted);
     g.drawHorizontalLine(midiY, bounds.getX() + kAccentBorderWidth, bounds.getRight());
     g.setColour(tokens::fgMuted);
     g.drawText("MIDI",
-               static_cast<int>(bounds.getX()) + kAccentBorderWidth + kPaddingX,
+               static_cast<int>(bounds.getX()) + kAccentInset + kPaddingX + kPortRadius * 2,
                midiY + 2,
                40,
                kMidiRowHeight - 4,
                juce::Justification::centredLeft);
-    drawPort(static_cast<int>(bounds.getX()) + kAccentBorderWidth + kPaddingX + 36,
-             midiY + kMidiRowHeight / 2,
-             tokens::accentInfo);
-
-    // Bottom divider.
-    const int moveRowTop = midiY + kMidiRowHeight;
-    g.setColour(tokens::borderMuted);
-    g.drawHorizontalLine(moveRowTop, bounds.getX() + kAccentBorderWidth, bounds.getRight());
+    const int midiPortY = midiY + kMidiRowHeight / 2;
+    drawPort(leftPortX, midiPortY, tokens::accentInfo);
+    drawPort(rightPortX, midiPortY, tokens::accentInfo);
 }
 
 void PluginCard::resized()
@@ -248,17 +226,69 @@ void PluginCard::resized()
     buttonStrip.removeFromLeft(btnGap);
     removeButton_.setBounds(buttonStrip.removeFromLeft(btnW));
 
-    // Port rows + MIDI row are paint-only; skip vertical space.
-    bounds.removeFromTop(2 * kPortRowHeight + kMidiRowHeight + 4);
+    // Port rows + MIDI row are paint-only; no further child layout (the old
+    // Move ↑/↓ row was removed — dragging the card body repositions it).
+}
 
-    // Move row — two buttons centred.
-    auto moveRow = bounds.removeFromTop(kMoveRowHeight).reduced(kPaddingX, 4);
-    const int moveBtnW = 28;
-    const int spacing = 8;
-    auto moveLeft = moveRow.removeFromLeft((moveRow.getWidth() - 2 * moveBtnW - spacing) / 2 + moveBtnW);
-    moveUpButton_.setBounds(moveLeft.removeFromRight(moveBtnW));
-    moveRow.removeFromLeft(spacing);
-    moveDownButton_.setBounds(moveRow.removeFromLeft(moveBtnW));
+bool PluginCard::hitTest(int x, int y)
+{
+    // Port hotspots are owned by SignalCanvas (drag-to-connect): report them as
+    // "not on the card" so the click falls through to the canvas behind. The
+    // card still paints the ports; only the interaction is delegated.
+    // Generous so a port grab reliably wins over a card-body drag.
+    constexpr int kPortHotspot = 16;
+    const juce::Point<int> p{x, y};
+    // midiChannelIndex is an unnamed enum, so cast it to match the int literals
+    // in the braced-init list (otherwise the list's element type can't deduce).
+    for (const bool isInput : {true, false})
+        for (const int ch : {0, 1, static_cast<int>(juce::AudioProcessorGraph::midiChannelIndex)})
+            if (p.getDistanceFrom(getPortCentre(isInput, ch)) <= kPortHotspot)
+                return false;
+    return true;
+}
+
+// ----- Drag-to-move ----------------------------------------------------------
+// The card body is draggable; the child TextButtons consume their own clicks
+// and nameLabel_ has intercepts disabled, so a drag that starts on the body
+// (or a port) repositions the card. SignalCanvas persists the new position on
+// release via Session::setNodePosition.
+
+void PluginCard::mouseDown(const juce::MouseEvent& e)
+{
+    didDrag_ = false;
+    dragger_.startDraggingComponent(this, e);
+}
+
+void PluginCard::mouseDrag(const juce::MouseEvent& e)
+{
+    // Only treat it as a drag once the pointer has actually moved, so a plain
+    // click on the body doesn't nudge the card.
+    if (e.getDistanceFromDragStart() > 3)
+    {
+        didDrag_ = true;
+        dragger_.dragComponent(this, e, nullptr);
+        if (callbacks_.onDragging)
+            callbacks_.onDragging(snapshot_.id); // canvas re-strokes cables live
+    }
+}
+
+void PluginCard::mouseUp(const juce::MouseEvent&)
+{
+    if (didDrag_ && callbacks_.onMoved)
+        callbacks_.onMoved(snapshot_.id, getPosition());
+    didDrag_ = false;
+}
+
+void PluginCard::mouseEnter(const juce::MouseEvent&)
+{
+    hovered_ = true;
+    repaint();
+}
+
+void PluginCard::mouseExit(const juce::MouseEvent&)
+{
+    hovered_ = false;
+    repaint();
 }
 
 } // namespace pedalboard3::ui

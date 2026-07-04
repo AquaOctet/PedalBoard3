@@ -28,6 +28,15 @@ Pb3LookAndFeel::Pb3LookAndFeel()
         tokens::fgPrimary,     //  menuText
     });
 
+    // Default sans-serif typeface — a clean system font so the app and JUCE's own
+    // dialogs (the plugin-list / scan window) render with a known-good face
+    // instead of JUCE's default pick, which rendered poorly on Windows. No
+    // bundled binary; uses a font that ships with the OS. macOS / Linux keep
+    // JUCE's fontconfig/CoreText default (they render fine already).
+#if JUCE_WINDOWS
+    setDefaultSansSerifTypefaceName("Segoe UI");
+#endif
+
     // ----- TextButton -------------------------------------------------------
     setColour(juce::TextButton::buttonColourId, tokens::bgCard);
     setColour(juce::TextButton::buttonOnColourId, tokens::accentPrimary);

@@ -512,3 +512,54 @@ TEST_CASE("Patch: patchIdentityString distinguishes internal node types", "[sess
     plugin.nodes.push_back(makeNode(1, "LevelProcessor")); // a plugin literally named "LevelProcessor"
     REQUIRE(session::patchIdentityString(level) != session::patchIdentityString(plugin));
 }
+
+// ---- Canvas node positions (interactive editor) --------------------------
+
+TEST_CASE("Patch: a default-constructed node is unpositioned", "[session][patch][position]")
+{
+    session::PatchNode n;
+    REQUIRE_FALSE(n.hasPosition());
+}
+
+TEST_CASE("Patch: node x/y round-trips through XML when set", "[session][patch][xml][position]")
+{
+    session::Patch p;
+    auto a = makeNode(1, "Comp");
+    a.x = 120.5f;
+    a.y = 48.0f;
+    p.nodes.push_back(a);
+    p.nodes.push_back(makeNode(2, "Reverb")); // left unpositioned
+
+    // Hold the unique_ptr in a local — getChildByName returns a raw pointer into
+    // the tree, which a temporary patchToXml(p) would free at the semicolon.
+    auto xml = session::patchToXml(p);
+    auto* nodesEl = xml->getChildByName("NODES");
+    REQUIRE(nodesEl != nullptr);
+    REQUIRE(nodesEl->getFirstChildElement()->hasAttribute("x"));
+    // The unpositioned node writes no x/y.
+    REQUIRE_FALSE(nodesEl->getChildElement(1)->hasAttribute("x"));
+
+    auto rt = session::patchFromXml(*xml);
+    REQUIRE(rt != nullptr);
+    REQUIRE(rt->nodes[0].hasPosition());
+    REQUIRE(rt->nodes[0].x == 120.5f);
+    REQUIRE(rt->nodes[0].y == 48.0f);
+    REQUIRE_FALSE(rt->nodes[1].hasPosition()); // stays auto-layout
+}
+
+TEST_CASE("Patch: a node with no x/y attributes loads unpositioned (back-compat)", "[session][patch][xml][position]")
+{
+    // A pre-position .pdl has <NODE> with no x/y; it must read back unpositioned
+    // so SignalCanvas auto-lays-out rather than stacking nodes at (0,0).
+    session::Patch p;
+    p.nodes.push_back(makeNode(1, "Legacy"));
+    auto rt = session::patchFromXml(*session::patchToXml(p));
+    REQUIRE(rt != nullptr);
+    REQUIRE_FALSE(rt->nodes[0].hasPosition());
+
+    // A node with only x (malformed) is also treated as unpositioned.
+    auto xml = session::patchToXml(p);
+    xml->getChildByName("NODES")->getFirstChildElement()->setAttribute("x", 10.0);
+    auto rt2 = session::patchFromXml(*xml);
+    REQUIRE_FALSE(rt2->nodes[0].hasPosition());
+}

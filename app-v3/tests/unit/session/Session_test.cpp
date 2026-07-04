@@ -12,6 +12,7 @@
 #include "support/OfflineRender.h"
 #include "support/TestGainProcessor.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <thread>
@@ -449,4 +450,163 @@ TEST_CASE("Session: destructive mutators are no-ops while a rebuild is in flight
     // Once the rebuild lands the chain is intact and mutable again.
     pumpUntilIdle(s);
     REQUIRE(s.getNodeCount() == 2);
+}
+
+// ---- U2: free-routing connection API -------------------------------------
+
+namespace
+{
+constexpr int kMidi = juce::AudioProcessorGraph::midiChannelIndex;
+
+session::Patch makeThreeNodeChain()
+{
+    session::Patch p;
+    for (int i = 1; i <= 3; ++i)
+    {
+        session::PatchNode n;
+        n.id = i;
+        n.desc = makeDesc("P" + juce::String(i));
+        p.nodes.push_back(n);
+    }
+    p.connections = session::linearChainConnections(p.nodes);
+    return p;
+}
+
+bool hasConn(const std::vector<session::PatchConnection>& v, session::NodeId s, int sc, session::NodeId d, int dc)
+{
+    return std::any_of(v.begin(),
+                       v.end(),
+                       [&](const session::PatchConnection& c)
+                       { return c.src == s && c.srcChannel == sc && c.dst == d && c.dstChannel == dc; });
+}
+
+bool touchesNode(const std::vector<session::PatchConnection>& v, session::NodeId id)
+{
+    return std::any_of(
+        v.begin(), v.end(), [&](const session::PatchConnection& c) { return c.src == id || c.dst == id; });
+}
+
+// Build a Session sitting Idle on a 3-node linear chain.
+struct ChainFixture
+{
+    engine::AudioEngine eng;
+    engine::PluginHost host;
+    FakeBuilder builder;
+    session::Session s{eng, host, builder.fn()};
+
+    ChainFixture()
+    {
+        eng.initialise();
+        s.replacePatch(makeThreeNodeChain());
+        pumpUntilIdle(s);
+    }
+};
+} // namespace
+
+TEST_CASE("Session: addConnection adds a valid parallel/skip edge", "[session][routing]")
+{
+    ChainFixture f;
+    REQUIRE(f.s.getNodeCount() == 3);
+
+    // Skip edge 1 -> 3 (audio L): valid DAG addition.
+    REQUIRE(f.s.addConnection(1, 0, 3, 0));
+    REQUIRE(hasConn(f.s.getActivePatch().connections, 1, 0, 3, 0));
+}
+
+TEST_CASE("Session: addConnection rejects invalid edges", "[session][routing]")
+{
+    ChainFixture f;
+    const auto before = f.s.getActivePatch().connections;
+
+    // Cross-signal: audio out -> MIDI in.
+    REQUIRE_FALSE(f.s.addConnection(1, 0, 2, kMidi));
+    // Duplicate of an existing chain edge (1 -> 2 audio L).
+    REQUIRE_FALSE(f.s.addConnection(1, 0, 2, 0));
+    // Cycle: 3 -> 1 closes the loop 1->2->3->1.
+    REQUIRE_FALSE(f.s.addConnection(3, 0, 1, 0));
+    // Dangling: node 999 does not exist.
+    REQUIRE_FALSE(f.s.addConnection(1, 0, 999, 0));
+
+    // None of the rejections mutated the patch.
+    REQUIRE(f.s.getActivePatch().connections == before);
+}
+
+TEST_CASE("Session: removeConnection drops the edge", "[session][routing]")
+{
+    ChainFixture f;
+    REQUIRE(hasConn(f.s.getActivePatch().connections, 1, 0, 2, 0));
+
+    f.s.removeConnection(1, 0, 2, 0);
+    REQUIRE_FALSE(hasConn(f.s.getActivePatch().connections, 1, 0, 2, 0));
+    // The R-channel edge is untouched.
+    REQUIRE(hasConn(f.s.getActivePatch().connections, 1, 1, 2, 1));
+}
+
+TEST_CASE("Session: removeNode prunes its edges and bridges neighbours", "[session][routing]")
+{
+    ChainFixture f;
+
+    f.s.removeNode(2); // middle of graphIO -> 1 -> 2 -> 3 -> graphIO
+    const auto conns = f.s.getActivePatch().connections;
+
+    REQUIRE(f.s.getNodeCount() == 2);
+    REQUIRE_FALSE(touchesNode(conns, 2));               // no dangling edges to/from the removed node
+    REQUIRE(hasConn(conns, 1, 0, 3, 0));                // bridged: 1 -> 3 (audio L)
+    REQUIRE(hasConn(conns, 1, 1, 3, 1));                // bridged: audio R
+    REQUIRE(hasConn(conns, 1, kMidi, 3, kMidi));        // bridged: MIDI
+    REQUIRE(hasConn(conns, session::graphIO, 0, 1, 0)); // head + tail intact
+    REQUIRE(hasConn(conns, 3, 0, session::graphIO, 0));
+}
+
+TEST_CASE("Session: setNodePosition updates the snapshot", "[session][routing]")
+{
+    ChainFixture f;
+    f.s.setNodePosition(2, 320.0f, 96.0f);
+
+    const auto p = f.s.getActivePatch();
+    const auto* n = p.findNode(2);
+    REQUIRE(n != nullptr);
+    REQUIRE(n->hasPosition());
+    REQUIRE(n->x == 320.0f);
+    REQUIRE(n->y == 96.0f);
+
+    // The position also flows through the UI-facing snapshot (U3: SignalCanvas
+    // reads positions from getNodeSnapshots to lay out / drag cards).
+    const auto snaps = f.s.getNodeSnapshots();
+    const auto it = std::find_if(snaps.begin(), snaps.end(), [](const auto& s) { return s.id == 2; });
+    REQUIRE(it != snaps.end());
+    REQUIRE(it->hasPosition());
+    REQUIRE(it->x == 320.0f);
+    REQUIRE(it->y == 96.0f);
+}
+
+TEST_CASE("Session: seedNodePositions fills only unpositioned nodes", "[session][routing]")
+{
+    ChainFixture f;
+
+    // Node 2 already has a user-authored position; the seed must not clobber it.
+    f.s.setNodePosition(2, 320.0f, 96.0f);
+
+    f.s.seedNodePositions({
+        {1, 190.0f, 60.0f},
+        {2, 999.0f, 999.0f}, // stale auto-slot for an already-positioned node
+        {3, 440.0f, 60.0f},
+        {999, 1.0f, 1.0f}, // unknown id: ignored
+    });
+
+    const auto p = f.s.getActivePatch();
+    REQUIRE(p.findNode(1)->hasPosition());
+    REQUIRE(p.findNode(1)->x == 190.0f);
+    REQUIRE(p.findNode(1)->y == 60.0f);
+    REQUIRE(p.findNode(2)->x == 320.0f); // untouched
+    REQUIRE(p.findNode(2)->y == 96.0f);
+    REQUIRE(p.findNode(3)->hasPosition());
+    REQUIRE(p.findNode(3)->x == 440.0f);
+
+    // Re-seeding after everything is positioned is a no-op (the SignalCanvas
+    // relayout cycle relies on this to terminate).
+    const auto versionBefore = f.s.getStatus().version;
+    f.s.seedNodePositions({{1, 5.0f, 5.0f}, {3, 5.0f, 5.0f}});
+    REQUIRE(f.s.getActivePatch().findNode(1)->x == 190.0f);
+    REQUIRE(f.s.getStatus().version == versionBefore);
 }

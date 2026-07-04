@@ -32,7 +32,10 @@ public:
         addAndMakeVisible(statusBar_);
 
         viewport_.setViewedComponent(&canvas_, /*deleteComponentWhenNoLongerNeeded*/ false);
-        viewport_.setScrollBarsShown(/*vert*/ false, /*horiz*/ true);
+        // Both axes scroll now that cards are freely positioned (a card can be
+        // dragged anywhere); this also makes the mouse wheel pan the canvas
+        // (wheel = vertical, shift+wheel = horizontal — Viewport defaults).
+        viewport_.setScrollBarsShown(/*vert*/ true, /*horiz*/ true);
 
         setSize(kInitialWidth, kInitialHeight);
     }

@@ -20,13 +20,14 @@ namespace pedalboard3::session::pdl
 // with schemaMajor > 3 was written by a newer app and is rejected with a
 // friendly error (Phase 2 MVP: no read-only fallback yet; the AC-FS-7
 // preserve-unknown round-trip is deferred). schemaMinor 1 added the optional
-// per-patch <MAPPINGS> (MIDI/OSC control bindings); schemaMinor 2 adds the
-// per-<NODE> kind="internal" type="..." discriminator for built-in nodes
-// (a <NODE> with no `kind` attribute is a plugin, so older files load
+// per-patch <MAPPINGS> (MIDI/OSC control bindings); schemaMinor 2 added the
+// per-<NODE> kind="internal" type="..." discriminator for built-in nodes;
+// schemaMinor 3 adds optional per-<NODE> x/y canvas positions for the
+// interactive editor (a <NODE> with no x/y auto-lays-out, so older files load
 // unchanged). Application mappings and per-patch preferences remain out of scope.
 
 inline constexpr int kSchemaMajor = 3;
-inline constexpr int kSchemaMinor = 2;
+inline constexpr int kSchemaMinor = 3;
 
 // Atomically write `patch` to `file` (temp file in the same directory +
 // rename, so a crash mid-write never corrupts an existing .pdl). Creates
