@@ -102,7 +102,9 @@ bool PluginScanner::isHelperAvailable() const noexcept
     return helperBinary_.existsAsFile();
 }
 
-bool PluginScanner::runHelper(const juce::String& pluginPath, ScanResult& result) const
+bool PluginScanner::runHelper(const juce::String& pluginPath,
+                              ScanResult& result,
+                              const AbortPredicate& shouldAbort) const
 {
     juce::ChildProcess child;
 
@@ -114,7 +116,29 @@ bool PluginScanner::runHelper(const juce::String& pluginPath, ScanResult& result
         return false;
     }
 
-    if (!child.waitForProcessToFinish(kPerPluginTimeoutMs))
+    // Poll in short slices instead of one uninterruptible waitForProcessToFinish
+    // so a shutdown signal (shouldAbort) can kill an in-flight scan and let the
+    // owning thread's join return promptly (crash-hunt #8). Without this, a quit
+    // mid-scan blocks up to kPerPluginTimeoutMs on the current subprocess.
+    constexpr int kPollSliceMs = 100;
+    bool finished = false;
+    for (int waited = 0; waited < kPerPluginTimeoutMs; waited += kPollSliceMs)
+    {
+        if (shouldAbort && shouldAbort())
+        {
+            child.kill();
+            result.error = "scan aborted on shutdown";
+            result.helperCrashed = true; // treat as not-usable; caller is tearing down anyway
+            return false;
+        }
+        if (child.waitForProcessToFinish(kPollSliceMs))
+        {
+            finished = true;
+            break;
+        }
+    }
+
+    if (!finished)
     {
         child.kill();
         result.timedOut = true;
@@ -173,7 +197,7 @@ bool parseHelperOutput(const juce::String& stdoutText, PluginScanner::ScanResult
     return true;
 }
 
-PluginScanner::ScanResult PluginScanner::scanFile(const juce::String& pluginPath)
+PluginScanner::ScanResult PluginScanner::scanFile(const juce::String& pluginPath, const AbortPredicate& shouldAbort)
 {
     ScanResult result;
     result.pluginPath = pluginPath;
@@ -188,7 +212,7 @@ PluginScanner::ScanResult PluginScanner::scanFile(const juce::String& pluginPath
         return result;
     }
 
-    const bool ok = runHelper(pluginPath, result);
+    const bool ok = runHelper(pluginPath, result, shouldAbort);
 
     // Decide intent ONLY — do not touch KnownPluginList here. The helper ran,
     // so a crash / timeout / no-effect-descriptors outcome means this path
@@ -228,7 +252,8 @@ int PluginScanner::applyScanResults(const std::vector<ScanResult>& results)
 }
 
 std::vector<PluginScanner::ScanResult> PluginScanner::scanAllDefaultPaths(ProgressCallback onProgress,
-                                                                          juce::StringArray blacklistSnapshot)
+                                                                          juce::StringArray blacklistSnapshot,
+                                                                          AbortPredicate shouldAbort)
 {
     std::vector<ScanResult> results;
     if (!isHelperAvailable())
@@ -271,6 +296,12 @@ std::vector<PluginScanner::ScanResult> PluginScanner::scanAllDefaultPaths(Progre
 
     for (int i = 0; i < total; ++i)
     {
+        // Bail out of the whole scan on shutdown so an owning thread's join is
+        // bounded (crash-hunt #8) — checked here between plugins and again while
+        // polling each subprocess wait inside runHelper.
+        if (shouldAbort && shouldAbort())
+            break;
+
         const auto& path = uniquePaths.getReference(i);
         if (onProgress)
             onProgress(i, total, path);
@@ -279,7 +310,7 @@ std::vector<PluginScanner::ScanResult> PluginScanner::scanAllDefaultPaths(Progre
         if (blacklisted.contains(path))
             continue;
 
-        results.push_back(scanFile(path));
+        results.push_back(scanFile(path, shouldAbort));
     }
 
     return results;

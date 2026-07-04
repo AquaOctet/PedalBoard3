@@ -30,6 +30,8 @@
 // pull in any GUI dependency. Helper builds as a console binary that
 // ships alongside the main app.
 
+#include "engine/ScanProtocol.h" // kScanOkSentinel — shared with engine::PluginScanner
+
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_core/juce_core.h>
 
@@ -106,9 +108,8 @@ int main(int argc, char** argv)
 
     // Completion sentinel — the parent (PluginScanner::parseHelperOutput)
     // refuses to trust the result without it, even on exit code 0. Printed
-    // only after JUCE teardown survived. Keep in sync with
-    // engine::kScanOkSentinel in PluginScanner.h.
-    std::cout << "<PB3_SCAN_OK/>" << std::endl;
+    // only after JUCE teardown survived. Shared definition (no drift).
+    std::cout << pedalboard3::engine::kScanOkSentinel << std::endl;
 
     return kExitOk;
 }

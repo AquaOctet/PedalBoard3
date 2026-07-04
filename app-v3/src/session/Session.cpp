@@ -185,7 +185,7 @@ Session::Session(engine::AudioEngine& engine, engine::PluginHost& host, BuildFn 
     {
         auto previous = engine_.loadGraph(std::move(initial.graph));
         (void)previous;
-        liveGraph_ = engine_.getRuntime() != nullptr ? engine_.getRuntime()->getLiveGraph() : nullptr;
+        liveGraph_ = currentRuntimeGraph();
         // activePatch_ + nodes_ stay empty — no plugin nodes in the
         // passthrough graph.
     }
@@ -303,13 +303,10 @@ void Session::removeNode(NodeId id)
     // Session last committed. If anything outside Session swapped another
     // graph in (Test Tone-style loadGraph), those pointers dangle — refuse
     // the mutation instead of dereferencing freed memory. The next commit
-    // re-syncs liveGraph_/nodes_.
-    if (liveGraph_ != nullptr)
-    {
-        auto* current = engine_.getRuntime() != nullptr ? engine_.getRuntime()->getLiveGraph() : nullptr;
-        if (current != liveGraph_)
-            return;
-    }
+    // re-syncs liveGraph_/nodes_. (When liveGraph_ is null there is nothing
+    // to dereference, so the guard is skipped.)
+    if (liveGraph_ != nullptr && currentRuntimeGraph() != liveGraph_)
+        return;
 
     auto it = nodes_.find(id);
     if (it == nodes_.end())
@@ -372,11 +369,8 @@ void Session::setNodeBypass(NodeId id, bool shouldBypass)
 
     // Identity guard (crash-hunt #7): the BypassableInstance* lives inside
     // the committed graph; refuse if an out-of-band swap made it dangle.
-    {
-        auto* current = engine_.getRuntime() != nullptr ? engine_.getRuntime()->getLiveGraph() : nullptr;
-        if (current == nullptr || current != liveGraph_)
-            return;
-    }
+    if (auto* current = currentRuntimeGraph(); current == nullptr || current != liveGraph_)
+        return;
 
     auto it = nodes_.find(id);
     if (it == nodes_.end() || it->second.bypass == nullptr)
@@ -442,6 +436,15 @@ Patch Session::getActivePatchWithState() const
             suspended.push_back(refs.bypass);
         }
     }
+    // RAII restore: every suspended wrapper is un-suspended on the way out,
+    // even if a plugin's getStateInformation throws. Leaving a node suspended
+    // would silence it for the rest of the session.
+    const juce::ScopeGuard unsuspendAll{[&suspended]
+                                        {
+                                            for (auto* wrapper : suspended)
+                                                wrapper->suspendProcessing(false);
+                                        }};
+
     if (!suspended.empty())
         waitForAudioQuiescence(engine_.getRuntime());
 
@@ -461,9 +464,6 @@ Patch Session::getActivePatchWithState() const
             it->second.hosted->getStateInformation(node.state);
         }
     }
-
-    for (auto* wrapper : suspended)
-        wrapper->suspendProcessing(false);
 
     return snapshot;
 }
@@ -762,6 +762,12 @@ void Session::seedNodePositions(const std::vector<NodePositionSeed>& seeds)
         bumpVersionAndNotify();
 }
 
+juce::AudioProcessorGraph* Session::currentRuntimeGraph() const noexcept
+{
+    auto* runtime = engine_.getRuntime();
+    return runtime != nullptr ? runtime->getLiveGraph() : nullptr;
+}
+
 void Session::applyConnectionsToLiveGraph()
 {
     // Verify, don't adopt (crash-hunt #7): the graphNode pointers resolved
@@ -770,16 +776,13 @@ void Session::applyConnectionsToLiveGraph()
     // dereference those pointers against a foreign graph after an
     // out-of-band swap (Test Tone). If the runtime's graph isn't ours,
     // leave it alone — the next commit re-syncs.
-    auto* current = engine_.getRuntime() != nullptr ? engine_.getRuntime()->getLiveGraph() : nullptr;
+    auto* current = currentRuntimeGraph();
     if (current == nullptr)
     {
         liveGraph_ = nullptr;
         return;
     }
     if (current != liveGraph_)
-        return;
-
-    if (liveGraph_ == nullptr)
         return;
 
     // Cache the four I/O processor NodeIDs once — they're stable across
@@ -873,7 +876,7 @@ void Session::commitLoadPatch(LoadPatchResult&& result)
         std::lock_guard<std::mutex> lk(statusMutex_);
         activePatch_ = std::move(result.patch);
         nodes_ = std::move(result.prepared.nodes);
-        liveGraph_ = engine_.getRuntime() != nullptr ? engine_.getRuntime()->getLiveGraph() : nullptr;
+        liveGraph_ = currentRuntimeGraph();
         lastError_.clear();
     }
 
@@ -906,19 +909,14 @@ void Session::commitAddPlugin(AddPluginResult&& result)
         // no committed nodes — with nodes present, their graphNode
         // pointers belong to the old graph and applyConnections below
         // would dereference them against the foreign one (crash-hunt #7).
-        if (auto* runtime = engine_.getRuntime())
+        auto* current = currentRuntimeGraph();
+        if (current != liveGraph_ && !nodes_.empty())
         {
-            auto* current = runtime->getLiveGraph();
-            if (current != liveGraph_ && !nodes_.empty())
-            {
-                lastError_ = "addPlugin: live graph changed outside Session";
-                publishStateChange(State::Idle);
-                return;
-            }
-            liveGraph_ = current;
+            lastError_ = "addPlugin: live graph changed outside Session";
+            publishStateChange(State::Idle);
+            return;
         }
-        else
-            liveGraph_ = nullptr;
+        liveGraph_ = current;
 
         if (liveGraph_ == nullptr)
         {

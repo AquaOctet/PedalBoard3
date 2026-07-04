@@ -375,7 +375,7 @@ TEST_CASE("Session: removeNode on absent NodeId after external loadGraph(nullptr
     REQUIRE(s.getNodeCount() == 0);
 }
 
-TEST_CASE("Session: moveNode after external loadGraph re-derives liveGraph_ rather than crashing", "[session][rebind]")
+TEST_CASE("Session: moveNode after external loadGraph is a safe list-only reorder", "[session][rebind]")
 {
     engine::AudioEngine eng;
     eng.initialise();
@@ -393,19 +393,17 @@ TEST_CASE("Session: moveNode after external loadGraph re-derives liveGraph_ rath
 
     // 2. Externally swap the runtime to a different graph. Hold the
     //    returned previous graph on the stack so Session's cached
-    //    pointer still references valid memory (we want to test the
-    //    re-fetch logic, not a use-after-free symptom).
+    //    pointer still references valid memory.
     auto external = buildExternalPassthroughGraph(kDefaultSampleRate, kDefaultBlockSize);
     auto previous = eng.loadGraph(std::move(external));
 
-    // 3. moveNode triggers applyConnectionsToLiveGraph on the message
-    //    thread. Without the rebind fix it would mutate `previous`
-    //    (Session's stale cached pointer); with the fix it re-derives
-    //    liveGraph_ from runtime.getLiveGraph() and operates on the
-    //    externally-swapped graph instead. We can only assert "no
-    //    crash + version bumped + lastError remains clear" -- the
-    //    target graph has no matching node IDs so addConnection
-    //    silently fails, but Session-side state stays consistent.
+    // 3. moveNode is list-only under the free-routing model: it reorders
+    //    activePatch_.nodes and bumps the version, but never touches the live
+    //    graph (topology is defined by connections, not order). So it is
+    //    inherently safe against an out-of-band graph swap — no dereference of
+    //    the cached liveGraph_ happens at all. (The graph-touching mutators
+    //    removeNode/setNodeBypass are covered by the identity-guard test
+    //    "node mutations refuse a live graph swapped outside Session".)
     const auto v0 = s.getStateVersion();
     s.moveNode(1, 1);
     REQUIRE(s.getStateVersion() > v0);
@@ -698,4 +696,50 @@ TEST_CASE("Session: patch generation bumps only on whole-patch swaps", "[session
     f.s.replacePatch(makeThreeNodeChain());
     pumpUntilIdle(f.s);
     REQUIRE(f.s.getPatchGeneration() == g0 + 1);
+
+    // clearPatch is a whole-patch swap too, so it bumps as well.
+    f.s.clearPatch();
+    pumpUntilIdle(f.s);
+    REQUIRE(f.s.getPatchGeneration() == g0 + 2);
+}
+
+TEST_CASE("Session: commitAddPlugin refuses to add into a graph swapped outside Session", "[session][crash-hunt]")
+{
+    ChainFixture f;
+    REQUIRE(f.s.getNodeCount() == 3);
+
+    // Swap a foreign graph in directly, then request an add. commitAddPlugin
+    // must refuse (nodes_ non-empty + foreign graph) rather than addNode into
+    // the foreign graph, and surface the error instead of growing the patch.
+    auto foreign = std::make_unique<juce::AudioProcessorGraph>();
+    foreign->setPlayConfigDetails(2, 2, 48000.0, 512);
+    foreign->prepareToPlay(48000.0, 512);
+    auto previousChainGraph = f.eng.loadGraph(std::move(foreign));
+
+    f.s.addInternalNode("LevelProcessor");
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    pumpUntilIdle(f.s);
+
+    REQUIRE(f.s.getNodeCount() == 3); // unchanged — the add was refused
+    REQUIRE(f.s.getLastError().isNotEmpty());
+}
+
+TEST_CASE("Session: a newer LoadPatch supersedes a queued add result (coalescing drop)", "[session][crash-hunt]")
+{
+    engine::AudioEngine eng;
+    eng.initialise();
+    engine::PluginHost host;
+    FakeBuilder builder;
+    session::Session s(eng, host, builder.fn());
+
+    // Queue an add, let the worker produce its result, but before dispatching
+    // it queue a replacePatch. onBuildResult must drop the stale add result
+    // (RAII-destroying its prepared instance on the message thread) and commit
+    // the load instead — the final patch is the 3-node chain, not chain+1.
+    s.addInternalNode("LevelProcessor");
+    std::this_thread::sleep_for(std::chrono::milliseconds(80)); // result now sits in the queue
+    s.replacePatch(makeThreeNodeChain());                       // supersedes the pending add
+    pumpUntilIdle(s);
+
+    REQUIRE(s.getNodeCount() == 3); // the add did not land on top of the load
 }

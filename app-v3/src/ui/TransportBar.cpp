@@ -189,9 +189,11 @@ TransportBar::~TransportBar()
 
     // Join any in-flight rescan before AppContext/Session/PluginHost tear down
     // (crash-hunt #8). The scan worker holds references into ctx_; letting it
-    // outlive us was the fire-and-forget use-after-free. stopThread(-1) signals
-    // exit and joins without force-killing — a scan subprocess wait is
-    // cooperatively interruptible, so this returns promptly.
+    // outlive us was the fire-and-forget use-after-free. signalThreadShouldExit
+    // trips the scan's abort predicate, which breaks the plugin loop and kills
+    // any in-flight subprocess at the next ~100ms poll slice, so stopThread(-1)
+    // joins promptly (bounded by one poll slice, not the per-plugin timeout)
+    // without force-killing the worker.
     if (rescanThread_ != nullptr)
     {
         rescanThread_->signalThreadShouldExit();
@@ -483,7 +485,11 @@ public:
                 setProgress(static_cast<double>(idx) / static_cast<double>(total));
                 setStatusMessage("Scanning: " + juce::File(path).getFileName());
             },
-            blacklistSnapshot_);
+            blacklistSnapshot_,
+            // Abort predicate: lets ~TransportBar's signalThreadShouldExit()
+            // cut the scan short (between plugins and mid-subprocess) so the
+            // join is bounded to ~one poll slice, not up to 30s (crash-hunt #8).
+            [this] { return threadShouldExit(); });
     }
 
     void threadComplete(bool userPressedCancel) override

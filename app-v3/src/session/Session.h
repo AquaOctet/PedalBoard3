@@ -271,6 +271,12 @@ private:
     void pruneAndBridgeConnections(NodeId removed); // drop a node's edges, bridge its neighbours
     void applyConnectionsToLiveGraph();
 
+    // The runtime's currently-live graph pointer, or nullptr. The identity
+    // guards (crash-hunt #7) compare this against the cached liveGraph_ to
+    // reject a graph swapped in outside Session (Test Tone) before touching
+    // cached Node* that belong only to Session's own committed graph.
+    juce::AudioProcessorGraph* currentRuntimeGraph() const noexcept;
+
     static int stereoChannel(int ch) noexcept { return ch; }
 
     engine::AudioEngine& engine_;
