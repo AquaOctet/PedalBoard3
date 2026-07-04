@@ -9,8 +9,8 @@ cmake_minimum_required(VERSION 3.25)
 # -----------------------------------------------------------------------------
 
 project(Pedalboard3
-    VERSION     3.0.0
-    DESCRIPTION "A modular, live-performance VST plugin host."
+    VERSION     1.0.0
+    DESCRIPTION "A modular, VST plugin host."
     HOMEPAGE_URL "https://gitlab.com/void-realm-solutions/pedalboard-3"
     LANGUAGES   C CXX)
 
