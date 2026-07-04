@@ -122,6 +122,10 @@ private:
     std::unordered_map<NodeId, std::size_t> idToIndex_;
     std::unordered_map<NodeId, std::unique_ptr<EditorWindow>> editors_;
 
+    // Last Session patch generation seen; a change means a whole-patch swap
+    // replaced every processor, so all editors close (ids may be reused).
+    std::uint64_t lastPatchGeneration_{0};
+
     juce::Rectangle<int> inputCardBounds_;
     juce::Rectangle<int> outputCardBounds_;
 

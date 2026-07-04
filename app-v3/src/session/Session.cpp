@@ -98,7 +98,7 @@ public:
                 lr.prepared = session_.buildFn_(loadReq->patch, cfg.sampleRate, cfg.blockSize, lr.errorOut);
                 {
                     std::lock_guard<std::mutex> lk(session_.resultMutex_);
-                    session_.result_ = std::move(lr);
+                    session_.results_.push_back(std::move(lr));
                 }
             }
             else if (addReq.has_value())
@@ -132,7 +132,7 @@ public:
 
                 {
                     std::lock_guard<std::mutex> lk(session_.resultMutex_);
-                    session_.result_ = std::move(ar);
+                    session_.results_.push_back(std::move(ar));
                 }
             }
             else
@@ -200,12 +200,19 @@ Session::~Session()
     {
         worker_->signalThreadShouldExit();
         worker_->notify();
-        worker_->stopThread(5000);
+        // Join, never force-kill: stopThread with a finite timeout falls back
+        // to killThread (pthread_cancel / TerminateThread), which corrupts
+        // process state if the worker is inside a slow plugin createInstance /
+        // prepareToPlay or holding resultMutex_. A hung plugin blocking quit
+        // is the lesser evil (crash-hunt #7).
+        worker_->stopThread(-1);
     }
 
     {
+        // Destroy any undelivered results here, on the message thread —
+        // plugin instances must never destruct on the worker.
         std::lock_guard<std::mutex> lk(resultMutex_);
-        result_ = std::monostate{};
+        results_.clear();
     }
 }
 
@@ -292,6 +299,18 @@ void Session::removeNode(NodeId id)
 
     std::lock_guard<std::mutex> lk(statusMutex_);
 
+    // Identity guard (crash-hunt #7): nodes_' Node* live inside the graph
+    // Session last committed. If anything outside Session swapped another
+    // graph in (Test Tone-style loadGraph), those pointers dangle — refuse
+    // the mutation instead of dereferencing freed memory. The next commit
+    // re-syncs liveGraph_/nodes_.
+    if (liveGraph_ != nullptr)
+    {
+        auto* current = engine_.getRuntime() != nullptr ? engine_.getRuntime()->getLiveGraph() : nullptr;
+        if (current != liveGraph_)
+            return;
+    }
+
     auto it = nodes_.find(id);
     if (it == nodes_.end())
         return;
@@ -350,6 +369,15 @@ void Session::setNodeBypass(NodeId id, bool shouldBypass)
         return;
 
     std::lock_guard<std::mutex> lk(statusMutex_);
+
+    // Identity guard (crash-hunt #7): the BypassableInstance* lives inside
+    // the committed graph; refuse if an out-of-band swap made it dangle.
+    {
+        auto* current = engine_.getRuntime() != nullptr ? engine_.getRuntime()->getLiveGraph() : nullptr;
+        if (current == nullptr || current != liveGraph_)
+            return;
+    }
+
     auto it = nodes_.find(id);
     if (it == nodes_.end() || it->second.bypass == nullptr)
         return;
@@ -377,10 +405,45 @@ Patch Session::getActivePatch() const
     return activePatch_;
 }
 
+namespace
+{
+// In-flight-block barrier: wait until the audio thread has completed two more
+// processBlocks, so any block that was already inside a node when the caller
+// flipped its suspend flag has drained. Returns quickly (bounded ~100 ms) when
+// no device is running — the counter simply never advances.
+void waitForAudioQuiescence(engine::AudioGraphRuntime* runtime)
+{
+    if (runtime == nullptr)
+        return;
+    const auto start = runtime->getGenerationAckedByAudio();
+    const auto deadlineMs = juce::Time::getMillisecondCounterHiRes() + 100.0;
+    while (runtime->getGenerationAckedByAudio() < start + 2 && juce::Time::getMillisecondCounterHiRes() < deadlineMs)
+        juce::Thread::sleep(1);
+}
+} // namespace
+
 Patch Session::getActivePatchWithState() const
 {
     std::lock_guard<std::mutex> lk(statusMutex_);
     Patch snapshot = activePatch_;
+
+    // Quiesce the audio path before reading plugin state (crash-hunt #7):
+    // getStateInformation on a live instance races the audio thread's
+    // processBlock. Suspend each wrapper — the graph's render op checks
+    // isSuspended() and skips the node — then wait out any in-flight block
+    // before touching state. Suspended nodes go briefly silent during save.
+    std::vector<engine::BypassableInstance*> suspended;
+    suspended.reserve(nodes_.size());
+    for (const auto& [id, refs] : nodes_)
+    {
+        if (refs.bypass != nullptr && !refs.bypass->isSuspended())
+        {
+            refs.bypass->suspendProcessing(true);
+            suspended.push_back(refs.bypass);
+        }
+    }
+    if (!suspended.empty())
+        waitForAudioQuiescence(engine_.getRuntime());
 
     // Capture each live plugin's current state into the snapshot so the
     // saved .pdl restores knob settings on the next load. nodes_ keys are
@@ -398,6 +461,9 @@ Patch Session::getActivePatchWithState() const
             it->second.hosted->getStateInformation(node.state);
         }
     }
+
+    for (auto* wrapper : suspended)
+        wrapper->suspendProcessing(false);
 
     return snapshot;
 }
@@ -698,13 +764,20 @@ void Session::seedNodePositions(const std::vector<NodePositionSeed>& seeds)
 
 void Session::applyConnectionsToLiveGraph()
 {
-    // Same staleness defence as commitAddPlugin — refresh from the
-    // runtime's atomic pointer in case something outside Session
-    // (Test Tone, future patch-load paths) swapped the live graph.
-    if (auto* runtime = engine_.getRuntime())
-        liveGraph_ = runtime->getLiveGraph();
-    else
+    // Verify, don't adopt (crash-hunt #7): the graphNode pointers resolved
+    // below live inside the graph Session last committed. Adopting whatever
+    // graph the runtime currently holds (the old refresh behaviour) would
+    // dereference those pointers against a foreign graph after an
+    // out-of-band swap (Test Tone). If the runtime's graph isn't ours,
+    // leave it alone — the next commit re-syncs.
+    auto* current = engine_.getRuntime() != nullptr ? engine_.getRuntime()->getLiveGraph() : nullptr;
+    if (current == nullptr)
+    {
         liveGraph_ = nullptr;
+        return;
+    }
+    if (current != liveGraph_)
+        return;
 
     if (liveGraph_ == nullptr)
         return;
@@ -804,6 +877,7 @@ void Session::commitLoadPatch(LoadPatchResult&& result)
         lastError_.clear();
     }
 
+    patchGeneration_.fetch_add(1, std::memory_order_release);
     publishStateChange(State::Idle);
 }
 
@@ -828,10 +902,21 @@ void Session::commitAddPlugin(AddPluginResult&& result)
         // Test Tone diagnostic in TransportBar swaps a non-chain graph
         // in directly, then `loadGraph(nullptr)` on toggle-off clears
         // it. Either path leaves liveGraph_ pointing at freed memory.
-        // Re-deriving from the runtime here means addNode either gets
-        // the live chain graph (good) or nullptr (early-return below).
+        // Adopting the runtime's graph is only safe while Session holds
+        // no committed nodes — with nodes present, their graphNode
+        // pointers belong to the old graph and applyConnections below
+        // would dereference them against the foreign one (crash-hunt #7).
         if (auto* runtime = engine_.getRuntime())
-            liveGraph_ = runtime->getLiveGraph();
+        {
+            auto* current = runtime->getLiveGraph();
+            if (current != liveGraph_ && !nodes_.empty())
+            {
+                lastError_ = "addPlugin: live graph changed outside Session";
+                publishStateChange(State::Idle);
+                return;
+            }
+            liveGraph_ = current;
+        }
         else
             liveGraph_ = nullptr;
 
@@ -878,32 +963,40 @@ void Session::commitAddPlugin(AddPluginResult&& result)
 
 void Session::onBuildResult()
 {
-    Result result;
+    // Drain every queued result — the worker may have produced several while
+    // the message thread was busy (each is destroyed or committed here, on
+    // the message thread, never on the worker).
+    for (;;)
     {
-        std::lock_guard<std::mutex> lk(resultMutex_);
-        result = std::move(result_);
-        result_ = std::monostate{};
-    }
-
-    if (std::holds_alternative<std::monostate>(result))
-        return;
-
-    // Coalescing check — if a newer LoadPatch is pending, drop this
-    // result (RAII destroys any prepared instance/graph here).
-    {
-        std::lock_guard<std::mutex> lk(queueMutex_);
-        if (pendingLoadPatch_.has_value())
+        Result result;
         {
-            if (worker_ != nullptr)
-                worker_->notify();
-            return; // discard `result` via RAII as we exit
+            std::lock_guard<std::mutex> lk(resultMutex_);
+            if (results_.empty())
+                break;
+            result = std::move(results_.front());
+            results_.pop_front();
         }
-    }
 
-    if (std::holds_alternative<LoadPatchResult>(result))
-        commitLoadPatch(std::get<LoadPatchResult>(std::move(result)));
-    else if (std::holds_alternative<AddPluginResult>(result))
-        commitAddPlugin(std::get<AddPluginResult>(std::move(result)));
+        if (std::holds_alternative<std::monostate>(result))
+            continue;
+
+        // Coalescing check — if a newer LoadPatch is pending, drop this
+        // result (RAII destroys any prepared instance/graph here).
+        {
+            std::lock_guard<std::mutex> lk(queueMutex_);
+            if (pendingLoadPatch_.has_value())
+            {
+                if (worker_ != nullptr)
+                    worker_->notify();
+                continue; // discard `result` via RAII; keep draining
+            }
+        }
+
+        if (std::holds_alternative<LoadPatchResult>(result))
+            commitLoadPatch(std::get<LoadPatchResult>(std::move(result)));
+        else if (std::holds_alternative<AddPluginResult>(result))
+            commitAddPlugin(std::get<AddPluginResult>(std::move(result)));
+    }
 
     rearmWorkerIfQueueNonEmpty();
 }

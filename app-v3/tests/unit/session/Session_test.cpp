@@ -610,3 +610,92 @@ TEST_CASE("Session: seedNodePositions fills only unpositioned nodes", "[session]
     REQUIRE(f.s.getActivePatch().findNode(1)->x == 190.0f);
     REQUIRE(f.s.getStatus().version == versionBefore);
 }
+
+// ---- Crash-hunt #7 fixes ---------------------------------------------------
+
+TEST_CASE("Session: two rapid adds both land (worker results queue, not a slot)", "[session][crash-hunt]")
+{
+    engine::AudioEngine eng;
+    eng.initialise();
+    engine::PluginHost host;
+    FakeBuilder builder;
+    session::Session s(eng, host, builder.fn());
+
+    // Enqueue two internal-node adds back-to-back with no dispatch between:
+    // the worker can finish both builds before the message thread consumes
+    // either result. With the old single-slot hand-off the second overwrote
+    // the first — destroying its live instance on the worker thread and
+    // silently losing the add.
+    s.addInternalNode("LevelProcessor");
+    s.addInternalNode("VuMeterProcessor");
+
+    // Let the worker produce both results before the first dispatch.
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+
+    pumpUntilIdle(s);
+    REQUIRE(s.getNodeCount() == 2);
+}
+
+TEST_CASE("Session: node mutations refuse a live graph swapped outside Session", "[session][crash-hunt]")
+{
+    ChainFixture f;
+
+    // Swap a foreign graph in directly (Test Tone-style), bypassing Session.
+    // Keep the returned chain graph alive so this test never depends on the
+    // guard for its own memory safety.
+    auto foreign = std::make_unique<juce::AudioProcessorGraph>();
+    foreign->setPlayConfigDetails(2, 2, 48000.0, 512);
+    foreign->prepareToPlay(48000.0, 512);
+    auto previousChainGraph = f.eng.loadGraph(std::move(foreign));
+
+    f.s.removeNode(2);
+    REQUIRE(f.s.getNodeCount() == 3); // refused — model and graph untouched
+
+    f.s.setNodeBypass(2, true);
+    REQUIRE_FALSE(f.s.isNodeBypassed(2)); // refused
+
+    // A whole-patch swap re-syncs Session with the runtime; mutations work again.
+    f.s.replacePatch(makeThreeNodeChain());
+    pumpUntilIdle(f.s);
+    f.s.removeNode(2);
+    REQUIRE(f.s.getNodeCount() == 2);
+}
+
+TEST_CASE("Session: getActivePatchWithState quiesces briefly and restores processing", "[session][crash-hunt]")
+{
+    engine::AudioEngine eng;
+    eng.initialise();
+    engine::PluginHost host;
+    session::Session s(eng, host); // production BuildFn — internal nodes build for real
+
+    s.addInternalNode("LevelProcessor");
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    pumpUntilIdle(s);
+    REQUIRE(s.getNodeCount() == 1);
+
+    // The quiesce barrier is bounded: with no audio device running the
+    // generation counter never advances, so the wait must give up quickly
+    // rather than hang the save path.
+    const auto start = std::chrono::steady_clock::now();
+    const auto p = s.getActivePatchWithState();
+    REQUIRE(std::chrono::steady_clock::now() - start < std::chrono::seconds(2));
+    REQUIRE(p.nodes.size() == 1);
+
+    // Wrappers are un-suspended afterwards; a second capture behaves identically.
+    const auto p2 = s.getActivePatchWithState();
+    REQUIRE(p2.nodes.size() == 1);
+}
+
+TEST_CASE("Session: patch generation bumps only on whole-patch swaps", "[session][crash-hunt]")
+{
+    ChainFixture f;
+    const auto g0 = f.s.getPatchGeneration();
+    REQUIRE(g0 >= 1u); // the fixture's replacePatch already committed once
+
+    f.s.removeNode(2); // incremental mutation: no bump
+    REQUIRE(f.s.getPatchGeneration() == g0);
+
+    f.s.replacePatch(makeThreeNodeChain());
+    pumpUntilIdle(f.s);
+    REQUIRE(f.s.getPatchGeneration() == g0 + 1);
+}
