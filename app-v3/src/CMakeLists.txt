@@ -84,11 +84,16 @@ pb3_apply_strict_warnings(pb3_app_core
 # -----------------------------------------------------------------------------
 # Top-level app shell
 # -----------------------------------------------------------------------------
+# ICON_BIG: JUCE converts icon.png into the platform app icon at build time
+# (.icns on macOS, .ico on Windows, embedded BinaryData used for the window /
+# taskbar icon on Linux). The 3000x3000 master is downscaled by JUCE for each
+# target size; ICON_SMALL is omitted so JUCE derives it from the big one.
 juce_add_gui_app(Pedalboard3
     PRODUCT_NAME        "Pedalboard 3"
     COMPANY_NAME        "Pedalboard 3 Project"
     VERSION             "${PROJECT_VERSION}"
     BUNDLE_ID           "com.pedalboard3.app"
+    ICON_BIG            "${CMAKE_SOURCE_DIR}/icon.png"
     NEEDS_CURL          FALSE
     NEEDS_WEB_BROWSER   FALSE
 )
