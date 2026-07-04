@@ -190,11 +190,31 @@ audio drivers and the Phase 1.B.2 SEH code path.
 └── justfile
 ```
 
-## Current phase: Phase 0 — Infrastructure skeleton
+## Current phase: road to v1.0.0
 
-Focus is a buildable Linux hello-world JUCE 8 app plus a CI skeleton that
-runs `cmake` + `ctest` on every push. Windows / macOS / signing are all
-deferred to Phase 6.
+Phases 0–5 of the master rewrite plan are substantially landed (audio
+engine, session/persistence, interactive canvas, control-layer logic,
+first internal processors). The active track is the milestone sequence in
+`docs/plans/2026-07-02-001-feat-road-to-1-0-release-plan.md`: **M1
+stability** (the crash-hunt backlog, GitLab issues #6–8) is in progress,
+followed by wiring the MIDI/OSC control layer, multi-patch banks, mappings
+UI, a public beta, the parity tail, hardening, and the Phase 6 signed
+release. Windows / macOS / signing remain deferred to Phase 6.
+
+### Dev toolchain note
+
+This Linux dev server does not ship `cmake`, `ninja`, or `clang-format` on
+PATH by default. Install them into the user site with pip and add
+`~/.local/bin` to PATH:
+
+```bash
+python3 -m pip install --user --break-system-packages cmake ninja clang-format==18.1.8
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Then the `cmake --preset linux-dev` / `cmake --build build/linux-dev` /
+`ctest --test-dir build/linux-dev` loop works. `just` is not installed;
+use the `make` wrappers or the raw `cmake` commands above.
 
 ## Memory
 

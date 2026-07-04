@@ -184,6 +184,13 @@ public:
     std::vector<NodeId> getNodeIdsInOrder() const; // cheap polling
     std::vector<NodeSnapshot> getNodeSnapshots() const;
 
+    // Monotonic count of committed whole-patch swaps (replacePatch /
+    // clearPatch landing). Incremental mutations don't bump it. UI uses this
+    // to detect "everything was replaced": NodeIds can be reused across a
+    // swap for different plugins, so per-id reconciliation alone would leave
+    // a stale editor pointing at a destroyed processor (crash-hunt #7).
+    std::uint64_t getPatchGeneration() const noexcept { return patchGeneration_.load(std::memory_order_acquire); }
+
     bool hasNode(NodeId) const noexcept;
     // The live processor for a node, or nullptr. juce::AudioProcessor (not
     // AudioPluginInstance) so it covers internal nodes too; callers wanting
@@ -264,6 +271,12 @@ private:
     void pruneAndBridgeConnections(NodeId removed); // drop a node's edges, bridge its neighbours
     void applyConnectionsToLiveGraph();
 
+    // The runtime's currently-live graph pointer, or nullptr. The identity
+    // guards (crash-hunt #7) compare this against the cached liveGraph_ to
+    // reject a graph swapped in outside Session (Test Tone) before touching
+    // cached Node* that belong only to Session's own committed graph.
+    juce::AudioProcessorGraph* currentRuntimeGraph() const noexcept;
+
     static int stereoChannel(int ch) noexcept { return ch; }
 
     engine::AudioEngine& engine_;
@@ -277,9 +290,13 @@ private:
     std::optional<LoadPatchRequest> pendingLoadPatch_;
     std::deque<AddPluginRequest> addQueue_;
 
-    // Worker → message-thread result slot (variant covers both kinds).
+    // Worker → message-thread result hand-off. A queue, not a single slot:
+    // the worker can finish a second build before onBuildResult consumes the
+    // first (notify() is sticky), and overwriting a slot would destroy a
+    // live plugin instance on the worker thread and silently lose an add.
+    // onBuildResult drains the whole queue on the message thread.
     mutable std::mutex resultMutex_;
-    Result result_;
+    std::deque<Result> results_;
 
     // Active patch + live graph observers. activePatch_ is the
     // canonical spec; nodes_ map keys must equal activePatch_.nodes ids
@@ -292,6 +309,7 @@ private:
 
     std::atomic<State> state_{State::Idle};
     std::atomic<std::uint64_t> stateVersion_{0};
+    std::atomic<std::uint64_t> patchGeneration_{0};
     juce::WaitableEvent idleEvent_{true /*manual reset*/};
 
     std::unique_ptr<Worker> worker_;

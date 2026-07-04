@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PluginHost.h"
+#include "ScanProtocol.h" // kScanOkSentinel — shared with the scanner helper
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_core/juce_core.h>
@@ -27,6 +28,9 @@ namespace pedalboard3::engine
 // Free function (not a private method) so it is unit-testable without
 // spawning the helper subprocess — runHelper calls it on the parsed root.
 juce::Array<juce::PluginDescription> effectDescriptionsFromScanXml(const juce::XmlElement& scanResult);
+
+// kScanOkSentinel (the helper's completion marker) lives in ScanProtocol.h,
+// shared verbatim with pb3-scanner-helper.cpp so the two never drift.
 
 // Out-of-process plugin scanner (master plan §4.2.A).
 //
@@ -96,6 +100,13 @@ public:
         bool shouldBlacklist{false};
     };
 
+    // Predicate a worker passes so a long scan can be cut short at shutdown.
+    // Checked between plugins and while polling each subprocess wait; when it
+    // returns true the scan abandons the current/remaining files promptly so
+    // an owning thread's join (e.g. ~TransportBar) is bounded to one poll
+    // slice rather than up to the full per-plugin timeout (crash-hunt #8).
+    using AbortPredicate = std::function<bool()>;
+
     // Scan one plugin file in the subprocess and RETURN the result. Pure
     // producer: does NOT touch the host's KnownPluginList, so it is safe to
     // call from a worker thread. The result carries the effect descriptions
@@ -104,15 +115,21 @@ public:
     // KnownPluginList is not thread-safe and is owned solely by the message
     // thread, so mutating it from the scan worker races the list's
     // ChangeListeners and corrupts it (the crash this split fixes).
-    ScanResult scanFile(const juce::String& pluginPath);
+    // `shouldAbort` (optional) lets a shutdown signal kill an in-flight scan.
+    ScanResult scanFile(const juce::String& pluginPath, const AbortPredicate& shouldAbort = {});
 
     // Walk every registered plugin format's default search path, dedupe,
     // run the subprocess on each, and RETURN the results. Worker-thread
-    // safe: it mutates no shared state and snapshots the current blacklist
-    // once up front to skip already-blacklisted paths. onProgress is invoked
+    // safe: it mutates no shared state and touches no live KnownPluginList.
+    // `blacklistSnapshot` is the set of paths to skip; the CALLER captures it
+    // on the message thread (KnownPluginList is message-thread-owned — a
+    // worker-side read races concurrent addToBlacklist from the instrument
+    // sweep or the Plugin List dialog, crash-hunt #6). onProgress is invoked
     // before each scan with (currentIndex, total, currentPath).
     using ProgressCallback = std::function<void(int currentIndex, int total, const juce::String& currentPath)>;
-    std::vector<ScanResult> scanAllDefaultPaths(ProgressCallback onProgress);
+    std::vector<ScanResult> scanAllDefaultPaths(ProgressCallback onProgress,
+                                                juce::StringArray blacklistSnapshot,
+                                                AbortPredicate shouldAbort = {});
 
     // Commit scan results to the host's KnownPluginList: addType for each
     // description, addToBlacklist for each shouldBlacklist result. Returns
@@ -127,7 +144,8 @@ private:
     // Helper: actually run the subprocess. Returns true if the helper
     // exited cleanly with parseable XML. result is populated either
     // with descriptions (on success) or error/flags (on failure).
-    bool runHelper(const juce::String& pluginPath, ScanResult& result) const;
+    // `shouldAbort`, when set and observed true, kills the child and bails.
+    bool runHelper(const juce::String& pluginPath, ScanResult& result, const AbortPredicate& shouldAbort) const;
 
     PluginHost& host_;
     juce::File helperBinary_;
@@ -140,5 +158,13 @@ private:
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginScanner)
 };
+
+// Validate + parse helper stdout into `result` (exit code already checked by
+// the caller). Requires kScanOkSentinel — absence means the helper died after
+// writing its result (teardown crash with POSIX exit code 0), so the scan
+// counts as a crash: descriptions stay empty and the path gets blacklisted,
+// never added. Free function so the contract is unit-testable with arbitrary
+// strings, cross-platform, without spawning a subprocess.
+bool parseHelperOutput(const juce::String& stdoutText, PluginScanner::ScanResult& result);
 
 } // namespace pedalboard3::engine

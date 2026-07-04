@@ -75,6 +75,17 @@ bool SignalCanvas::isGraphIO(NodeId id) const noexcept
 
 void SignalCanvas::changeListenerCallback(juce::ChangeBroadcaster*)
 {
+    // Whole-patch swap: every processor was replaced, and NodeIds can be
+    // reused for different plugins — the per-id editor reconciliation below
+    // cannot detect that, leaving an editor open on a destroyed processor
+    // (crash-hunt #7). Close everything when the patch generation changes.
+    const auto gen = ctx_.session.getPatchGeneration();
+    if (gen != lastPatchGeneration_)
+    {
+        lastPatchGeneration_ = gen;
+        editors_.clear();
+    }
+
     auto snaps = ctx_.session.getNodeSnapshots();
     auto patch = ctx_.session.getActivePatch();
     connections_ = patch.connections; // cached for per-drag-frame cable rebuilds

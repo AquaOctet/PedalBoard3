@@ -136,6 +136,10 @@ juce_add_console_app(pb3-scanner-helper
 
 target_sources(pb3-scanner-helper PRIVATE tools/pb3-scanner-helper.cpp)
 
+# So the helper can include the dependency-free "engine/ScanProtocol.h"
+# (the shared scan wire-token contract) without linking the engine.
+target_include_directories(pb3-scanner-helper PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
 # juce_gui_basics is required even for the "console" helper because
 # AudioUnit plugin scans on macOS need an NSApplication / NSAutoreleasePool
 # alive (ScopedJuceInitialiser_GUI handles this). juce_audio_utils pulls
