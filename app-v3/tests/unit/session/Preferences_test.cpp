@@ -108,6 +108,44 @@ TEST_CASE("Preferences: KnownPluginList round-trips through the store", "[sessio
     scrubKey(prefs, "KNOWNPLUGINS");
 }
 
+TEST_CASE("Preferences: OSC port defaults to 9000 and round-trips", "[session][preferences]")
+{
+    session::Preferences prefs;
+
+    // Default when unset -- scrub first in case a previous aborted run left
+    // a value behind (this test's own cleanup could not run).
+    if (auto* store = prefs.getStore())
+        store->removeValue("oscPort");
+    prefs.flush();
+    REQUIRE(prefs.getOscPort() == session::Preferences::kDefaultOscPort);
+
+    prefs.setOscPort(9001);
+    prefs.flush();
+    REQUIRE(prefs.getOscPort() == 9001);
+
+    if (auto* store = prefs.getStore())
+        store->removeValue("oscPort");
+    prefs.flush();
+}
+
+TEST_CASE("Preferences: OSC multicast address defaults to empty and round-trips", "[session][preferences]")
+{
+    session::Preferences prefs;
+
+    if (auto* store = prefs.getStore())
+        store->removeValue("oscMulticastAddress");
+    prefs.flush();
+    REQUIRE(prefs.getOscMulticastAddress().isEmpty());
+
+    prefs.setOscMulticastAddress("239.1.2.3");
+    prefs.flush();
+    REQUIRE(prefs.getOscMulticastAddress() == "239.1.2.3");
+
+    if (auto* store = prefs.getStore())
+        store->removeValue("oscMulticastAddress");
+    prefs.flush();
+}
+
 TEST_CASE("Preferences: destroying and reconstructing preserves stored values", "[session][preferences]")
 {
     {

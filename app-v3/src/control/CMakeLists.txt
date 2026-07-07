@@ -3,9 +3,9 @@
 # Headless control core: MIDI (MidiMapping model + transform, MidiRouter,
 # MidiControlSurface incl. learn) and OSC (OscMapping model + address match +
 # value, MIDI-over-OSC, multicast validation, OscRouter). M2 added the device
-# edge: MidiInputManager (live MIDI input, juce_audio_devices) — the rest
-# stays free of audio-engine or device-I/O dependency, so it's unit-testable
-# from the Linux dev box.
+# edges: MidiInputManager (live MIDI input, juce_audio_devices) and OscServer
+# (live OSC input, below) — the rest stays free of audio-engine or device-I/O
+# dependency, so it's unit-testable from the Linux dev box.
 #
 # STATIC library so pb3_apply_strict_warnings() can apply our warning flags
 # per-source without touching JUCE's INTERFACE_SOURCES.
@@ -23,6 +23,8 @@ add_library(pb3_control_core STATIC
     OscMapping.h
     OscRouter.cpp
     OscRouter.h
+    OscServer.cpp
+    OscServer.h
 )
 
 target_include_directories(pb3_control_core PUBLIC
@@ -53,4 +55,5 @@ pb3_apply_strict_warnings(pb3_control_core
     MidiInputManager.cpp
     OscMapping.cpp
     OscRouter.cpp
+    OscServer.cpp
 )

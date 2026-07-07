@@ -38,6 +38,7 @@ set(PB3_TEST_SOURCES
     unit/control/MidiInputManager_test.cpp
     unit/control/OscMapping_test.cpp
     unit/control/OscRouter_test.cpp
+    unit/control/OscServer_test.cpp
 )
 
 add_executable(pb3_smoke_tests ${PB3_TEST_SOURCES})

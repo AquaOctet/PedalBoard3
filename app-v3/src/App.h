@@ -2,6 +2,7 @@
 
 #include "AppContext.h"
 #include "control/MidiInputManager.h"
+#include "control/OscServer.h"
 #include "engine/AudioEngine.h"
 #include "engine/PluginHost.h"
 #include "session/ControlHub.h"
@@ -69,6 +70,9 @@ private:
     // M2: feeds ControlHub::handleMidi from live MIDI input devices. Captures
     // controlHub by reference in its sink, so must be destroyed before it.
     std::unique_ptr<control::MidiInputManager> midiInputManager;
+    // M2: feeds ControlHub::handleOsc from a live OSC listener. Same
+    // capture-by-reference lifetime constraint as midiInputManager.
+    std::unique_ptr<control::OscServer> oscServer;
     std::unique_ptr<session::PreferencesPersister> persister;
     std::optional<AppContext> context;
     std::unique_ptr<ui::MainWindow> mainWindow;

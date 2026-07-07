@@ -56,6 +56,17 @@ void App::initialise(const juce::String& /*commandLine*/)
     midiInputManager = std::make_unique<control::MidiInputManager>(
         engine->getDeviceManager(), [this](const juce::MidiMessage& msg) { controlHub->handleMidi(msg); });
 
+    oscServer =
+        std::make_unique<control::OscServer>([this](const juce::OSCMessage& msg) { controlHub->handleOsc(msg); });
+    // A bind failure (port already in use, no permission) is non-fatal — the
+    // control layer above it works regardless; the user can retry with a
+    // different port via the settings surface (U5).
+    if (const auto error = oscServer->rebind(preferences->getOscPort(), preferences->getOscMulticastAddress());
+        error.isNotEmpty())
+    {
+        juce::Logger::writeToLog("Pedalboard 3: OSC listener warning — " + error);
+    }
+
     persister = std::make_unique<session::PreferencesPersister>(*preferences, *engine, *pluginHost, *session);
 
     context.emplace(AppContext{*engine, *pluginHost, *preferences, *session, *controlHub});
@@ -83,6 +94,7 @@ void App::shutdown()
     context.reset();
     persister.reset();
     midiInputManager.reset();
+    oscServer.reset();
     controlWiring.reset();
     controlHub.reset();
     session.reset();
