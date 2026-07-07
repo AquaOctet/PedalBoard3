@@ -391,6 +391,14 @@ void Session::setNodeCustomName(NodeId id, juce::String name)
     }
 }
 
+void Session::addMidiMapping(control::MidiMapping mapping)
+{
+    std::lock_guard<std::mutex> lk(statusMutex_);
+    activePatch_.midiMappings.push_back(std::move(mapping));
+    mappingsRevision_.fetch_add(1, std::memory_order_release);
+    bumpVersionAndNotify();
+}
+
 // ---- Public API: snapshot accessors ---------------------------------------
 
 Patch Session::getActivePatch() const
@@ -881,6 +889,11 @@ void Session::commitLoadPatch(LoadPatchResult&& result)
     }
 
     patchGeneration_.fetch_add(1, std::memory_order_release);
+    // A whole-patch load always replaces the mapping tables wholesale (even
+    // when the new patch has none), so this bumps unconditionally alongside
+    // patchGeneration_ — a mapping-focused listener (ControlWiring) re-feeds
+    // on every load, not just ones that happen to carry mappings.
+    mappingsRevision_.fetch_add(1, std::memory_order_release);
     publishStateChange(State::Idle);
 }
 

@@ -1,8 +1,12 @@
 #pragma once
 
 #include "AppContext.h"
+#include "control/MidiInputManager.h"
+#include "control/OscServer.h"
 #include "engine/AudioEngine.h"
 #include "engine/PluginHost.h"
+#include "session/ControlHub.h"
+#include "session/ControlWiring.h"
 #include "session/Preferences.h"
 #include "session/PreferencesPersister.h"
 #include "session/Session.h"
@@ -58,6 +62,17 @@ private:
     std::unique_ptr<engine::AudioEngine> engine;
     std::unique_ptr<engine::PluginHost> pluginHost;
     std::unique_ptr<session::Session> session;
+    // M2: constructed after session (ControlWiring observes it), before
+    // AppContext (which hands controlHub out to UI). Destroyed before
+    // session in shutdown() — see the reverse-order comment there.
+    std::unique_ptr<session::ControlHub> controlHub;
+    std::unique_ptr<session::ControlWiring> controlWiring;
+    // M2: feeds ControlHub::handleMidi from live MIDI input devices. Captures
+    // controlHub by reference in its sink, so must be destroyed before it.
+    std::unique_ptr<control::MidiInputManager> midiInputManager;
+    // M2: feeds ControlHub::handleOsc from a live OSC listener. Same
+    // capture-by-reference lifetime constraint as midiInputManager.
+    std::unique_ptr<control::OscServer> oscServer;
     std::unique_ptr<session::PreferencesPersister> persister;
     std::optional<AppContext> context;
     std::unique_ptr<ui::MainWindow> mainWindow;

@@ -78,6 +78,17 @@ public:
     void setActivePatch(const Patch& patch);
     void clearActivePatch();
 
+    // OSC listener config (M2, KTD4). Plain scalar values via
+    // juce::PropertiesFile's typed getters — no XML needed. Port defaults to
+    // 9000 when unset. Multicast address is empty ("") when unset, meaning
+    // "unicast only, no group join" — control::OscServer treats an empty
+    // string as "don't attempt to join a group" rather than an invalid one.
+    static constexpr int kDefaultOscPort = 9000;
+    int getOscPort();
+    void setOscPort(int port);
+    juce::String getOscMulticastAddress();
+    void setOscMulticastAddress(const juce::String& address);
+
     // Force a synchronous write of any dirty values. Safe to call
     // multiple times. ApplicationProperties also auto-saves on
     // destruction, but App::shutdown calls this explicitly so a

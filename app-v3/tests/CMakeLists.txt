@@ -31,11 +31,14 @@ set(PB3_TEST_SOURCES
     unit/session/PdlV2Importer_test.cpp
     unit/session/ControlParameterApplier_test.cpp
     unit/session/ControlHub_test.cpp
+    unit/session/ControlWiring_test.cpp
     unit/control/MidiMapping_test.cpp
     unit/control/MidiRouter_test.cpp
     unit/control/MidiControlSurface_test.cpp
+    unit/control/MidiInputManager_test.cpp
     unit/control/OscMapping_test.cpp
     unit/control/OscRouter_test.cpp
+    unit/control/OscServer_test.cpp
 )
 
 add_executable(pb3_smoke_tests ${PB3_TEST_SOURCES})

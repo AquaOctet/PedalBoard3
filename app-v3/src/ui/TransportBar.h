@@ -65,12 +65,18 @@ private:
     void rescanPlugins();
     void onTestToneToggled();
     void updateAddPluginEnabled();
+    // OSC port control (M2 U5): persists the new port and rebinds the live
+    // listener; a bind failure (e.g. port already in use) surfaces inline via
+    // the field's colour/tooltip rather than a blocking dialog.
+    void applyOscPortChange();
 
     AppContext& ctx_;
     SignalCanvas& canvas_;
 
     juce::TextButton fileButton_{"File"};
     juce::TextButton addPluginButton_{"+ Add Plugin"};
+    juce::Label oscPortLabel_;
+    juce::TextEditor oscPortEditor_;
     juce::TextButton settingsButton_{"Audio Settings..."};
     juce::ToggleButton toneButton_{"Test Tone"};
     juce::TextButton rescanButton_{"Rescan Plugins"};

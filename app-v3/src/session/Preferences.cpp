@@ -10,6 +10,8 @@ constexpr auto kAudioDeviceStateKey = "audioDeviceState";
 constexpr auto kKnownPluginListKey = "knownPluginList";
 constexpr auto kActivePluginDescriptionKey = "activePluginDescription";
 constexpr auto kActivePatchKey = "activePatch";
+constexpr auto kOscPortKey = "oscPort";
+constexpr auto kOscMulticastAddressKey = "oscMulticastAddress";
 
 juce::PropertiesFile::Options makeOptions()
 {
@@ -155,6 +157,32 @@ void Preferences::clearActivePatch()
 {
     if (auto* store = props_.getUserSettings())
         store->removeValue(kActivePatchKey);
+}
+
+int Preferences::getOscPort()
+{
+    if (auto* store = props_.getUserSettings())
+        return store->getIntValue(kOscPortKey, kDefaultOscPort);
+    return kDefaultOscPort;
+}
+
+void Preferences::setOscPort(int port)
+{
+    if (auto* store = props_.getUserSettings())
+        store->setValue(kOscPortKey, port);
+}
+
+juce::String Preferences::getOscMulticastAddress()
+{
+    if (auto* store = props_.getUserSettings())
+        return store->getValue(kOscMulticastAddressKey, {});
+    return {};
+}
+
+void Preferences::setOscMulticastAddress(const juce::String& address)
+{
+    if (auto* store = props_.getUserSettings())
+        store->setValue(kOscMulticastAddressKey, address);
 }
 
 void Preferences::flush()

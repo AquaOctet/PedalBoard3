@@ -146,6 +146,11 @@ public:
     void setNodeBypass(NodeId, bool);
     void setNodeCustomName(NodeId, juce::String);
 
+    // Append a MIDI mapping to the active patch (MIDI learn's persist step).
+    // Bumps the mappings revision (not just stateVersion_) so ControlWiring
+    // re-feeds ControlHub with the new mapping live immediately.
+    void addMidiMapping(control::MidiMapping);
+
     // ---- Free-routing edits (interactive canvas, message thread) -----------
 
     // Create a user-authored connection. Returns false (patch unchanged) if the
@@ -190,6 +195,15 @@ public:
     // swap for different plugins, so per-id reconciliation alone would leave
     // a stale editor pointing at a destroyed processor (crash-hunt #7).
     std::uint64_t getPatchGeneration() const noexcept { return patchGeneration_.load(std::memory_order_acquire); }
+
+    // Monotonic count of changes to the active patch's MIDI/OSC mapping
+    // tables specifically — bumped on every whole-patch load (mappings are
+    // wholesale replaced) and on any incremental mapping mutation (e.g.
+    // MIDI learn appending one mapping). A finer-grained sibling of
+    // getPatchGeneration(): a node-position drag or bypass toggle bumps
+    // stateVersion_ but never this, so a listener that only cares about
+    // mapping content (ControlWiring) doesn't re-feed on unrelated churn.
+    std::uint64_t getMappingsRevision() const noexcept { return mappingsRevision_.load(std::memory_order_acquire); }
 
     bool hasNode(NodeId) const noexcept;
     // The live processor for a node, or nullptr. juce::AudioProcessor (not
@@ -310,6 +324,7 @@ private:
     std::atomic<State> state_{State::Idle};
     std::atomic<std::uint64_t> stateVersion_{0};
     std::atomic<std::uint64_t> patchGeneration_{0};
+    std::atomic<std::uint64_t> mappingsRevision_{0};
     juce::WaitableEvent idleEvent_{true /*manual reset*/};
 
     std::unique_ptr<Worker> worker_;

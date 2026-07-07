@@ -578,6 +578,32 @@ TEST_CASE("Session: setNodePosition updates the snapshot", "[session][routing]")
     REQUIRE(it->y == 96.0f);
 }
 
+TEST_CASE("Session: addMidiMapping appends to the active patch and bumps the mappings revision", "[session][control]")
+{
+    ChainFixture f;
+    const auto before = f.s.getMappingsRevision();
+
+    control::MidiMapping mapping;
+    mapping.source.kind = control::MidiSourceKind::ControlChange;
+    mapping.source.channel = 0;
+    mapping.source.controller = 74;
+    mapping.target.kind = control::MidiTargetKind::PluginParameter;
+    mapping.target.node = 1;
+    mapping.target.parameterIndex = 0;
+    f.s.addMidiMapping(mapping);
+
+    REQUIRE(f.s.getMappingsRevision() == before + 1);
+
+    const auto p = f.s.getActivePatch();
+    REQUIRE(p.midiMappings.size() == 1);
+    REQUIRE(p.midiMappings[0] == mapping);
+
+    // Survives the state-capturing snapshot used for saving to a .pdl too.
+    const auto withState = f.s.getActivePatchWithState();
+    REQUIRE(withState.midiMappings.size() == 1);
+    REQUIRE(withState.midiMappings[0] == mapping);
+}
+
 TEST_CASE("Session: seedNodePositions fills only unpositioned nodes", "[session][routing]")
 {
     ChainFixture f;
