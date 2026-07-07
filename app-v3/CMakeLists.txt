@@ -188,6 +188,11 @@ endif()
 # Pedalboard3, and pb3_smoke_tests.
 add_library(pb3_juce_config INTERFACE)
 target_compile_definitions(pb3_juce_config INTERFACE
+    # Single source of truth for "what version is this app" across every
+    # target that links pb3_juce_config (engine, session, control, app,
+    # the scanner helper) — so a version bump here is never a second
+    # literal to remember to update elsewhere (e.g. .pdl's appVersion attr).
+    PB3_APP_VERSION="${PROJECT_VERSION}"
     # Plugin-host format selection — drives juce::AudioPluginFormatManager::addDefaultFormats().
     JUCE_PLUGINHOST_VST3=1
     $<$<PLATFORM_ID:Linux>:JUCE_PLUGINHOST_LV2=1>

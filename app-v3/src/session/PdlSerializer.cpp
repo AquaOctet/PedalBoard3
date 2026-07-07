@@ -12,7 +12,7 @@ juce::Result writePatch(const Patch& patch, const juce::File& file)
     juce::XmlElement root("PEDALBOARD");
     root.setAttribute("schemaMajor", kSchemaMajor);
     root.setAttribute("schemaMinor", kSchemaMinor);
-    root.setAttribute("appVersion", "3.0.0");
+    root.setAttribute("appVersion", PB3_APP_VERSION);
     root.addChildElement(patchXml.release());
 
     const auto parent = file.getParentDirectory();
