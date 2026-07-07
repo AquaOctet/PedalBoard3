@@ -13,6 +13,11 @@ class Session;
 class ControlHub;
 } // namespace pedalboard3::session
 
+namespace pedalboard3::control
+{
+class OscServer;
+} // namespace pedalboard3::control
+
 namespace pedalboard3
 {
 
@@ -24,7 +29,8 @@ namespace pedalboard3
 // Phase 1.C.2 added: session::Preferences (per-user persistence).
 // Phase 1.D.2 added: session::Session (queued patch-switch state machine).
 // Phase 1.D.3: Session API expanded to multi-node patch (PluginSlot retired).
-// M2 added: session::ControlHub (MIDI/OSC ingest — see ControlWiring.h).
+// M2 added: session::ControlHub (MIDI/OSC ingest — see ControlWiring.h) and
+// control::OscServer (so the port-control UI can rebind it — U5).
 //
 // Upcoming additions (one field per subsystem as each phase lands):
 //   - diagnostics::EventLog      (Phase 1.B+ — RT-safe observability)
@@ -39,6 +45,7 @@ struct AppContext
     session::Preferences& preferences;
     session::Session& session;
     session::ControlHub& controlHub;
+    control::OscServer& oscServer;
 };
 
 } // namespace pedalboard3

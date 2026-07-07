@@ -1,6 +1,7 @@
 #include "TransportBar.h"
 
 #include "ColourScheme.h"
+#include "control/OscServer.h"
 #include "engine/AudioEngine.h"
 #include "engine/PluginHost.h"
 #include "engine/PluginScanner.h"
@@ -28,6 +29,8 @@ constexpr int kBarPadding = 12;
 constexpr int kButtonGap = 6;
 constexpr int kFileButtonWidth = 64;
 constexpr int kAddButtonWidth = 130;
+constexpr int kOscLabelWidth = 34;
+constexpr int kOscEditorWidth = 50;
 constexpr int kSettingsButtonWidth = 140;
 constexpr int kToneButtonWidth = 100;
 constexpr int kRescanButtonWidth = 130;
@@ -158,8 +161,23 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas) : ctx_(ctx), c
     toneButton_.setClickingTogglesState(true);
     toneButton_.onClick = [this] { onTestToneToggled(); };
 
+    oscPortLabel_.setText("OSC:", juce::dontSendNotification);
+    oscPortLabel_.setColour(juce::Label::textColourId, tokens::fgMuted);
+    oscPortLabel_.setFont(juce::Font(juce::FontOptions(12.0f)));
+    oscPortLabel_.setJustificationType(juce::Justification::centredRight);
+    oscPortLabel_.setInterceptsMouseClicks(false, false);
+
+    oscPortEditor_.setInputRestrictions(5, "0123456789");
+    oscPortEditor_.setJustification(juce::Justification::centred);
+    oscPortEditor_.setText(juce::String(ctx_.preferences.getOscPort()), juce::dontSendNotification);
+    oscPortEditor_.setTooltip("OSC listener port (1-65535). Press Enter to apply.");
+    oscPortEditor_.onReturnKey = [this] { applyOscPortChange(); };
+    oscPortEditor_.onFocusLost = [this] { applyOscPortChange(); };
+
     addAndMakeVisible(fileButton_);
     addAndMakeVisible(addPluginButton_);
+    addAndMakeVisible(oscPortLabel_);
+    addAndMakeVisible(oscPortEditor_);
     addAndMakeVisible(settingsButton_);
     addAndMakeVisible(toneButton_);
     addAndMakeVisible(rescanButton_);
@@ -221,9 +239,12 @@ void TransportBar::resized()
 {
     auto bounds = getLocalBounds().reduced(kBarPadding, 6);
 
-    // Right cluster: Audio Settings | Test Tone | Rescan | Plugin List.
-    auto right = bounds.removeFromRight(kSettingsButtonWidth + kToneButtonWidth + kRescanButtonWidth +
-                                        kPluginListButtonWidth + 3 * kButtonGap);
+    // Right cluster: OSC port | Audio Settings | Test Tone | Rescan | Plugin List.
+    auto right = bounds.removeFromRight(kOscLabelWidth + kOscEditorWidth + kSettingsButtonWidth + kToneButtonWidth +
+                                        kRescanButtonWidth + kPluginListButtonWidth + 4 * kButtonGap);
+    oscPortLabel_.setBounds(right.removeFromLeft(kOscLabelWidth));
+    oscPortEditor_.setBounds(right.removeFromLeft(kOscEditorWidth));
+    right.removeFromLeft(kButtonGap);
     settingsButton_.setBounds(right.removeFromLeft(kSettingsButtonWidth));
     right.removeFromLeft(kButtonGap);
     toneButton_.setBounds(right.removeFromLeft(kToneButtonWidth));
@@ -361,6 +382,31 @@ void TransportBar::openAudioSettings()
     options.useNativeTitleBar = true;
     options.resizable = false;
     options.launchAsync();
+}
+
+void TransportBar::applyOscPortChange()
+{
+    const int port = oscPortEditor_.getText().getIntValue();
+    if (port <= 0 || port > 65535)
+    {
+        // Reject a nonsense port back to the last-good persisted value rather
+        // than attempting a bind with it.
+        oscPortEditor_.setText(juce::String(ctx_.preferences.getOscPort()), juce::dontSendNotification);
+        return;
+    }
+
+    ctx_.preferences.setOscPort(port);
+    ctx_.preferences.flush();
+
+    const auto error = ctx_.oscServer.rebind(port, ctx_.preferences.getOscMulticastAddress());
+    // Surface a bind failure (e.g. port already in use) inline via the
+    // field's colour/tooltip rather than a blocking dialog — the control
+    // layer keeps working regardless of OSC availability (App::initialise
+    // treats a bind failure the same way).
+    oscPortEditor_.setColour(juce::TextEditor::textColourId,
+                             error.isNotEmpty() ? tokens::accentDestructive : tokens::fgPrimary);
+    oscPortEditor_.setTooltip(error.isNotEmpty() ? error
+                                                 : juce::String("OSC listener port (1-65535). Press Enter to apply."));
 }
 
 void TransportBar::openPluginList()

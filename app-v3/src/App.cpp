@@ -69,7 +69,7 @@ void App::initialise(const juce::String& /*commandLine*/)
 
     persister = std::make_unique<session::PreferencesPersister>(*preferences, *engine, *pluginHost, *session);
 
-    context.emplace(AppContext{*engine, *pluginHost, *preferences, *session, *controlHub});
+    context.emplace(AppContext{*engine, *pluginHost, *preferences, *session, *controlHub, *oscServer});
     mainWindow = std::make_unique<ui::MainWindow>(getApplicationName(), *context);
 
     // Restore the previously-active patch, gated by the KnownPluginList

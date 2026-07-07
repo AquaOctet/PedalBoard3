@@ -23,7 +23,10 @@
 #include "session/Patch.h"
 #include "session/PreparedGraph.h"
 #include "session/Session.h"
+#include "session/v2_import/PdlV2Importer.h"
 #include "support/TestParamProcessor.h"
+
+#include <juce_osc/juce_osc.h>
 
 #include <chrono>
 #include <thread>
@@ -286,6 +289,99 @@ TEST_CASE("ControlWiring: Session::addMidiMapping (MIDI learn's persist step) is
 
     f.hub.handleMidi(ccOn(74));
     REQUIRE(f.paramValue() == Approx(1.0f));
+}
+
+TEST_CASE("ControlWiring: a v3 patch with MIDI+OSC mappings drives parameters with no manual step (R9)",
+          "[session][control-wiring]")
+{
+    // ControlWiring is constructed first (mirroring App::initialise's order),
+    // THEN the patch loads -- the plan's actual "no manual mapping step"
+    // scenario: replacePatch's change message alone re-feeds the hub.
+    Fixture f;
+    session::ControlWiring wiring(f.sess, f.hub);
+
+    session::Patch p;
+    session::PatchNode midiNode;
+    midiNode.id = 1;
+    midiNode.desc = makeDesc("MidiTarget");
+    session::PatchNode oscNode;
+    oscNode.id = 2;
+    oscNode.desc = makeDesc("OscTarget");
+    p.nodes.push_back(midiNode);
+    p.nodes.push_back(oscNode);
+    p.midiMappings.push_back(ccMapping(74)); // targets node 1, parameter 0
+
+    control::OscMapping osc;
+    osc.address = "/pb3/gain";
+    osc.argumentIndex = 0;
+    osc.target.kind = control::MidiTargetKind::PluginParameter;
+    osc.target.node = 2;
+    osc.target.parameterIndex = 0;
+    osc.rangeMin = 0.0f;
+    osc.rangeMax = 1.0f;
+    p.oscMappings.push_back(osc);
+
+    f.sess.replacePatch(p);
+    pumpUntilIdle(f.sess);
+    f.sess.sendSynchronousChangeMessage();
+
+    f.hub.handleMidi(ccOn(74));
+    REQUIRE(f.paramValue(1) == Approx(1.0f));
+
+    f.hub.handleOsc(juce::OSCMessage(juce::OSCAddressPattern("/pb3/gain"), 1.0f));
+    REQUIRE(f.paramValue(2) == Approx(1.0f));
+}
+
+TEST_CASE("ControlWiring: a v2-imported patch's MIDI mapping reaches the hub after load (R9)",
+          "[session][control-wiring]")
+{
+    // Minimal v2 fixture: Input(1) -> EQ(8) -> Output(3), one CC mapping on
+    // EQ's parameter 0 -- mirrors PdlV2Importer_test.cpp's fixture shape. The
+    // Audio Input/Output FILTERs become the graphIO sentinel (not a PatchNode),
+    // so EQ is the importer's only real node.
+    constexpr auto kV2Xml = R"(<?xml version="1.0" encoding="UTF-8"?>
+<Pedalboard2PatchFile>
+  <Patch tempo="120" name="Board">
+    <FILTERGRAPH>
+      <FILTER uid="1" x="0" y="0">
+        <PLUGIN name="Audio Input" format="Internal" manufacturer="Raw Material Software"
+                uid="246006c0" isInstrument="0" numInputs="0" numOutputs="4"/>
+      </FILTER>
+      <FILTER uid="3" x="900" y="0">
+        <PLUGIN name="Audio Output" format="Internal" manufacturer="Raw Material Software"
+                uid="724248cb" isInstrument="0" numInputs="2" numOutputs="0"/>
+      </FILTER>
+      <FILTER uid="8" x="200" y="0">
+        <PLUGIN name="EQ" format="VST" category="EQ" manufacturer="Acme" version="2.0"
+                file="C:\VST\EQ.dll" uid="33334444" isInstrument="0" numInputs="2" numOutputs="2"/>
+      </FILTER>
+      <CONNECTION srcFilter="1" srcChannel="0" dstFilter="8" dstChannel="0"/>
+      <CONNECTION srcFilter="1" srcChannel="1" dstFilter="8" dstChannel="1"/>
+      <CONNECTION srcFilter="8" srcChannel="0" dstFilter="3" dstChannel="0"/>
+      <CONNECTION srcFilter="8" srcChannel="1" dstFilter="3" dstChannel="1"/>
+    </FILTERGRAPH>
+    <Mappings>
+      <MidiMapping pluginId="8" parameter="0" cc="74" latch="0" channel="0" lowerBound="0.0" upperBound="1.0"/>
+    </Mappings>
+  </Patch>
+</Pedalboard2PatchFile>)";
+
+    auto xml = juce::parseXML(juce::String(kV2Xml));
+    REQUIRE(xml != nullptr);
+    auto imported = session::v2::importPedalboard2Patch(*xml);
+    REQUIRE(imported.patch != nullptr);
+    REQUIRE(imported.patch->midiMappings.size() == 1);
+
+    Fixture f;
+    session::ControlWiring wiring(f.sess, f.hub);
+
+    f.sess.replacePatch(*imported.patch);
+    pumpUntilIdle(f.sess);
+    f.sess.sendSynchronousChangeMessage();
+
+    const auto targetNode = imported.patch->midiMappings[0].target.node;
+    f.hub.handleMidi(ccOn(74));
+    REQUIRE(f.paramValue(targetNode) == Approx(1.0f));
 }
 
 TEST_CASE("ControlWiring: lifetime -- outliving the wiring with a Session change is safe",
