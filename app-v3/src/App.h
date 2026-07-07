@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AppContext.h"
+#include "control/MidiInputManager.h"
 #include "engine/AudioEngine.h"
 #include "engine/PluginHost.h"
 #include "session/ControlHub.h"
@@ -65,6 +66,9 @@ private:
     // session in shutdown() — see the reverse-order comment there.
     std::unique_ptr<session::ControlHub> controlHub;
     std::unique_ptr<session::ControlWiring> controlWiring;
+    // M2: feeds ControlHub::handleMidi from live MIDI input devices. Captures
+    // controlHub by reference in its sink, so must be destroyed before it.
+    std::unique_ptr<control::MidiInputManager> midiInputManager;
     std::unique_ptr<session::PreferencesPersister> persister;
     std::optional<AppContext> context;
     std::unique_ptr<ui::MainWindow> mainWindow;

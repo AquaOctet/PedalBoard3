@@ -53,6 +53,8 @@ void App::initialise(const juce::String& /*commandLine*/)
     // binds its resolver to session and re-feeds mappings on every patch change.
     controlHub = std::make_unique<session::ControlHub>();
     controlWiring = std::make_unique<session::ControlWiring>(*session, *controlHub);
+    midiInputManager = std::make_unique<control::MidiInputManager>(
+        engine->getDeviceManager(), [this](const juce::MidiMessage& msg) { controlHub->handleMidi(msg); });
 
     persister = std::make_unique<session::PreferencesPersister>(*preferences, *engine, *pluginHost, *session);
 
@@ -80,6 +82,7 @@ void App::shutdown()
     mainWindow.reset();
     context.reset();
     persister.reset();
+    midiInputManager.reset();
     controlWiring.reset();
     controlHub.reset();
     session.reset();
