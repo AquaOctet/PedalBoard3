@@ -28,13 +28,13 @@ A triaged checklist that turns the roadmap's fuzzy "triage the remaining parity 
 
 The June parity review found everything missing versus Pedalboard2, and the roadmap sequenced the big features (M0–M8). What was never decided is the *polish tier*: R17 says "remaining parity items are triaged against acceptance criteria; anything cut is recorded as a scope change" — but no triage happened, so a pile of small, high-visibility gaps sits in a vague bucket where they can slip past a release.
 
-Verified current state (2026-07-05): the status bar shows a state dot, state text, version, and an error pill — no CPU meter and no VU meter (the VU processor publishes levels and `BypassableInstance::consumeCpuStats` produces load, but nothing consumes either). There is no window position/size persistence, no in-app node rename (the `customName` field persists but has no editor), no About window, and no macOS menu bar. These are the tells that make a host look unfinished regardless of how strong the engine is.
+Verified current state (2026-07-05): the status bar shows a state dot, state text, version, and an error pill — no CPU meter and no VU meter (the VU processor publishes levels and `BypassableInstance::consumeCpuStats` produces load, but nothing consumes either). There is no window position/size persistence, no in-app node rename (the `customName` field persists but has no editor), no About window, no macOS menu bar, and no plain "Save" (only "Save As", with no in-app display of which file is currently loaded). These are the tells that make a host look unfinished regardless of how strong the engine is.
 
 The decision this doc records: ship 1.0 when the core works *and* the app has no obvious unfinished tells, rather than waiting for every Pedalboard2 feature. This is consistent with the roadmap's beta-first instinct.
 
 ### Requirements
 
-Requirement IDs (R1–R11) below are local to this checklist. References to the roadmap's requirements are written `roadmap's R<n>` to avoid confusion with this doc's numbering.
+Requirement IDs (R1–R13) below are local to this checklist. References to the roadmap's requirements are written `roadmap's R<n>` to avoid confusion with this doc's numbering.
 
 **1.0-blocking — the work this checklist owns**
 
@@ -44,8 +44,9 @@ Requirement IDs (R1–R11) below are local to this checklist. References to the 
 - R5. An About window shows app name, version, the full GPLv3 license text, and attribution to Pedalboard2 / Niall Moody. It is reachable on every 1.0 platform — via the macOS menu bar (R6) and via a File-menu / TransportBar entry on Windows/Linux. This is the in-app affordance only; the distribution-side copyleft obligation is R10.
 - R6. The macOS build presents a standard main menu bar (app / File / Edit / Window) wired to existing actions. The Edit menu carries Undo/Redo (R12) — its canonical contents — so it is not a dead menu. Blocking for the macOS release target specifically.
 - R10. GPLv3 distribution compliance (owned by M8 / release engineering): every distributed binary ships the full GPLv3 license text, makes Corresponding Source available (repository link or a written offer), and carries modification/date notices. Distinct from R5 — a visible About notice alone does not satisfy copyleft for a binary derived from GPL'd Pedalboard2.
-- R11. Unsaved-work protection: quitting, or loading a patch over a modified board, prompts to save first so a live performer cannot silently lose an unsaved board. The parity review lists a "save-and-quit prompt" as Missing; this safety gap sits outside the review's polish tier and is triaged here as blocking.
+- R11. Unsaved-work protection: quitting, or loading a patch over a modified board, prompts to save first so a live performer cannot silently lose an unsaved board. The parity review lists a "save-and-quit prompt" as Missing; this safety gap sits outside the review's polish tier and is triaged here as blocking. Shares its "is the board modified" tracking with R13 — plan and build together.
 - R12. Shallow undo/redo covering structural edits: node add/delete, connect/disconnect, and rename. Scoped to these operations only — not plugin-parameter changes, not the full 50-step history (roadmap AC-NEW-3, which stays in 1.x). This is the decided resolution of the undo/redo question: undo fires on the first accidental delete or misconnection, which is the most common "unfinished tell" in any editor, so it is in 1.0 rather than deferred.
+- R13. Quick save writes back to the currently-loaded file without a picker, and the window title (or an equivalent always-visible spot) shows the loaded patch's name plus an unsaved-changes indicator. Today the File menu has only "Save Patch As..." — every save is a fresh file-picker with no in-app way to tell which `.pdl` is currently loaded. Found in the road-to-1.0 gap audit, not the original parity review. R11's save-prompt needs the same "is there a current file, and is it modified" tracking this requires, so plan them together.
 
 **Covered by existing milestones — listed for completeness, not re-scoped here**
 
@@ -66,6 +67,7 @@ Requirement IDs (R1–R11) below are local to this checklist. References to the 
 - AE5. **Covers R10.** Download a distributed build → it is accompanied by the full GPLv3 text and a working path to the Corresponding Source.
 - AE6. **Covers R11.** Modify a board, then quit (or open another patch) → a save prompt appears; declining loses the changes by choice, not silently.
 - AE7. **Covers R12.** Delete a node, press Undo → the node and its connections return. Connect two ports, press Undo → the cable is removed. Rename a node, press Undo → the old name returns. Redo re-applies each.
+- AE8. **Covers R13.** Open a patch, change something, choose Save (not Save As) → the same file is overwritten, no picker appears. The window title shows the patch's name and an unsaved-changes marker while the change is pending, and the marker clears on save.
 
 ### Scope Boundaries
 
@@ -85,15 +87,16 @@ Requirement IDs (R1–R11) below are local to this checklist. References to the 
 
 ### Success Criteria
 
-- **Reads as shipped:** a first-time user on macOS or Windows sees no obvious "unfinished" tells — the window remembers itself, nodes can be named, meters move (with an overload state), an About window exists, and on mac a menu bar (with a working Edit menu) exists.
+- **Reads as shipped:** a first-time user on macOS or Windows sees no obvious "unfinished" tells — the window remembers itself, nodes can be named, meters move (with an overload state), an About window exists, on mac a menu bar (with a working Edit menu) exists, and the currently-loaded patch's identity and save state are always visible (R13).
 - **Safe to perform with:** no unrecoverable silent loss of work — a modified board can't vanish to an accidental quit or patch-load (R11), and a structural mistake (wrong node deleted, wrong cable connected) is recoverable via undo (R12). This is a distinct axis from "reads as shipped"; the blocking triage is run against both.
 - **R17 closed:** every parity item has a *non-conditional* tier — blocking, nice-to-have with a committed disposition, or deferred — so nothing sits in a "maybe, depending on cost" bucket.
 - Deferred subsystems are mostly noticed only on close inspection, with one acknowledged exception a returning Pedalboard2 user will see immediately: the absent PresetBar (M3 patch banks substitute for board-level recall). Undo is no longer in that exception set — R12 covers the structural-edit case that made undo's absence visible.
 
 ### Dependencies / Assumptions
 
-- The 1.0-blocking finish pass (R1, R2, R4, R5, R6, R11, R12) is largely independent of M2–M4 and should land as a dedicated milestone **before the M5 public beta**, so the first public impression already reads as shipped. It must not fold into M6 — M6 lands *after* the beta, which would ship the beta without the polish the success criteria require.
+- The 1.0-blocking finish pass (R1, R2, R4, R5, R6, R11, R12, R13) is largely independent of M2–M4 and should land as a dedicated milestone **before the M5 public beta**, so the first public impression already reads as shipped. It must not fold into M6 — M6 lands *after* the beta, which would ship the beta without the polish the success criteria require.
 - R12 (shallow undo) is the one item in this set genuinely sized like a small subsystem rather than pure UI polish — it needs a command/history model for three operation types, not just a screen. Size it accordingly in finish-pass planning; it is still far smaller than the full 50-step system deferred to 1.x.
+- R11 and R13 share a prerequisite — tracking whether the active patch has a known file path and unsaved changes — that doesn't exist in `Session` today. Plan them as one unit of work rather than two.
 - R10 (GPLv3 distribution compliance) is owned by M8 / release engineering, not the finish pass — it gates the packaged, distributed build.
 - R3 (VU meter UI) and R8 (MIDI channel UI) are already inside M6 and M4 respectively; this doc lists them for completeness and creates no parallel work.
 - R6 (macOS menu bar) and the on-app halves of R5/R11 can only be fully verified on desktop builds (macOS/Windows), per the project's on-hardware verification matrix.
