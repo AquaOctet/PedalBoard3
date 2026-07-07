@@ -99,15 +99,23 @@ void pumpUntilIdle(session::Session& s, int timeoutMs = 2000)
     }
 }
 
-// A one-node patch whose node carries `mapping` (typically targeting node id
-// 1, parameterIndex 0 — the TestParamProcessor's sole "gain" parameter).
-session::Patch makeOneNodePatchWithMapping(control::MidiMapping mapping)
+// A one-node patch with no mappings yet (node id 1 -- the target every
+// ccMapping() in this file addresses).
+session::Patch makeOneNodePatch()
 {
     session::Patch p;
     session::PatchNode n;
     n.id = 1;
     n.desc = makeDesc("Param");
     p.nodes.push_back(n);
+    return p;
+}
+
+// A one-node patch whose node carries `mapping` (typically targeting node id
+// 1, parameterIndex 0 — the TestParamProcessor's sole "gain" parameter).
+session::Patch makeOneNodePatchWithMapping(control::MidiMapping mapping)
+{
+    session::Patch p = makeOneNodePatch();
     p.midiMappings.push_back(std::move(mapping));
     return p;
 }
@@ -258,6 +266,26 @@ TEST_CASE("ControlWiring: resolver stays correct across a whole-patch swap", "[s
 
     f.hub.handleMidi(ccOn(20));
     REQUIRE(f.paramValue() == Approx(1.0f)); // resolves + drives the NEW instance
+}
+
+TEST_CASE("ControlWiring: Session::addMidiMapping (MIDI learn's persist step) is live immediately",
+          "[session][control-wiring]")
+{
+    // Covers R8's integration scenario: learn appends via Session::addMidiMapping
+    // rather than a whole-patch swap; ControlWiring must re-feed on that too
+    // (it bumps mappingsRevision_, same as a swap) so the mapping controls the
+    // parameter with no re-arm and no patch reload.
+    Fixture f;
+    f.sess.replacePatch(makeOneNodePatch());
+    pumpUntilIdle(f.sess);
+
+    session::ControlWiring wiring(f.sess, f.hub);
+
+    f.sess.addMidiMapping(ccMapping(74));
+    f.sess.sendSynchronousChangeMessage();
+
+    f.hub.handleMidi(ccOn(74));
+    REQUIRE(f.paramValue() == Approx(1.0f));
 }
 
 TEST_CASE("ControlWiring: lifetime -- outliving the wiring with a Session change is safe",

@@ -43,6 +43,7 @@ PluginCard::PluginCard(NodeSnapshot initialSnapshot, Callbacks callbacks)
         addAndMakeVisible(b);
     };
     wireSmallButton(bypassButton_);
+    wireSmallButton(learnButton_);
     wireSmallButton(editButton_);
     wireSmallButton(removeButton_);
 
@@ -52,6 +53,11 @@ PluginCard::PluginCard(NodeSnapshot initialSnapshot, Callbacks callbacks)
     {
         if (callbacks_.onBypassToggle)
             callbacks_.onBypassToggle(snapshot_.id);
+    };
+    learnButton_.onClick = [this]
+    {
+        if (callbacks_.onMidiLearn)
+            callbacks_.onMidiLearn(snapshot_.id);
     };
     editButton_.onClick = [this]
     {
@@ -88,6 +94,16 @@ void PluginCard::setAccentColour(juce::Colour c)
     if (c == accent_)
         return;
     accent_ = c;
+    repaint();
+}
+
+void PluginCard::setMidiLearnArmed(bool armed)
+{
+    if (armed == learnArmed_)
+        return;
+    learnArmed_ = armed;
+    learnButton_.setColour(juce::TextButton::textColourOffId, armed ? tokens::accentWarning : tokens::fgPrimary);
+    learnButton_.setButtonText(armed ? "..." : "M");
     repaint();
 }
 
@@ -214,13 +230,15 @@ void PluginCard::resized()
     auto bounds = getLocalBounds().reduced(0).withTrimmedLeft(static_cast<int>(kAccentBorderWidth));
     auto header = bounds.removeFromTop(kHeaderHeight).reduced(kPaddingX, 4);
 
-    // Title fills left, then 3 buttons on the right (Bypass | Edit | Remove).
-    auto buttonStrip = header.removeFromRight(20 * 3 + 6);
-    nameLabel_.setBounds(header.withTrimmedRight(4));
-
+    // Title fills left, then 4 buttons on the right (Bypass | Learn | Edit | Remove).
     const int btnW = 20;
     const int btnGap = 3;
+    auto buttonStrip = header.removeFromRight(btnW * 3 + (btnW + 8) + btnGap * 3);
+    nameLabel_.setBounds(header.withTrimmedRight(4));
+
     bypassButton_.setBounds(buttonStrip.removeFromLeft(btnW));
+    buttonStrip.removeFromLeft(btnGap);
+    learnButton_.setBounds(buttonStrip.removeFromLeft(btnW));
     buttonStrip.removeFromLeft(btnGap);
     editButton_.setBounds(buttonStrip.removeFromLeft(btnW + 8)); // "Edit" wider
     buttonStrip.removeFromLeft(btnGap);

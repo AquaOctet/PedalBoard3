@@ -1,7 +1,9 @@
 #include "SignalCanvas.h"
 
 #include "ColourScheme.h"
+#include "control/MidiMapping.h"
 #include "engine/PluginHost.h"
+#include "session/ControlHub.h"
 #include "session/Patch.h"
 #include "session/Session.h"
 
@@ -59,6 +61,9 @@ SignalCanvas::SignalCanvas(AppContext& ctx) : ctx_(ctx)
 
 SignalCanvas::~SignalCanvas()
 {
+    // Only this canvas arms MIDI learn; drop any pending arm before dying so
+    // a MIDI message arriving after teardown can't invoke a dangling `this`.
+    ctx_.controlHub.cancelMidiLearn();
     ctx_.session.removeChangeListener(this);
     editors_.clear();
 }
@@ -84,6 +89,10 @@ void SignalCanvas::changeListenerCallback(juce::ChangeBroadcaster*)
     {
         lastPatchGeneration_ = gen;
         editors_.clear();
+        // A whole-patch swap can reuse NodeIds for different plugins
+        // (crash-hunt #7) — an in-flight learn's captured target id would no
+        // longer mean what the user picked it for.
+        cancelMidiLearnIfArmed();
     }
 
     auto snaps = ctx_.session.getNodeSnapshots();
@@ -159,6 +168,7 @@ std::unique_ptr<PluginCard> SignalCanvas::makeCard(const PluginCard::NodeSnapsho
         [this](NodeId id) { onCardRemove(id); },
         [this](NodeId id) { onCardDragging(id); },
         [this](NodeId id, juce::Point<int> p) { onCardMoved(id, p); },
+        [this](NodeId id) { onCardMidiLearn(id); },
     };
     return std::make_unique<PluginCard>(s, std::move(cb));
 }
@@ -431,6 +441,8 @@ void SignalCanvas::onCardRemove(NodeId id)
     // BypassableInstance inline before firing the async change
     // message, so a listener-side close would be too late.
     editors_.erase(id);
+    if (midiLearnArmedNode_ && *midiLearnArmedNode_ == id)
+        cancelMidiLearnIfArmed(); // the card (and its visual) is about to go away too
     ctx_.session.removeNode(id);
 }
 
@@ -450,6 +462,74 @@ void SignalCanvas::onCardDragging(NodeId)
     // per-cable in paint() from the live card positions, so a repaint glues them
     // to the moving card.
     repaint();
+}
+
+void SignalCanvas::cancelMidiLearnIfArmed()
+{
+    if (!midiLearnArmedNode_)
+        return;
+    ctx_.controlHub.cancelMidiLearn();
+    auto it = idToIndex_.find(*midiLearnArmedNode_);
+    if (it != idToIndex_.end())
+        cards_[it->second]->setMidiLearnArmed(false);
+    midiLearnArmedNode_.reset();
+}
+
+void SignalCanvas::onCardMidiLearn(NodeId id)
+{
+    // Clicking Learn again on the already-armed card cancels it (AC: cancel
+    // while armed creates no mapping and re-enables normal routing).
+    if (midiLearnArmedNode_ && *midiLearnArmedNode_ == id)
+    {
+        cancelMidiLearnIfArmed();
+        return;
+    }
+
+    auto* proc = ctx_.session.getHostedPlugin(id);
+    if (proc == nullptr)
+        return;
+    const auto& params = proc->getParameters();
+    if (params.isEmpty())
+        return;
+
+    juce::PopupMenu menu;
+    for (int i = 0; i < params.size(); ++i)
+        menu.addItem(i + 1, params[i]->getName(64));
+
+    menu.showMenuAsync(juce::PopupMenu::Options{},
+                       [this, id](int result)
+                       {
+                           if (result <= 0)
+                               return; // dismissed with no selection
+
+                           const int parameterIndex = result - 1;
+
+                           // Only one card armed at a time (ControlHub::armMidiLearn re-arming
+                           // silently replaces the previous learn — mirror that in the UI too).
+                           cancelMidiLearnIfArmed();
+
+                           midiLearnArmedNode_ = id;
+                           if (auto it = idToIndex_.find(id); it != idToIndex_.end())
+                               cards_[it->second]->setMidiLearnArmed(true);
+
+                           ctx_.controlHub.armMidiLearn(
+                               [this, id, parameterIndex](const control::MidiSource& source)
+                               {
+                                   control::MidiMapping mapping;
+                                   mapping.source = source;
+                                   mapping.target.kind = control::MidiTargetKind::PluginParameter;
+                                   mapping.target.node = id;
+                                   mapping.target.parameterIndex = parameterIndex;
+                                   ctx_.session.addMidiMapping(mapping);
+
+                                   if (midiLearnArmedNode_ && *midiLearnArmedNode_ == id)
+                                   {
+                                       if (auto it = idToIndex_.find(id); it != idToIndex_.end())
+                                           cards_[it->second]->setMidiLearnArmed(false);
+                                       midiLearnArmedNode_.reset();
+                                   }
+                               });
+                       });
 }
 
 // ----- Port drag-to-connect / cable selection (U4) ---------------------------

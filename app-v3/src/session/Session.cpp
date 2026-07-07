@@ -391,6 +391,14 @@ void Session::setNodeCustomName(NodeId id, juce::String name)
     }
 }
 
+void Session::addMidiMapping(control::MidiMapping mapping)
+{
+    std::lock_guard<std::mutex> lk(statusMutex_);
+    activePatch_.midiMappings.push_back(std::move(mapping));
+    mappingsRevision_.fetch_add(1, std::memory_order_release);
+    bumpVersionAndNotify();
+}
+
 // ---- Public API: snapshot accessors ---------------------------------------
 
 Patch Session::getActivePatch() const

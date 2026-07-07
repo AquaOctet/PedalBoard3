@@ -95,6 +95,11 @@ private:
     void onCardRemove(NodeId);
     void onCardMoved(NodeId, juce::Point<int> newPos);
     void onCardDragging(NodeId);
+    // MIDI learn (M2 U4): opens a parameter picker, then arms ControlHub;
+    // clicking again on the already-armed card cancels it.
+    void onCardMidiLearn(NodeId);
+    // Clears midiLearnArmedNode_ and its card's visual, if any is armed.
+    void cancelMidiLearnIfArmed();
 
     // Map a graphIO sentinel to either the input or output endpoint
     // bounds; map any other NodeId to its card's index in cards_.
@@ -140,6 +145,10 @@ private:
     PortRef dragAnchor_;                                    // the fixed end of a connection drag
     juce::Point<int> dragCursor_;                           // current cursor in canvas space
     std::optional<session::PatchConnection> selectedCable_; // for click-select + Delete
+
+    // MIDI learn (M2 U4): at most one card armed at a time, mirroring
+    // ControlHub::isLearning()'s single-slot policy.
+    std::optional<NodeId> midiLearnArmedNode_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SignalCanvas)
 };

@@ -41,6 +41,10 @@ public:
         // live; onMoved fires once on release with the final top-left.
         std::function<void(NodeId)> onDragging;
         std::function<void(NodeId, juce::Point<int>)> onMoved;
+        // MIDI learn (M2 U4): arms/cancels a controller-to-parameter binding.
+        // Clicking again while this card is armed cancels it (SignalCanvas
+        // tracks which card, if any, is currently armed).
+        std::function<void(NodeId)> onMidiLearn;
     };
 
     PluginCard(NodeSnapshot initialSnapshot, Callbacks callbacks);
@@ -55,6 +59,11 @@ public:
 
     // Left-edge accent colour driven by canvas (instrument vs effect).
     void setAccentColour(juce::Colour);
+
+    // Visual-only: highlights the Learn button while this card is the one
+    // armed for MIDI learn. SignalCanvas owns the "only one at a time"
+    // policy; the card just reflects whatever it's told.
+    void setMidiLearnArmed(bool armed);
 
     // Port centre in card-local coordinates. SignalCanvas adds
     // getPosition() to convert into canvas-global coordinates.
@@ -96,8 +105,10 @@ private:
 
     juce::Label nameLabel_;
     juce::TextButton bypassButton_{"BYP"};
+    juce::TextButton learnButton_{"M"};
     juce::TextButton editButton_{"Edit"};
     juce::TextButton removeButton_{"X"};
+    bool learnArmed_{false};
 
     void refreshFromSnapshot();
 

@@ -146,6 +146,11 @@ public:
     void setNodeBypass(NodeId, bool);
     void setNodeCustomName(NodeId, juce::String);
 
+    // Append a MIDI mapping to the active patch (MIDI learn's persist step).
+    // Bumps the mappings revision (not just stateVersion_) so ControlWiring
+    // re-feeds ControlHub with the new mapping live immediately.
+    void addMidiMapping(control::MidiMapping);
+
     // ---- Free-routing edits (interactive canvas, message thread) -----------
 
     // Create a user-authored connection. Returns false (patch unchanged) if the
