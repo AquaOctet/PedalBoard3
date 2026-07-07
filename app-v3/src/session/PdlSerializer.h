@@ -12,7 +12,7 @@ namespace pedalboard3::session::pdl
 // Read/write Pedalboard 3 .pdl files (master plan §4.5). A .pdl wraps a
 // single <PATCH> (session/Patch.cpp) in a versioned <PEDALBOARD> root:
 //
-//   <PEDALBOARD schemaMajor="3" schemaMinor="1" appVersion="3.0.0">
+//   <PEDALBOARD schemaMajor="3" schemaMinor="1" appVersion="1.0.0">
 //     <PATCH name="..."> <NODES/> <CONNECTIONS/> <MAPPINGS/> </PATCH>
 //   </PEDALBOARD>
 //
