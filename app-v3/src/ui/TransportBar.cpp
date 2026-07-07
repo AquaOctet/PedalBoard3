@@ -395,10 +395,16 @@ void TransportBar::applyOscPortChange()
         return;
     }
 
-    ctx_.preferences.setOscPort(port);
-    ctx_.preferences.flush();
-
+    // rebind() drops the previous (working) binding before attempting the new
+    // one, so a failure leaves OSC dead either way -- but persist only on
+    // success, so a rejected port never overwrites the last-good saved value.
     const auto error = ctx_.oscServer.rebind(port, ctx_.preferences.getOscMulticastAddress());
+    if (error.isEmpty())
+    {
+        ctx_.preferences.setOscPort(port);
+        ctx_.preferences.flush();
+    }
+
     // Surface a bind failure (e.g. port already in use) inline via the
     // field's colour/tooltip rather than a blocking dialog — the control
     // layer keeps working regardless of OSC availability (App::initialise

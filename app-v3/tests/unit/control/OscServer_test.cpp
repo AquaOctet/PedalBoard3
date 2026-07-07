@@ -38,6 +38,22 @@ TEST_CASE("OscServer: a null sink drops messages safely", "[control][osc-server]
     SUCCEED(); // no crash
 }
 
+TEST_CASE("OscServer: rebind with no multicast address succeeds on an available port", "[control][osc-server]")
+{
+    // The plain-unicast path every real call site actually takes (App::initialise's
+    // default port, TransportBar::applyOscPortChange's normal case) -- every other
+    // test here asserts a *failure* outcome or only partially checks the multicast
+    // success case, so this is the one place the ordinary success path is verified.
+    control::OscServer server([](const juce::OSCMessage&) {});
+
+    const auto error = server.rebind(0); // port 0: OS picks an ephemeral port
+
+    REQUIRE(error.isEmpty());
+    REQUIRE(server.isConnected());
+
+    server.disconnect();
+}
+
 TEST_CASE("OscServer: an invalid multicast address is rejected without binding", "[control][osc-server]")
 {
     control::OscServer server([](const juce::OSCMessage&) {});

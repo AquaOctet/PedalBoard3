@@ -496,9 +496,17 @@ void SignalCanvas::onCardMidiLearn(NodeId id)
     for (int i = 0; i < params.size(); ++i)
         menu.addItem(i + 1, params[i]->getName(64));
 
+    // A juce::PopupMenu is an independent top-level window, not tied to the
+    // lifetime of the component that opened it: closing the app while this
+    // picker is still open does not force-dismiss it, so a raw `this` capture
+    // would fire into a destroyed SignalCanvas. SafePointer guards both this
+    // callback and the nested armMidiLearn one.
+    juce::Component::SafePointer<SignalCanvas> safeThis(this);
     menu.showMenuAsync(juce::PopupMenu::Options{},
-                       [this, id](int result)
+                       [safeThis, id](int result)
                        {
+                           if (safeThis == nullptr)
+                               return;
                            if (result <= 0)
                                return; // dismissed with no selection
 
@@ -506,27 +514,29 @@ void SignalCanvas::onCardMidiLearn(NodeId id)
 
                            // Only one card armed at a time (ControlHub::armMidiLearn re-arming
                            // silently replaces the previous learn — mirror that in the UI too).
-                           cancelMidiLearnIfArmed();
+                           safeThis->cancelMidiLearnIfArmed();
 
-                           midiLearnArmedNode_ = id;
-                           if (auto it = idToIndex_.find(id); it != idToIndex_.end())
-                               cards_[it->second]->setMidiLearnArmed(true);
+                           safeThis->midiLearnArmedNode_ = id;
+                           if (auto it = safeThis->idToIndex_.find(id); it != safeThis->idToIndex_.end())
+                               safeThis->cards_[it->second]->setMidiLearnArmed(true);
 
-                           ctx_.controlHub.armMidiLearn(
-                               [this, id, parameterIndex](const control::MidiSource& source)
+                           safeThis->ctx_.controlHub.armMidiLearn(
+                               [safeThis, id, parameterIndex](const control::MidiSource& source)
                                {
+                                   if (safeThis == nullptr)
+                                       return;
                                    control::MidiMapping mapping;
                                    mapping.source = source;
                                    mapping.target.kind = control::MidiTargetKind::PluginParameter;
                                    mapping.target.node = id;
                                    mapping.target.parameterIndex = parameterIndex;
-                                   ctx_.session.addMidiMapping(mapping);
+                                   safeThis->ctx_.session.addMidiMapping(mapping);
 
-                                   if (midiLearnArmedNode_ && *midiLearnArmedNode_ == id)
+                                   if (safeThis->midiLearnArmedNode_ && *safeThis->midiLearnArmedNode_ == id)
                                    {
-                                       if (auto it = idToIndex_.find(id); it != idToIndex_.end())
-                                           cards_[it->second]->setMidiLearnArmed(false);
-                                       midiLearnArmedNode_.reset();
+                                       if (auto it = safeThis->idToIndex_.find(id); it != safeThis->idToIndex_.end())
+                                           safeThis->cards_[it->second]->setMidiLearnArmed(false);
+                                       safeThis->midiLearnArmedNode_.reset();
                                    }
                                });
                        });
