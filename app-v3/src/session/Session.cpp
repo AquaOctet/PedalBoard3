@@ -881,6 +881,11 @@ void Session::commitLoadPatch(LoadPatchResult&& result)
     }
 
     patchGeneration_.fetch_add(1, std::memory_order_release);
+    // A whole-patch load always replaces the mapping tables wholesale (even
+    // when the new patch has none), so this bumps unconditionally alongside
+    // patchGeneration_ — a mapping-focused listener (ControlWiring) re-feeds
+    // on every load, not just ones that happen to carry mappings.
+    mappingsRevision_.fetch_add(1, std::memory_order_release);
     publishStateChange(State::Idle);
 }
 

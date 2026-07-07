@@ -10,6 +10,7 @@ namespace pedalboard3::session
 {
 class Preferences;
 class Session;
+class ControlHub;
 } // namespace pedalboard3::session
 
 namespace pedalboard3
@@ -23,10 +24,9 @@ namespace pedalboard3
 // Phase 1.C.2 added: session::Preferences (per-user persistence).
 // Phase 1.D.2 added: session::Session (queued patch-switch state machine).
 // Phase 1.D.3: Session API expanded to multi-node patch (PluginSlot retired).
+// M2 added: session::ControlHub (MIDI/OSC ingest — see ControlWiring.h).
 //
 // Upcoming additions (one field per subsystem as each phase lands):
-//   - control::MidiRouter        (Phase 4 — MIDI ingest / dispatch)
-//   - control::OscServer         (Phase 4 — OSC ingest / dispatch)
 //   - diagnostics::EventLog      (Phase 1.B+ — RT-safe observability)
 //
 // Keep the struct trivially copyable — it's a reference bundle, not a
@@ -38,6 +38,7 @@ struct AppContext
     engine::PluginHost& pluginHost;
     session::Preferences& preferences;
     session::Session& session;
+    session::ControlHub& controlHub;
 };
 
 } // namespace pedalboard3

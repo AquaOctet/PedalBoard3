@@ -47,9 +47,16 @@ void App::initialise(const juce::String& /*commandLine*/)
     }
 
     session = std::make_unique<session::Session>(*engine, *pluginHost);
+
+    // M2: ControlHub is the message-thread entry point live MIDI/OSC devices
+    // feed (device edges land in App::initialise too, once built); ControlWiring
+    // binds its resolver to session and re-feeds mappings on every patch change.
+    controlHub = std::make_unique<session::ControlHub>();
+    controlWiring = std::make_unique<session::ControlWiring>(*session, *controlHub);
+
     persister = std::make_unique<session::PreferencesPersister>(*preferences, *engine, *pluginHost, *session);
 
-    context.emplace(AppContext{*engine, *pluginHost, *preferences, *session});
+    context.emplace(AppContext{*engine, *pluginHost, *preferences, *session, *controlHub});
     mainWindow = std::make_unique<ui::MainWindow>(getApplicationName(), *context);
 
     // Restore the previously-active patch, gated by the KnownPluginList
@@ -64,11 +71,17 @@ void App::shutdown()
 
     // Reverse construction order. PreferencesPersister deregisters
     // listeners in its dtor (must drop BEFORE session/host/engine).
+    // ControlWiring likewise deregisters from session in its dtor, so it
+    // must drop before session too; controlHub outlives it with nothing
+    // left referencing it once controlWiring and context (which handed a
+    // controlHub& to UI) are both gone.
     // Session's dtor cancels its AsyncUpdater + joins its worker BEFORE
     // PluginHost/AudioEngine teardown (lifetime invariant in Session.h).
     mainWindow.reset();
     context.reset();
     persister.reset();
+    controlWiring.reset();
+    controlHub.reset();
     session.reset();
     pluginHost.reset();
     engine.reset();

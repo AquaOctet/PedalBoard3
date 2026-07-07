@@ -3,6 +3,8 @@
 #include "AppContext.h"
 #include "engine/AudioEngine.h"
 #include "engine/PluginHost.h"
+#include "session/ControlHub.h"
+#include "session/ControlWiring.h"
 #include "session/Preferences.h"
 #include "session/PreferencesPersister.h"
 #include "session/Session.h"
@@ -58,6 +60,11 @@ private:
     std::unique_ptr<engine::AudioEngine> engine;
     std::unique_ptr<engine::PluginHost> pluginHost;
     std::unique_ptr<session::Session> session;
+    // M2: constructed after session (ControlWiring observes it), before
+    // AppContext (which hands controlHub out to UI). Destroyed before
+    // session in shutdown() — see the reverse-order comment there.
+    std::unique_ptr<session::ControlHub> controlHub;
+    std::unique_ptr<session::ControlWiring> controlWiring;
     std::unique_ptr<session::PreferencesPersister> persister;
     std::optional<AppContext> context;
     std::unique_ptr<ui::MainWindow> mainWindow;

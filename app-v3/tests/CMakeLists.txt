@@ -31,6 +31,7 @@ set(PB3_TEST_SOURCES
     unit/session/PdlV2Importer_test.cpp
     unit/session/ControlParameterApplier_test.cpp
     unit/session/ControlHub_test.cpp
+    unit/session/ControlWiring_test.cpp
     unit/control/MidiMapping_test.cpp
     unit/control/MidiRouter_test.cpp
     unit/control/MidiControlSurface_test.cpp
