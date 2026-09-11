@@ -3,6 +3,7 @@
 #include "AppContext.h"
 #include "EditorWindow.h"
 #include "MappingsDialog.h"
+#include "MeterMath.h"
 #include "PluginCard.h"
 #include "session/NodeId.h"
 
@@ -63,7 +64,10 @@ namespace pedalboard3::ui
 // gradient (audio), cyan (MIDI), dimming (bypassed source), or selection
 // highlight. Derived from `connections_` (arbitrary topology), not chain
 // adjacency.
-class SignalCanvas : public juce::Component, public juce::DragAndDropTarget, private juce::ChangeListener
+class SignalCanvas : public juce::Component,
+                     public juce::DragAndDropTarget,
+                     private juce::ChangeListener,
+                     private juce::Timer
 {
 public:
     using NodeId = pedalboard3::session::NodeId;
@@ -93,8 +97,14 @@ public:
     bool isInterestedInDragSource(const SourceDetails&) override;
     void itemDropped(const SourceDetails&) override;
 
+    // The selected card (UI refresh U7): set by a click on a card, cleared by a
+    // click on empty canvas. The board mappings panel (U9) highlights its rows.
+    std::optional<NodeId> selectedNode() const noexcept { return selectedNode_; }
+
 private:
     void changeListenerCallback(juce::ChangeBroadcaster*) override;
+    void timerCallback() override; // the cards' activity strips and VU meters
+    void setSelectedNode(std::optional<NodeId> id);
 
     void layoutCards();
     // Stroke one cable (gradient for audio, cyan for MIDI; dashed when its
@@ -170,6 +180,10 @@ private:
 
     // The per-plugin mappings dialog (M4 U4); it owns MIDI learn.
     std::unique_ptr<MappingsWindow> mappingsWindow_;
+
+    // The selected card, and each card's activity blink (UI refresh U7).
+    std::optional<NodeId> selectedNode_;
+    std::unordered_map<NodeId, meter::ActivityBlink> activityBlinks_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SignalCanvas)
 };

@@ -7,25 +7,30 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <functional>
+#include <memory>
 
 namespace pedalboard3::ui
 {
 
-// One PluginCard renders a single PatchNode in the SignalCanvas:
-// title row (name + Bypass/Edit/Remove), input/output ports (the canvas owns
-// their drag-to-connect via hitTest), and a MIDI activity placeholder. The card
-// body is draggable to reposition; positioning replaced the old Move ↑/↓ row.
+// One PluginCard renders a single PatchNode on the SignalCanvas, as the
+// mockup's 170 x 92 card (UI refresh U7):
+//   - a header with a drag grip, the name, and BYP / M / ED. Remove shows only
+//     on hover, so it can't be hit by accident mid-set.
+//   - a body with the plugin's category, then its format with the vendor or its
+//     mapping count (ui/CardText.h). A VU Meter card shows its live meter.
+//   - ports as edge dots; the canvas owns their drag-to-connect via hitTest.
+//   - a bottom strip that lights cyan when a mapped control moves the plugin.
+// A bypassed card dims and strikes its name; a selected card has a teal edge.
+// Double-clicking the name edits it in place (U8): Enter keeps it, Escape
+// cancels, and an empty name reverts to the plugin's own. The body is
+// draggable to reposition.
 //
-// Threading: message thread only. SignalCanvas drives every state
-// change via setSnapshot() in response to Session change messages.
+// Threading: message thread only. SignalCanvas drives every state change:
+// setSnapshot on Session change messages, activity and meter levels from its
+// timer.
 //
-// Ownership: SignalCanvas owns std::vector<unique_ptr<PluginCard>>;
-// the canvas closes the corresponding EditorWindow synchronously
-// before invoking Session::removeNode (per AC-UI-P).
-//
-// CardCallbacks is set at construction; the architecture review's
-// "audit at construction" guidance — passing the whole bundle keeps
-// 'forgot to wire one' obvious in the call site.
+// Ownership: SignalCanvas owns the cards and closes the corresponding
+// EditorWindow synchronously before a node goes (AC-UI-P).
 class PluginCard : public juce::Component
 {
 public:
@@ -44,25 +49,27 @@ public:
         // Opens the per-plugin MIDI / OSC mappings dialog (M4 U4), which also
         // owns MIDI learn.
         std::function<void(NodeId)> onOpenMappings;
+        // A click on the card (not a drag): the canvas selects it.
+        std::function<void(NodeId)> onSelect;
+        // The name was edited in place; empty reverts to the plugin's own name.
+        std::function<void(NodeId, juce::String)> onRename;
     };
 
     PluginCard(NodeSnapshot initialSnapshot, Callbacks callbacks);
-    ~PluginCard() override = default;
+    ~PluginCard() override;
 
     NodeId getNodeId() const noexcept { return snapshot_.id; }
 
-    // SignalCanvas calls this from changeListenerCallback when the
-    // chain's snapshot vector reports a change for this NodeId. Cheap
-    // path: no Component destruction; just relabels and repaints.
     void setSnapshot(const NodeSnapshot&);
+    void setAccentColour(juce::Colour); // teal = effect, amber = instrument
+    void setMappingCount(int count);
+    void setSelected(bool selected);
+    void setActivity(bool lit);                   // a mapped control just moved the plugin
+    void setMeterLevels(float left, float right); // linear peaks; VU Meter cards only
+    bool isVuMeter() const noexcept;
 
-    // Left-edge accent colour driven by canvas (instrument vs effect).
-    void setAccentColour(juce::Colour);
-
-    // Port centre in card-local coordinates. SignalCanvas adds
-    // getPosition() to convert into canvas-global coordinates.
-    // `channel`: 0 = L, 1 = R, `juce::AudioProcessorGraph::midiChannelIndex`
-    // (0x1000) = MIDI.
+    // Port centre in card-local coordinates; SignalCanvas adds getPosition().
+    // `channel`: 0 = L, 1 = R, juce::AudioProcessorGraph::midiChannelIndex = MIDI.
     juce::Point<int> getPortCentre(bool isInput, int channel) const noexcept;
 
     // Stored canvas position from the snapshot (NaN = unpositioned).
@@ -79,31 +86,52 @@ public:
     // the rest of the card stays interactive (body drag + buttons).
     bool hitTest(int x, int y) override;
 
-    // Drag-to-move on the card body (buttons consume their own clicks).
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
     void mouseUp(const juce::MouseEvent&) override;
-
-    // Hover highlight on the card body.
-    void mouseEnter(const juce::MouseEvent&) override;
-    void mouseExit(const juce::MouseEvent&) override;
+    void mouseDoubleClick(const juce::MouseEvent&) override;
 
 private:
+    // Hover over the card or any of its buttons, so Remove stays up while the
+    // pointer is anywhere on the card. A separate listener, so the card's own
+    // mouse handlers never see its children's events.
+    struct HoverWatcher : juce::MouseListener
+    {
+        explicit HoverWatcher(PluginCard& c) : card(c) {}
+        void mouseEnter(const juce::MouseEvent&) override { card.updateHover(); }
+        void mouseExit(const juce::MouseEvent&) override { card.updateHover(); }
+        PluginCard& card;
+    };
+
+    juce::String displayName() const;
+    void refreshButtons();
+    void updateHover();
+    void beginRename();
+    void endRename(bool commit);
+
     NodeSnapshot snapshot_;
     Callbacks callbacks_;
     juce::Colour accent_{tokens::accentPrimary};
+    int mappingCount_{0};
+    bool selected_{false};
+    bool active_{false};
+    float levelL_{0.0f};
+    float levelR_{0.0f};
 
     juce::ComponentDragger dragger_;
     bool didDrag_{false};
     bool hovered_{false};
+    HoverWatcher hoverWatcher_{*this};
 
-    juce::Label nameLabel_;
+    juce::Rectangle<int> nameArea_;
     juce::TextButton bypassButton_{"BYP"};
     juce::TextButton mappingsButton_{"M"};
-    juce::TextButton editButton_{"Edit"};
+    juce::TextButton editButton_{"ED"};
     juce::TextButton removeButton_{"X"};
-
-    void refreshFromSnapshot();
+    std::unique_ptr<juce::TextEditor> renameEditor_;
+    // The last rename editor, kept alive until its own key or focus callback
+    // has returned; freed on the next rename or with the card.
+    std::unique_ptr<juce::TextEditor> retiredEditor_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginCard)
 };

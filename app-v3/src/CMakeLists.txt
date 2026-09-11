@@ -36,6 +36,7 @@ add_library(pb3_app_core STATIC
     ui/BodyLayout.h
     ui/BrowserModel.h
     ui/CanvasLayout.h
+    ui/CardText.h
     ui/ColourScheme.h
     ui/CpuMeter.cpp
     ui/CpuMeter.h

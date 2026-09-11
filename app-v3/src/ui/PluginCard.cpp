@@ -1,60 +1,70 @@
 #include "PluginCard.h"
 
+#include "CardText.h"
+
 #include <juce_audio_processors/juce_audio_processors.h>
+
+#include <cmath>
 
 namespace pedalboard3::ui
 {
 
 namespace
 {
-constexpr float kCardCornerRadius = 6.0f;
-constexpr float kCardBorderThickness = 1.0f;
-constexpr float kAccentBorderWidth = 4.0f;
-constexpr int kAccentInset = 4; // integer form of kAccentBorderWidth for pixel layout
+constexpr float kRadius = 6.0f;
+constexpr float kAccentWidth = 4.0f;
+constexpr int kAccentInset = 4; // integer form of kAccentWidth for layout
+constexpr int kHeaderHeight = 32;
+constexpr int kStripHeight = 3;
+constexpr int kGripWidth = 14;
+constexpr int kButtonGap = 3;
 
-// Layout constants (the card is a fixed 170 × 140 from SignalCanvas's
-// layoutCards; rows here add up to that). Defined privately rather
-// than at file scope so they're only addressable from PluginCard
-// (architecture-review preference; matches Session::kAddQueueMax).
-constexpr int kHeaderHeight = 28;
-constexpr int kPortRowHeight = 22;
-constexpr int kMidiRowHeight = 18;
+// Ports sit at the card's edges, clear of the body text.
+constexpr int kPortRadius = 5;
+constexpr int kInPortX = 12;
+constexpr int kOutPortInset = 10;
+constexpr int kPortYL = 46;
+constexpr int kPortYR = 60;
+constexpr int kPortYMidi = 76;
 
-constexpr int kPortRadius = 6;
-constexpr int kPortStripeInset = 12; // distance from L/R edge to port centre
+constexpr int kTextLeft = 24;
+constexpr int kTextRightInset = 20;
 
-constexpr int kPaddingX = 8;
+const juce::String kVuMeterType{"VuMeterProcessor"};
+
+juce::Font nameFont()
+{
+    return juce::Font(juce::FontOptions(14.0f, juce::Font::bold));
+}
+
+juce::Font monoFont(float height)
+{
+    return juce::Font(juce::FontOptions(juce::Font::getDefaultMonospacedFontName(), height, juce::Font::plain));
+}
 } // namespace
 
 PluginCard::PluginCard(NodeSnapshot initialSnapshot, Callbacks callbacks)
     : snapshot_(std::move(initialSnapshot)), callbacks_(std::move(callbacks))
 {
-    nameLabel_.setText(snapshot_.name, juce::dontSendNotification);
-    nameLabel_.setColour(juce::Label::textColourId, tokens::fgPrimary);
-    nameLabel_.setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::bold)));
-    nameLabel_.setMinimumHorizontalScale(0.7f);
-    nameLabel_.setInterceptsMouseClicks(false, false);
-    addAndMakeVisible(nameLabel_);
-
-    auto wireSmallButton = [this](juce::TextButton& b)
+    for (auto* button : {&bypassButton_, &mappingsButton_, &editButton_, &removeButton_})
     {
-        b.setColour(juce::TextButton::buttonColourId, tokens::bgSecondary);
-        b.setColour(juce::TextButton::textColourOffId, tokens::fgPrimary);
-        addAndMakeVisible(b);
-    };
-    wireSmallButton(bypassButton_);
-    wireSmallButton(mappingsButton_);
-    wireSmallButton(editButton_);
-    wireSmallButton(removeButton_);
-
+        button->setColour(juce::TextButton::buttonColourId, tokens::bgSecondary);
+        button->setColour(juce::TextButton::textColourOffId, tokens::fgPrimary);
+        addAndMakeVisible(button);
+    }
     removeButton_.setColour(juce::TextButton::textColourOffId, tokens::accentDestructive);
+    removeButton_.setVisible(false); // shown on hover
+
+    bypassButton_.setTooltip("Bypass");
+    mappingsButton_.setTooltip("MIDI / OSC mappings");
+    editButton_.setTooltip("Open the plugin's editor");
+    removeButton_.setTooltip("Remove the plugin (Ctrl+Z brings it back)");
 
     bypassButton_.onClick = [this]
     {
         if (callbacks_.onBypassToggle)
             callbacks_.onBypassToggle(snapshot_.id);
     };
-    mappingsButton_.setTooltip("MIDI / OSC mappings");
     mappingsButton_.onClick = [this]
     {
         if (callbacks_.onOpenMappings)
@@ -71,23 +81,35 @@ PluginCard::PluginCard(NodeSnapshot initialSnapshot, Callbacks callbacks)
             callbacks_.onRemove(snapshot_.id);
     };
 
-    refreshFromSnapshot();
+    addMouseListener(&hoverWatcher_, /*wantsEventsForAllNestedChildComponents*/ true);
+    refreshButtons();
+}
+
+PluginCard::~PluginCard()
+{
+    removeMouseListener(&hoverWatcher_);
+    // A focused rename editor loses focus as the card goes; don't commit from a
+    // half-destroyed card.
+    if (renameEditor_ != nullptr)
+        renameEditor_->onFocusLost = nullptr;
+}
+
+juce::String PluginCard::displayName() const
+{
+    return snapshot_.customName.isNotEmpty() ? snapshot_.customName : snapshot_.name;
+}
+
+bool PluginCard::isVuMeter() const noexcept
+{
+    return snapshot_.builtIn && snapshot_.internalType == kVuMeterType;
 }
 
 void PluginCard::setSnapshot(const NodeSnapshot& s)
 {
-    const bool nameChanged = (s.name != snapshot_.name) || (s.customName != snapshot_.customName);
-    const bool bypassChanged = (s.bypassed != snapshot_.bypassed);
     snapshot_ = s;
-
-    if (nameChanged)
-        nameLabel_.setText(snapshot_.customName.isNotEmpty() ? snapshot_.customName : snapshot_.name,
-                           juce::dontSendNotification);
-    if (bypassChanged)
-        refreshFromSnapshot();
-
-    if (nameChanged || bypassChanged)
-        repaint();
+    refreshButtons();
+    resized();
+    repaint();
 }
 
 void PluginCard::setAccentColour(juce::Colour c)
@@ -98,157 +120,224 @@ void PluginCard::setAccentColour(juce::Colour c)
     repaint();
 }
 
-void PluginCard::refreshFromSnapshot()
+void PluginCard::setMappingCount(int count)
 {
-    // Bypass button visually flips: when bypassed, button is dimmed
-    // (foreground muted) so a glance reveals "this plugin is OFF".
+    if (count == mappingCount_)
+        return;
+    mappingCount_ = count;
+    repaint();
+}
+
+void PluginCard::setSelected(bool selected)
+{
+    if (selected == selected_)
+        return;
+    selected_ = selected;
+    repaint();
+}
+
+void PluginCard::setActivity(bool lit)
+{
+    if (lit == active_)
+        return;
+    active_ = lit;
+    repaint();
+}
+
+void PluginCard::setMeterLevels(float left, float right)
+{
+    if (std::abs(left - levelL_) < 0.0005f && std::abs(right - levelR_) < 0.0005f)
+        return;
+    levelL_ = left;
+    levelR_ = right;
+    repaint();
+}
+
+void PluginCard::refreshButtons()
+{
+    // BYP lights amber while bypassed. ED is for plugins (built-ins have no
+    // editor); M is for everything but the VU Meter, which has nothing to map.
+    bypassButton_.setColour(juce::TextButton::buttonColourId,
+                            snapshot_.bypassed ? tokens::accentWarning.withAlpha(0.18f) : tokens::bgSecondary);
     bypassButton_.setColour(juce::TextButton::textColourOffId,
-                            snapshot_.bypassed ? tokens::fgMuted : tokens::accentPrimary);
+                            snapshot_.bypassed ? tokens::accentWarning : tokens::fgPrimary);
+    editButton_.setVisible(!snapshot_.builtIn);
+    mappingsButton_.setVisible(!isVuMeter());
+    removeButton_.setVisible(hovered_);
+}
+
+void PluginCard::updateHover()
+{
+    const bool over = isMouseOver(/*includeChildren*/ true);
+    if (over == hovered_)
+        return;
+    hovered_ = over;
+    removeButton_.setVisible(hovered_);
+    resized();
+    repaint();
 }
 
 juce::Point<int> PluginCard::getPortCentre(bool isInput, int channel) const noexcept
 {
-    const int leftPortX = static_cast<int>(kAccentBorderWidth) + kPortStripeInset;
-    const int rightPortX = getWidth() - kPortStripeInset;
-    const int x = isInput ? leftPortX : rightPortX;
-
-    const int portsTopY = kHeaderHeight + 4;
-    const int rowL = portsTopY + kPortRowHeight / 2;
-    const int rowR = portsTopY + kPortRowHeight + kPortRowHeight / 2;
-    const int midiY = kHeaderHeight + 2 * kPortRowHeight + 4 + kMidiRowHeight / 2;
-
+    const int x = isInput ? kInPortX : getWidth() - kOutPortInset;
     if (channel == juce::AudioProcessorGraph::midiChannelIndex)
-        return {x, midiY};
-    return {x, channel == 0 ? rowL : rowR};
+        return {x, kPortYMidi};
+    return {x, channel == 0 ? kPortYL : kPortYR};
 }
 
 void PluginCard::paint(juce::Graphics& g)
 {
-    auto bounds = getLocalBounds().toFloat().reduced(0.5f);
+    const auto bounds = getLocalBounds().toFloat().reduced(0.5f);
+    juce::Path shape;
+    shape.addRoundedRectangle(bounds, kRadius);
 
-    // Card body fill — slightly dimmed when bypassed so the whole
-    // tile reads as "off" at a glance (matches mockup `opacity-50`).
-    auto bodyFill = tokens::bgCard;
-    if (snapshot_.bypassed)
-        bodyFill = bodyFill.withMultipliedAlpha(0.65f);
-    g.setColour(bodyFill);
-    g.fillRoundedRectangle(bounds, kCardCornerRadius);
+    // Body: dimmed while bypassed so the whole card reads as "off".
+    g.setColour(snapshot_.bypassed ? tokens::bgCard.withMultipliedAlpha(0.6f) : tokens::bgCard);
+    g.fillPath(shape);
 
-    // Accent stripe on the left edge by plugin type (teal = effect,
-    // amber = instrument; canvas decides via setAccentColour).
-    g.setColour(accent_);
-    juce::Path accentStripe;
-    accentStripe.addRoundedRectangle(bounds.getX(),
-                                     bounds.getY(),
-                                     kAccentBorderWidth,
-                                     bounds.getHeight(),
-                                     kCardCornerRadius,
-                                     kCardCornerRadius,
-                                     true,
-                                     false,
-                                     true,
-                                     false);
-    g.fillPath(accentStripe);
-
-    // Outer border — brightens to the accent on hover for a "liftable" feel.
-    g.setColour(hovered_ ? accent_.withAlpha(0.8f) : tokens::borderDefault);
-    g.drawRoundedRectangle(bounds, kCardCornerRadius, hovered_ ? 1.5f : kCardBorderThickness);
-
-    // Header divider line below the title row.
-    const auto y1 = static_cast<float>(kHeaderHeight);
-    g.setColour(tokens::borderMuted);
-    g.drawHorizontalLine(static_cast<int>(y1), bounds.getX() + kAccentBorderWidth, bounds.getRight());
-
-    // Port circles + labels (Path γ is read-only — drawn but no
-    // mouseDown handler; Phase 3 wires interactivity).
-    const auto portFontHeight = 10.0f;
-    g.setFont(juce::Font(juce::FontOptions(portFontHeight)));
-    g.setColour(tokens::fgMuted);
-
-    const int portsTopY = kHeaderHeight + 4;
-    const int portRowL = portsTopY + kPortRowHeight / 2;
-    const int portRowR = portsTopY + kPortRowHeight + kPortRowHeight / 2;
-
-    // Solid coloured dots so it's obvious where to grab a cable (a dark ring
-    // separates the dot from the card body).
-    auto drawPort = [&](int cx, int cy, juce::Colour c)
     {
-        auto box = juce::Rectangle<float>(0.0f, 0.0f, kPortRadius * 2.0f, kPortRadius * 2.0f)
-                       .withCentre({static_cast<float>(cx), static_cast<float>(cy)});
+        const juce::Graphics::ScopedSaveState state(g);
+        g.reduceClipRegion(shape);
+        g.setColour(snapshot_.bypassed ? accent_.withMultipliedAlpha(0.5f) : accent_);
+        g.fillRect(bounds.withWidth(kAccentWidth));
+        // The activity strip: cyan while a mapped control moves the plugin.
+        g.setColour(active_ ? tokens::accentInfo : tokens::bgMuted);
+        g.fillRect(bounds.withTrimmedLeft(kAccentWidth).removeFromBottom(static_cast<float>(kStripHeight)));
+    }
+
+    g.setColour(tokens::borderMuted);
+    g.drawHorizontalLine(kHeaderHeight, bounds.getX() + kAccentWidth, bounds.getRight());
+
+    // The drag grip: two columns of three dots.
+    g.setColour(tokens::fgMuted.withAlpha(0.7f));
+    for (int col = 0; col < 2; ++col)
+        for (int row = 0; row < 3; ++row)
+            g.fillEllipse(10.0f + 4.0f * static_cast<float>(col), 11.0f + 4.5f * static_cast<float>(row), 2.0f, 2.0f);
+
+    // The name, struck through while bypassed (hidden while it's being edited).
+    if (renameEditor_ == nullptr)
+    {
+        const auto name = displayName();
+        const auto font = nameFont();
+        g.setFont(font);
+        g.setColour(snapshot_.bypassed ? tokens::fgMuted : tokens::fgPrimary);
+        g.drawText(name, nameArea_, juce::Justification::centredLeft, true);
+        if (snapshot_.bypassed)
+        {
+            const float width = juce::jmin(juce::GlyphArrangement::getStringWidth(font, name),
+                                           static_cast<float>(nameArea_.getWidth()));
+            g.setColour(tokens::fgPrimary.withAlpha(0.3f));
+            g.drawHorizontalLine(nameArea_.getCentreY(),
+                                 static_cast<float>(nameArea_.getX()),
+                                 static_cast<float>(nameArea_.getX()) + width);
+        }
+    }
+
+    const int textWidth = getWidth() - kTextLeft - kTextRightInset;
+    if (isVuMeter())
+    {
+        // Two peak bars: teal, amber from 70%, red from 88% of the -60..0 dBFS scale.
+        const auto bar = [&g, textWidth](int y, float level)
+        {
+            const juce::Rectangle<float> r(
+                static_cast<float>(kTextLeft), static_cast<float>(y), static_cast<float>(textWidth), 7.0f);
+            g.setColour(tokens::bgMuted);
+            g.fillRoundedRectangle(r, 2.0f);
+            const float filled = r.getWidth() * card::meterFraction(level);
+            const float warnAt = r.getWidth() * 0.70f;
+            const float hotAt = r.getWidth() * 0.88f;
+            g.setColour(tokens::accentPrimary);
+            g.fillRect(r.withWidth(juce::jmin(filled, warnAt)));
+            if (filled > warnAt)
+            {
+                g.setColour(tokens::accentWarning);
+                g.fillRect(r.withX(r.getX() + warnAt).withWidth(juce::jmin(filled, hotAt) - warnAt));
+            }
+            if (filled > hotAt)
+            {
+                g.setColour(tokens::accentDestructive);
+                g.fillRect(r.withX(r.getX() + hotAt).withWidth(filled - hotAt));
+            }
+        };
+        bar(40, levelL_);
+        bar(50, levelR_);
+        g.setFont(monoFont(10.0f));
+        g.setColour(tokens::fgMuted);
+        g.drawText(card::dbfsText(levelL_), kTextLeft, 60, textWidth / 2, 12, juce::Justification::centredLeft);
+        g.drawText(card::dbfsText(levelR_) + " dBFS",
+                   kTextLeft + textWidth / 2,
+                   60,
+                   textWidth - textWidth / 2,
+                   12,
+                   juce::Justification::centredRight);
+    }
+    else
+    {
+        const auto lines = card::linesFor(snapshot_, mappingCount_);
+        g.setFont(juce::Font(juce::FontOptions(12.0f)));
+        g.setColour(tokens::fgMuted);
+        g.drawText(lines.kind, kTextLeft, 37, textWidth, 16, juce::Justification::centredLeft, true);
+        g.setFont(monoFont(10.0f));
+        g.setColour(tokens::fgMuted.withAlpha(0.8f));
+        g.drawText(lines.meta, kTextLeft, 54, textWidth, 14, juce::Justification::centredLeft, true);
+    }
+
+    // Ports: audio in teal, audio out amber, MIDI cyan, each ringed so it reads
+    // against the card.
+    const auto drawPort = [&g](int cx, int cy, juce::Colour c)
+    {
+        const auto box = juce::Rectangle<float>(0.0f, 0.0f, kPortRadius * 2.0f, kPortRadius * 2.0f)
+                             .withCentre({static_cast<float>(cx), static_cast<float>(cy)});
         g.setColour(c);
         g.fillEllipse(box);
         g.setColour(tokens::bgWindow);
         g.drawEllipse(box, 1.5f);
     };
+    const int outX = getWidth() - kOutPortInset;
+    drawPort(kInPortX, kPortYL, tokens::accentPrimary);
+    drawPort(kInPortX, kPortYR, tokens::accentPrimary);
+    drawPort(kInPortX, kPortYMidi, tokens::accentInfo);
+    drawPort(outX, kPortYL, tokens::accentWarning);
+    drawPort(outX, kPortYR, tokens::accentWarning);
+    drawPort(outX, kPortYMidi, tokens::accentInfo);
 
-    const int leftPortX = static_cast<int>(bounds.getX()) + kAccentInset + kPortStripeInset;
-    const int rightPortX = static_cast<int>(bounds.getRight()) - kPortStripeInset;
-
-    // Audio L (input + output) — input port colour = primary teal,
-    // output port colour = chart-3 amber per the mockup.
-    drawPort(leftPortX, portRowL, tokens::accentPrimary);
-    drawPort(rightPortX, portRowL, tokens::accentWarning);
-    drawPort(leftPortX, portRowR, tokens::accentPrimary);
-    drawPort(rightPortX, portRowR, tokens::accentWarning);
-
-    g.setColour(tokens::fgMuted);
-    g.drawText("In L", leftPortX + kPortRadius + 4, portRowL - 7, 30, 14, juce::Justification::centredLeft);
-    g.drawText("Out L", rightPortX - kPortRadius - 34, portRowL - 7, 30, 14, juce::Justification::centredRight);
-    g.drawText("In R", leftPortX + kPortRadius + 4, portRowR - 7, 30, 14, juce::Justification::centredLeft);
-    g.drawText("Out R", rightPortX - kPortRadius - 34, portRowR - 7, 30, 14, juce::Justification::centredRight);
-
-    // MIDI row: in/out ports at the card edges — the same anchors
-    // getPortCentre reports, so the visible dot is exactly where a cable
-    // terminates and where the canvas's grab hotspot lives. (The old single
-    // mid-card dot sat ~30px away from the interaction point.)
-    const int midiY = kHeaderHeight + 2 * kPortRowHeight + 4;
-    g.setColour(tokens::borderMuted);
-    g.drawHorizontalLine(midiY, bounds.getX() + kAccentBorderWidth, bounds.getRight());
-    g.setColour(tokens::fgMuted);
-    g.drawText("MIDI",
-               static_cast<int>(bounds.getX()) + kAccentInset + kPaddingX + kPortRadius * 2,
-               midiY + 2,
-               40,
-               kMidiRowHeight - 4,
-               juce::Justification::centredLeft);
-    const int midiPortY = midiY + kMidiRowHeight / 2;
-    drawPort(leftPortX, midiPortY, tokens::accentInfo);
-    drawPort(rightPortX, midiPortY, tokens::accentInfo);
+    // The edge: teal when selected, brighter on hover.
+    const auto edge = selected_  ? tokens::accentPrimary
+                      : hovered_ ? tokens::borderDefault.brighter(0.35f)
+                                 : tokens::borderDefault;
+    g.setColour(edge);
+    g.strokePath(shape, juce::PathStrokeType(selected_ ? 1.5f : 1.0f));
 }
 
 void PluginCard::resized()
 {
-    auto bounds = getLocalBounds().reduced(0).withTrimmedLeft(static_cast<int>(kAccentBorderWidth));
-    auto header = bounds.removeFromTop(kHeaderHeight).reduced(kPaddingX, 4);
+    auto header = getLocalBounds().removeFromTop(kHeaderHeight).withTrimmedLeft(kAccentInset).reduced(6, 5);
 
-    // Title fills left, then 4 buttons on the right (Bypass | Mappings | Edit | Remove).
-    const int btnW = 20;
-    const int btnGap = 3;
-    auto buttonStrip = header.removeFromRight(btnW * 3 + (btnW + 8) + btnGap * 3);
-    nameLabel_.setBounds(header.withTrimmedRight(4));
+    // From the right: Remove (on hover), ED, M, BYP; the name takes the rest.
+    const auto place = [&header](juce::Button& button, int width)
+    {
+        if (!button.isVisible())
+            return;
+        button.setBounds(header.removeFromRight(width));
+        header.removeFromRight(kButtonGap);
+    };
+    place(removeButton_, 22);
+    place(editButton_, 26);
+    place(mappingsButton_, 22);
+    place(bypassButton_, 32);
+    nameArea_ = header.withTrimmedLeft(kGripWidth);
 
-    bypassButton_.setBounds(buttonStrip.removeFromLeft(btnW));
-    buttonStrip.removeFromLeft(btnGap);
-    mappingsButton_.setBounds(buttonStrip.removeFromLeft(btnW));
-    buttonStrip.removeFromLeft(btnGap);
-    editButton_.setBounds(buttonStrip.removeFromLeft(btnW + 8)); // "Edit" wider
-    buttonStrip.removeFromLeft(btnGap);
-    removeButton_.setBounds(buttonStrip.removeFromLeft(btnW));
-
-    // Port rows + MIDI row are paint-only; no further child layout (the old
-    // Move ↑/↓ row was removed — dragging the card body repositions it).
+    if (renameEditor_ != nullptr)
+        renameEditor_->setBounds(nameArea_.expanded(2, 1));
 }
 
 bool PluginCard::hitTest(int x, int y)
 {
     // Port hotspots are owned by SignalCanvas (drag-to-connect): report them as
-    // "not on the card" so the click falls through to the canvas behind. The
-    // card still paints the ports; only the interaction is delegated.
-    // Generous so a port grab reliably wins over a card-body drag.
-    constexpr int kPortHotspot = 16;
+    // "not on the card" so the click falls through to the canvas behind.
+    constexpr int kPortHotspot = 12;
     const juce::Point<int> p{x, y};
-    // midiChannelIndex is an unnamed enum, so cast it to match the int literals
-    // in the braced-init list (otherwise the list's element type can't deduce).
+    // midiChannelIndex is an unnamed enum, so cast it to match the int literals.
     for (const bool isInput : {true, false})
         for (const int ch : {0, 1, static_cast<int>(juce::AudioProcessorGraph::midiChannelIndex)})
             if (p.getDistanceFrom(getPortCentre(isInput, ch)) <= kPortHotspot)
@@ -256,11 +345,7 @@ bool PluginCard::hitTest(int x, int y)
     return true;
 }
 
-// ----- Drag-to-move ----------------------------------------------------------
-// The card body is draggable; the child TextButtons consume their own clicks
-// and nameLabel_ has intercepts disabled, so a drag that starts on the body
-// (or a port) repositions the card. SignalCanvas persists the new position on
-// release via Session::setNodePosition.
+// ----- Drag to move, click to select, double-click the name to rename ---------
 
 void PluginCard::mouseDown(const juce::MouseEvent& e)
 {
@@ -277,26 +362,69 @@ void PluginCard::mouseDrag(const juce::MouseEvent& e)
         didDrag_ = true;
         dragger_.dragComponent(this, e, nullptr);
         if (callbacks_.onDragging)
-            callbacks_.onDragging(snapshot_.id); // canvas re-strokes cables live
+            callbacks_.onDragging(snapshot_.id); // the canvas re-strokes cables live
     }
 }
 
 void PluginCard::mouseUp(const juce::MouseEvent&)
 {
-    if (didDrag_ && callbacks_.onMoved)
-        callbacks_.onMoved(snapshot_.id, getPosition());
+    if (didDrag_)
+    {
+        if (callbacks_.onMoved)
+            callbacks_.onMoved(snapshot_.id, getPosition());
+    }
+    else if (callbacks_.onSelect)
+    {
+        callbacks_.onSelect(snapshot_.id);
+    }
     didDrag_ = false;
 }
 
-void PluginCard::mouseEnter(const juce::MouseEvent&)
+void PluginCard::mouseDoubleClick(const juce::MouseEvent& e)
 {
-    hovered_ = true;
+    if (nameArea_.contains(e.getPosition()))
+        beginRename();
+}
+
+void PluginCard::beginRename()
+{
+    if (renameEditor_ != nullptr)
+        return;
+    renameEditor_ = std::make_unique<juce::TextEditor>();
+    auto& editor = *renameEditor_;
+    editor.setFont(nameFont());
+    editor.setText(displayName(), juce::dontSendNotification);
+    editor.setColour(juce::TextEditor::outlineColourId, tokens::accentPrimary);
+    editor.setColour(juce::TextEditor::focusedOutlineColourId, tokens::accentPrimary);
+    editor.onReturnKey = [this] { endRename(/*commit*/ true); };
+    editor.onEscapeKey = [this] { endRename(/*commit*/ false); };
+    editor.onFocusLost = [this] { endRename(/*commit*/ true); };
+    addAndMakeVisible(editor);
+    editor.setBounds(nameArea_.expanded(2, 1));
+    editor.grabKeyboardFocus();
+    editor.selectAll();
     repaint();
 }
 
-void PluginCard::mouseExit(const juce::MouseEvent&)
+void PluginCard::endRename(bool commit)
 {
-    hovered_ = false;
+    if (renameEditor_ == nullptr)
+        return;
+
+    // This runs inside one of the editor's own callbacks, so it can't be
+    // deleted here: park it, and free it on the next rename or with the card.
+    // The early return above makes any callback it fires from now on a no-op.
+    retiredEditor_ = std::move(renameEditor_);
+    const auto text = retiredEditor_->getText().trim();
+    removeChildComponent(retiredEditor_.get());
+
+    if (commit && callbacks_.onRename)
+    {
+        // Typing the plugin's own name, or nothing, clears the custom name.
+        const auto custom = text == snapshot_.name ? juce::String() : text;
+        if (custom != snapshot_.customName)
+            callbacks_.onRename(snapshot_.id, custom);
+    }
     repaint();
 }
 

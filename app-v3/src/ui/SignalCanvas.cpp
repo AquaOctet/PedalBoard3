@@ -4,6 +4,7 @@
 #include "ColourScheme.h"
 #include "control/MidiMapping.h"
 #include "engine/PluginHost.h"
+#include "engine/processors/VuMeterProcessor.h"
 #include "PluginBrowser.h"
 #include "session/ControlHub.h"
 #include "session/EditHistory.h"
@@ -21,7 +22,7 @@ namespace pedalboard3::ui
 namespace
 {
 constexpr int kCardWidth = 170;
-constexpr int kCardHeight = 140;
+constexpr int kCardHeight = 92; // the mockup's compact card (UI refresh U7)
 constexpr int kCardSpacingX = 80;
 constexpr int kEndpointWidth = 86;
 constexpr int kCanvasMargin = 24;
@@ -61,6 +62,7 @@ SignalCanvas::SignalCanvas(AppContext& ctx) : ctx_(ctx)
     // Undo / redo remove nodes outside the canvas (undoing an add, redoing a
     // remove); their editors must close first, as in onCardRemove.
     ctx_.editHistory.beforeNodeRemoved = [this](NodeId id) { closeEditorsFor(id); };
+    startTimerHz(30); // the cards' activity strips and VU meters (UI refresh U7)
 
     // First-paint: pull current snapshot so the canvas isn't empty
     // until the next change message arrives.
@@ -73,6 +75,7 @@ SignalCanvas::~SignalCanvas()
     // it cancels a pending arm, so a MIDI message arriving after teardown can't
     // invoke a dangling callback.
     mappingsWindow_.reset();
+    stopTimer();
     ctx_.editHistory.beforeNodeRemoved = nullptr;
     ctx_.session.removeChangeListener(this);
     editors_.clear();
@@ -155,6 +158,26 @@ void SignalCanvas::changeListenerCallback(juce::ChangeBroadcaster*)
             cards_[i]->setAccentColour(isInstrumentNode(*pn) ? tokens::accentWarning : tokens::accentPrimary);
     }
 
+    // Each card's mapping count (its body line) and the selection (UI refresh
+    // U7). A node that went drops its selection and its activity state.
+    std::unordered_map<NodeId, int> mappingCounts;
+    for (const auto& m : patch.midiMappings)
+        if (m.target.kind == control::MidiTargetKind::PluginParameter)
+            ++mappingCounts[m.target.node];
+    for (const auto& m : patch.oscMappings)
+        if (m.target.kind == control::MidiTargetKind::PluginParameter)
+            ++mappingCounts[m.target.node];
+    if (selectedNode_.has_value() && newIds.find(*selectedNode_) == newIds.end())
+        selectedNode_.reset();
+    for (auto it = activityBlinks_.begin(); it != activityBlinks_.end();)
+        it = newIds.find(it->first) == newIds.end() ? activityBlinks_.erase(it) : std::next(it);
+    for (auto& card : cards_)
+    {
+        const auto count = mappingCounts.find(card->getNodeId());
+        card->setMappingCount(count != mappingCounts.end() ? count->second : 0);
+        card->setSelected(selectedNode_ == card->getNodeId());
+    }
+
     // Defensive editor cleanup (D1b): in normal flow the UI handler
     // already erased editors_[id] before invoking the Session mutator,
     // so this loop is usually a no-op. It catches restore-on-launch
@@ -180,6 +203,9 @@ std::unique_ptr<PluginCard> SignalCanvas::makeCard(const PluginCard::NodeSnapsho
         [this](NodeId id) { onCardDragging(id); },
         [this](NodeId id, juce::Point<int> p) { onCardMoved(id, p); },
         [this](NodeId id) { openMappings(id); },
+        [this](NodeId id) { setSelectedNode(id); },
+        // In-place rename goes through the edit history, so it can be undone (U8).
+        [this](NodeId id, juce::String name) { ctx_.editHistory.setNodeCustomName(id, std::move(name)); },
     };
     return std::make_unique<PluginCard>(s, std::move(cb));
 }
@@ -292,25 +318,39 @@ void SignalCanvas::strokeCable(
         return;
     }
 
+    // A bypassed source's cables are dashed and dimmed, so the "off" node reads
+    // at a glance (UI refresh U7).
+    const auto strokeIt = [&g, &path, &stroke, bypassed]
+    {
+        if (!bypassed)
+        {
+            g.strokePath(path, stroke);
+            return;
+        }
+        const float dashes[] = {6.0f, 6.0f};
+        juce::Path dashed;
+        stroke.createDashedStroke(dashed, path, dashes, 2);
+        g.fillPath(dashed);
+    };
+
     if (midi)
     {
-        g.setColour(bypassed ? tokens::accentInfo.withAlpha(0.4f) : tokens::accentInfo);
-        g.strokePath(path, stroke);
+        g.setColour(bypassed ? tokens::accentInfo.withAlpha(0.7f) : tokens::accentInfo);
+        strokeIt();
         return;
     }
 
     // Audio: amber -> teal gradient along the cable, the demo's signature look.
-    // A bypassed source dims its cables so the "off" node reads at a glance.
     auto start = tokens::accentWarning;
     auto end = tokens::accentPrimary;
     if (bypassed)
     {
-        start = start.withAlpha(0.4f);
-        end = end.withAlpha(0.4f);
+        start = start.withAlpha(0.7f);
+        end = end.withAlpha(0.7f);
     }
     juce::ColourGradient grad(start, from.toFloat(), end, to.toFloat(), /*isRadial*/ false);
     g.setGradientFill(grad);
-    g.strokePath(path, stroke);
+    strokeIt();
 }
 
 void SignalCanvas::resized()
@@ -344,7 +384,11 @@ void SignalCanvas::paint(juce::Graphics& g)
     {
         juce::Path cardPath;
         cardPath.addRoundedRectangle(card->getBounds().toFloat(), 6.0f);
-        juce::DropShadow(juce::Colours::black.withAlpha(0.35f), 12, {0, 3}).drawForPath(g, cardPath);
+        // The selected card glows teal (UI refresh U7).
+        if (selectedNode_ == card->getNodeId())
+            juce::DropShadow(tokens::accentPrimary.withAlpha(0.35f), 16, {}).drawForPath(g, cardPath);
+        else
+            juce::DropShadow(juce::Colours::black.withAlpha(0.35f), 12, {0, 3}).drawForPath(g, cardPath);
     }
 
     // Endpoint card frames.
@@ -640,7 +684,9 @@ void SignalCanvas::mouseDown(const juce::MouseEvent& e)
         return;
     }
 
-    // Background click: select a cable under the cursor (or clear selection).
+    // Background click: clear the card selection, and select a cable under the
+    // cursor (or clear the cable selection).
+    setSelectedNode(std::nullopt);
     selectedCable_ = cableAt(p);
     repaint();
 }
@@ -697,6 +743,36 @@ void SignalCanvas::itemDropped(const SourceDetails& details)
     const auto topLeft = details.localPosition - viewOffset_.value_or(juce::Point<int>{}) -
                          juce::Point<int>(kCardWidth / 2, kCardHeight / 2);
     addBrowserEntry(ctx_, browserDragId(details.description), topLeft.toFloat());
+}
+
+void SignalCanvas::setSelectedNode(std::optional<NodeId> id)
+{
+    if (selectedNode_ == id)
+        return;
+    selectedNode_ = id;
+    if (id.has_value())
+        selectedCable_.reset();
+    for (auto& card : cards_)
+        card->setSelected(selectedNode_ == card->getNodeId());
+    repaint();
+}
+
+void SignalCanvas::timerCallback()
+{
+    // Per-plugin activity (a mapped control just moved it) and the VU Meter
+    // cards' levels. Processors are read only while Session is idle: during a
+    // rebuild the cached pointers can dangle (Test Tone frees the graph right
+    // after clearPatch publishes Building).
+    const bool idle = ctx_.session.getState() == session::Session::State::Idle;
+    const auto now = juce::Time::getMillisecondCounterHiRes();
+    for (auto& card : cards_)
+    {
+        const auto id = card->getNodeId();
+        card->setActivity(activityBlinks_[id].update(ctx_.controlHub.nodeActivity(id), now));
+        if (idle && card->isVuMeter())
+            if (auto* vu = dynamic_cast<engine::processors::VuMeterProcessor*>(ctx_.session.getHostedPlugin(id)))
+                card->setMeterLevels(vu->getLeftLevel(), vu->getRightLevel());
+    }
 }
 
 } // namespace pedalboard3::ui

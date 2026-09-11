@@ -91,6 +91,13 @@ public:
         juce::String customName;
         int midiChannel{0}; // 0 = omni, 1..16 (PatchNode::midiChannel)
 
+        // What the card says (UI refresh U7).
+        bool builtIn{false};       // an internal node (NodeKind::Internal)
+        juce::String internalType; // its typeId, for built-ins
+        juce::String category;     // PluginDescription::category, for plugins
+        juce::String format;       // PluginDescription::pluginFormatName
+        juce::String vendor;       // PluginDescription::manufacturerName
+
         // Canvas position (NaN = unpositioned → SignalCanvas auto-lays-out).
         float x{std::numeric_limits<float>::quiet_NaN()};
         float y{std::numeric_limits<float>::quiet_NaN()};
