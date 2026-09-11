@@ -2,12 +2,45 @@
 
 #include "Session.h"
 
+#include <limits>
+
 namespace pedalboard3::session
 {
 
-BankDocument::BankDocument(Session& session) : session_(session) {}
+namespace
+{
 
-void BankDocument::loadBank(PatchBank bank)
+// A cheap content fingerprint for "unsaved changes": the bank as it would be
+// written, minus what KD1 excludes (plugin state, card positions, which patch
+// is active).
+std::int64_t signatureOf(PatchBank bank)
+{
+    bank.activeIndex = 0;
+    for (auto& patch : bank.patches)
+        for (auto& node : patch.nodes)
+        {
+            node.state.reset();
+            node.x = std::numeric_limits<float>::quiet_NaN();
+            node.y = std::numeric_limits<float>::quiet_NaN();
+        }
+    const auto xml = bankToXml(bank);
+    return xml != nullptr ? xml->toString(juce::XmlElement::TextFormat().singleLine().withoutHeader()).hashCode64() : 0;
+}
+
+} // namespace
+
+BankDocument::BankDocument(Session& session) : session_(session)
+{
+    savedSignature_ = signatureOf(bank_);
+    session_.addChangeListener(this);
+}
+
+BankDocument::~BankDocument()
+{
+    session_.removeChangeListener(this);
+}
+
+void BankDocument::loadBank(PatchBank bank, juce::File file)
 {
     if (bank.patches.empty())
         bank = PatchBank{};
@@ -15,6 +48,10 @@ void BankDocument::loadBank(PatchBank bank)
         bank.activeIndex = 0;
 
     bank_ = std::move(bank);
+    currentFile_ = std::move(file);
+    savedSignature_ = signatureOf(bank_);
+    restoredModified_ = false;
+    modified_ = false;
     issueReplace();
     sendChangeMessage();
 }
@@ -48,6 +85,7 @@ void BankDocument::previous()
 int BankDocument::addPatch(Patch patch)
 {
     const int idx = bank_.add(std::move(patch));
+    refreshModified();
     sendChangeMessage();
     return idx;
 }
@@ -59,6 +97,7 @@ int BankDocument::duplicate(int index)
     if (index == bank_.activeIndex)
         storeActive(); // the copy should carry the live knob state, not a stale slot
     const int idx = bank_.duplicate(index);
+    refreshModified();
     sendChangeMessage();
     return idx;
 }
@@ -67,6 +106,7 @@ bool BankDocument::rename(int index, juce::String name)
 {
     if (!bank_.rename(index, std::move(name)))
         return false;
+    refreshModified();
     sendChangeMessage();
     return true;
 }
@@ -80,6 +120,7 @@ bool BankDocument::remove(int index)
     bank_.remove(index);
     if (removingActive)
         issueReplace(); // the bank chose the new active patch; make it live
+    refreshModified();
     sendChangeMessage();
     return true;
 }
@@ -123,6 +164,53 @@ void BankDocument::issueReplace()
     issuedAtGeneration_ = session_.getPatchGeneration();
     session_.replacePatch(bank_.active());
     liveCaptureEnabled_ = true; // after this swap the live graph IS the active patch
+}
+
+void BankDocument::markSaved(const juce::File& file)
+{
+    currentFile_ = file;
+    savedSignature_ = contentSignature();
+    restoredModified_ = false;
+    modified_ = false;
+    sendChangeMessage();
+}
+
+void BankDocument::restoreIdentity(const juce::File& file, bool modified)
+{
+    currentFile_ = file;
+    restoredModified_ = modified;
+    refreshModified();
+    sendChangeMessage();
+}
+
+void BankDocument::changeListenerCallback(juce::ChangeBroadcaster* source)
+{
+    // Only a settled Session says anything about the live patch; while a swap
+    // is building (or after it failed) the live patch is not the active slot
+    // and contentSignature() falls back to the slot itself.
+    if (source == &session_ && session_.getState() == Session::State::Idle)
+        refreshModified();
+}
+
+void BankDocument::refreshModified()
+{
+    const bool modified = restoredModified_ || contentSignature() != savedSignature_;
+    if (modified == modified_)
+        return;
+    modified_ = modified;
+    sendChangeMessage();
+}
+
+std::int64_t BankDocument::contentSignature() const
+{
+    PatchBank copy = bank_;
+    if (liveMatchesActiveSlot())
+    {
+        auto live = session_.getActivePatch(); // topology only; no plugin-state capture
+        live.name = copy.active().name;
+        copy.active() = std::move(live);
+    }
+    return signatureOf(std::move(copy));
 }
 
 } // namespace pedalboard3::session

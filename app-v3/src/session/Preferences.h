@@ -90,6 +90,14 @@ public:
     void setActiveBank(const PatchBank& bank);
     void clearActiveBank(); // clears the legacy ActivePatch value too
 
+    // The file the persisted bank belongs to (empty = untitled) and whether it
+    // had unsaved changes when last persisted (finish pass KD7): a relaunch
+    // restores both, so quick save still knows its file and a crash does not
+    // hide unsaved work. Cleared by clearActiveBank.
+    void setActiveBankIdentity(const juce::File& file, bool modified);
+    juce::File getActiveBankFile();
+    bool getActiveBankModified();
+
     // App-level MIDI/OSC mappings (roadmap M4 U3): the <APP_MAPPINGS> XML that
     // session::AppMappings writes. nullptr on first run.
     std::unique_ptr<juce::XmlElement> getAppMappings();

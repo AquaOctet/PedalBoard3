@@ -180,6 +180,9 @@ void App::restoreActivePatchIfAny()
     preferences->flush();
 
     bankDocument->loadBank(std::move(*saved));
+    // Finish pass KD7: the restored bank keeps its file (quick save still works)
+    // and, after a crash or a quit that kept edits, its unsaved marker.
+    bankDocument->restoreIdentity(preferences->getActiveBankFile(), preferences->getActiveBankModified());
 }
 
 } // namespace pedalboard3

@@ -57,6 +57,8 @@ struct PrefsScrubber
             store->removeValue("activePatch");
             store->removeValue("activeBank");
             store->removeValue("appMappings");
+            store->removeValue("activeBankFile");
+            store->removeValue("activeBankModified");
         }
         prefs_.flush();
     }

@@ -104,6 +104,7 @@ const juce::PluginDescription* findKnownByName(const juce::Array<juce::PluginDes
 struct LoadedBank
 {
     std::unique_ptr<session::PatchBank> bank;
+    bool imported{false}; // a Pedalboard2 file: the board is untitled until saved as .pdl v3
     juce::StringArray warnings;
     juce::String error;
 };
@@ -121,6 +122,7 @@ LoadedBank loadOpenedBank(const juce::File& file, engine::PluginHost& host)
     if (xml != nullptr && session::v2::isPedalboard2Patch(*xml))
     {
         auto imp = session::v2::importPedalboard2Bank(*xml);
+        out.imported = true;
         out.warnings = imp.warnings;
         out.error = imp.error;
         if (imp.bank == nullptr)
@@ -818,6 +820,8 @@ void TransportBar::savePatch()
 
             const auto result = session::pdl::writeBank(snapshot, file);
             const bool ok = result.wasOk();
+            if (ok)
+                ctx_.bankDocument.markSaved(file);
 
             const auto opts =
                 juce::MessageBoxOptions{}
@@ -884,7 +888,7 @@ void TransportBar::openPatch()
 
             // Editors close via BankDocument::beforeSwap before the swap
             // destroys the live instances.
-            ctx_.bankDocument.loadBank(std::move(*loaded.bank));
+            ctx_.bankDocument.loadBank(std::move(*loaded.bank), loaded.imported ? juce::File{} : file);
             updateAddPluginEnabled();
 
             // Surface import notes (Pedalboard2 conversion: dropped state, skipped

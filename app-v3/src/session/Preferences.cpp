@@ -11,6 +11,8 @@ constexpr auto kKnownPluginListKey = "knownPluginList";
 constexpr auto kActivePluginDescriptionKey = "activePluginDescription";
 constexpr auto kActivePatchKey = "activePatch";
 constexpr auto kActiveBankKey = "activeBank";
+constexpr auto kActiveBankFileKey = "activeBankFile";
+constexpr auto kActiveBankModifiedKey = "activeBankModified";
 constexpr auto kAppMappingsKey = "appMappings";
 constexpr auto kKeyMappingsKey = "keyMappings";
 constexpr auto kOscPortKey = "oscPort";
@@ -201,7 +203,36 @@ void Preferences::clearActiveBank()
     {
         store->removeValue(kActiveBankKey);
         store->removeValue(kActivePatchKey);
+        store->removeValue(kActiveBankFileKey);
+        store->removeValue(kActiveBankModifiedKey);
     }
+}
+
+void Preferences::setActiveBankIdentity(const juce::File& file, bool modified)
+{
+    if (auto* store = props_.getUserSettings())
+    {
+        store->setValue(kActiveBankFileKey, file == juce::File() ? juce::String() : file.getFullPathName());
+        store->setValue(kActiveBankModifiedKey, modified);
+    }
+}
+
+juce::File Preferences::getActiveBankFile()
+{
+    if (auto* store = props_.getUserSettings())
+    {
+        const auto path = store->getValue(kActiveBankFileKey);
+        if (juce::File::isAbsolutePath(path))
+            return juce::File(path);
+    }
+    return {};
+}
+
+bool Preferences::getActiveBankModified()
+{
+    if (auto* store = props_.getUserSettings())
+        return store->getBoolValue(kActiveBankModifiedKey, false);
+    return false;
 }
 
 std::unique_ptr<juce::XmlElement> Preferences::getAppMappings()

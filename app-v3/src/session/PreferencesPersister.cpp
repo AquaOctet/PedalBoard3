@@ -114,10 +114,12 @@ PreferencesPersister::PreferencesPersister(Preferences& prefs,
     host_.getKnownPluginList().addChangeListener(this);
     session_.addChangeListener(this);
     appMappings_.addChangeListener(this);
+    bankDocument_.addChangeListener(this);
 }
 
 PreferencesPersister::~PreferencesPersister()
 {
+    bankDocument_.removeChangeListener(this);
     appMappings_.removeChangeListener(this);
     session_.removeChangeListener(this);
     host_.getKnownPluginList().removeChangeListener(this);
@@ -152,6 +154,15 @@ void PreferencesPersister::changeListenerCallback(juce::ChangeBroadcaster* sourc
         return;
     }
 
+    if (source == &bankDocument_)
+    {
+        // Bank-only edits (patch rename / add / remove, a switch) and the file
+        // identity: persisted here, since they don't always move Session.
+        persistBank();
+        prefs_.setActiveBankIdentity(bankDocument_.currentFile(), bankDocument_.isModified());
+        return;
+    }
+
     if (source == &appMappings_)
     {
         if (auto xml = appMappings_.toXml())
@@ -170,23 +181,8 @@ void PreferencesPersister::changeListenerCallback(juce::ChangeBroadcaster* sourc
 
         if (!isEmpty)
         {
-            // Successful patch state. Persist the whole bank with the active
-            // slot refreshed from Session (topology only — no plugin-state
-            // capture on every Idle transition; the slot keeps the bank's
-            // name). Dirty-write-only: skip the disk write if the persisted
-            // bank already matches.
-            auto bank = bankDocument_.bank();
-            if (bankDocument_.liveMatchesActiveSlot())
-            {
-                auto slot = active;
-                slot.name = bank.active().name;
-                bank.active() = std::move(slot);
-            }
-            const auto current = prefs_.getActiveBank();
-            const bool same = current != nullptr && sameBank(*current, bank);
-            if (!same)
-                prefs_.setActiveBank(bank);
-
+            // Successful patch state: persist the whole bank (dirty-write-only).
+            persistBank();
             clearRestoreInFlightMarker(prefs_);
             return;
         }
@@ -214,6 +210,20 @@ void PreferencesPersister::changeListenerCallback(juce::ChangeBroadcaster* sourc
             clearRestoreInFlightMarker(prefs_);
         }
     }
+}
+
+void PreferencesPersister::persistBank()
+{
+    auto bank = bankDocument_.bank();
+    if (bankDocument_.liveMatchesActiveSlot())
+    {
+        auto slot = session_.getActivePatch();
+        slot.name = bank.active().name;
+        bank.active() = std::move(slot);
+    }
+    const auto current = prefs_.getActiveBank();
+    if (current == nullptr || !sameBank(*current, bank))
+        prefs_.setActiveBank(bank);
 }
 
 } // namespace pedalboard3::session
