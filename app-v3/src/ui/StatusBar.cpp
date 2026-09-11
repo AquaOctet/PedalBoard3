@@ -121,8 +121,8 @@ void StatusBar::refreshDeviceInfo()
         const auto& err = ctx_.audioEngine.getLastInitError();
         deviceLabel_.setColour(juce::Label::textColourId, tokens::accentWarning);
         deviceLabel_.setText(dm == nullptr      ? juce::String("No audio device")
-                             : err.isNotEmpty() ? "Audio device error: " + err + " — open Audio Settings"
-                                                : juce::String("No audio device — open Audio Settings"),
+                             : err.isNotEmpty() ? "Audio device error: " + err + " — open Settings"
+                                                : juce::String("No audio device — open Settings"),
                              juce::dontSendNotification);
         return;
     }
