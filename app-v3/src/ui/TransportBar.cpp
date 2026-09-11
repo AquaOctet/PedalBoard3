@@ -778,6 +778,8 @@ void TransportBar::openFileMenu()
     juce::PopupMenu menu;
     menu.addItem(1, "Open Patch...");
     menu.addItem(2, "Save Patch As...");
+    menu.addSeparator();
+    menu.addItem(3, "App Mappings...");
     menu.showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(fileButton_),
                        [this](int choice)
                        {
@@ -785,6 +787,8 @@ void TransportBar::openFileMenu()
                                openPatch();
                            else if (choice == 2)
                                savePatch();
+                           else if (choice == 3 && onOpenAppMappings)
+                               onOpenAppMappings();
                        });
 }
 

@@ -24,6 +24,8 @@ add_library(pb3_app_core STATIC
     App.cpp
     App.h
     AppContext.h
+    ui/AppMappingsWindow.cpp
+    ui/AppMappingsWindow.h
     ui/ColourScheme.h
     ui/EditorWindow.cpp
     ui/EditorWindow.h
@@ -72,6 +74,7 @@ target_link_libraries(pb3_app_core
 
 pb3_apply_strict_warnings(pb3_app_core
     App.cpp
+    ui/AppMappingsWindow.cpp
     ui/EditorWindow.cpp
     ui/MainWindow.cpp
     ui/Pb3LookAndFeel.cpp

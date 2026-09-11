@@ -517,3 +517,21 @@ TEST_CASE("Preferences: app mappings XML round-trips through the store", "[sessi
         store->removeValue("appMappings");
     prefs.flush();
 }
+
+TEST_CASE("Preferences: key mappings XML round-trips through the store", "[session][preferences][key-mappings]")
+{
+    session::Preferences prefs;
+    juce::XmlElement xml("KEYMAPPINGS");
+    xml.setAttribute("basedOnDefaults", true);
+    prefs.setKeyMappings(xml);
+    prefs.flush();
+
+    auto back = prefs.getKeyMappings();
+    REQUIRE(back != nullptr);
+    REQUIRE(back->hasTagName("KEYMAPPINGS"));
+    REQUIRE(back->getBoolAttribute("basedOnDefaults"));
+
+    if (auto* store = prefs.getStore())
+        store->removeValue("keyMappings");
+    prefs.flush();
+}

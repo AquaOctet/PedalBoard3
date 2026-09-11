@@ -95,6 +95,12 @@ public:
     std::unique_ptr<juce::XmlElement> getAppMappings();
     void setAppMappings(const juce::XmlElement& xml);
 
+    // Keyboard shortcuts for app commands (roadmap M4 U5): the XML
+    // juce::KeyPressMappingSet::createXml(true) writes, i.e. only the
+    // differences from the default keys. nullptr on first run.
+    std::unique_ptr<juce::XmlElement> getKeyMappings();
+    void setKeyMappings(const juce::XmlElement& xml);
+
     // OSC listener config (M2, KTD4). Plain scalar values via
     // juce::PropertiesFile's typed getters — no XML needed. Port defaults to
     // 9000 when unset. Multicast address is empty ("") when unset, meaning
