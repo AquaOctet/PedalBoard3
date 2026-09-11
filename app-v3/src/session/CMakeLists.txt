@@ -18,6 +18,8 @@ add_library(pb3_session_core STATIC
     PreferencesPersister.h
     Patch.cpp
     Patch.h
+    PatchBank.cpp
+    PatchBank.h
     PdlSerializer.cpp
     PdlSerializer.h
     v2_import/PdlV2Importer.cpp
@@ -67,6 +69,7 @@ pb3_apply_strict_warnings(pb3_session_core
     Session.cpp
     PreferencesPersister.cpp
     Patch.cpp
+    PatchBank.cpp
     PdlSerializer.cpp
     v2_import/PdlV2Importer.cpp
     ControlParameterApplier.cpp
