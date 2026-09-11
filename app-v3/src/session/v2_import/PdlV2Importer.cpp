@@ -135,26 +135,12 @@ bool isPedalboard2Patch(const juce::XmlElement& root)
     return root.hasTagName("Pedalboard2PatchFile");
 }
 
-ImportResult importPedalboard2Patch(const juce::XmlElement& root)
+// The per-<Patch> transform shared by the single-patch and bank entry points.
+static ImportResult importOnePatch(const juce::XmlElement& patchEl)
 {
     ImportResult result;
 
-    if (!isPedalboard2Patch(root))
-    {
-        result.error = "Not a Pedalboard2 patch file";
-        return result;
-    }
-
-    auto* patchEl = root.getChildByName("Patch");
-    if (patchEl == nullptr)
-    {
-        result.error = "Pedalboard2 file has no <Patch>";
-        return result;
-    }
-    if (patchEl->getNextElementWithTagName("Patch") != nullptr)
-        result.warnings.add("File contains multiple patches; only the first was imported.");
-
-    auto* graphEl = patchEl->getChildByName("FILTERGRAPH");
+    auto* graphEl = patchEl.getChildByName("FILTERGRAPH");
     if (graphEl == nullptr)
     {
         result.error = "Pedalboard2 patch has no <FILTERGRAPH>";
@@ -162,7 +148,7 @@ ImportResult importPedalboard2Patch(const juce::XmlElement& root)
     }
 
     auto patch = std::make_unique<Patch>();
-    patch->name = patchEl->getStringAttribute("name", "Imported");
+    patch->name = patchEl.getStringAttribute("name", "Imported");
 
     // First pass: filters -> nodes (or graphIO for internal I/O). Build the
     // v2-uid -> v3-NodeId map used to translate connections.
@@ -225,7 +211,7 @@ ImportResult importPedalboard2Patch(const juce::XmlElement& root)
     }
 
     // Custom names: <UserNames><Name id val/>.
-    if (auto* userNames = patchEl->getChildByName("UserNames"))
+    if (auto* userNames = patchEl.getChildByName("UserNames"))
     {
         for (auto* nameEl : userNames->getChildIterator())
         {
@@ -244,7 +230,7 @@ ImportResult importPedalboard2Patch(const juce::XmlElement& root)
     // <MidiMapping>/<OscMapping> entries. Translate each to a v3 per-patch mapping,
     // resolving its plugin id through v2ToV3 (now fully built). Per-patch only — v2's
     // app-command mappings live in a separate global file, never here.
-    if (auto* mappingsEl = patchEl->getChildByName("Mappings"))
+    if (auto* mappingsEl = patchEl.getChildByName("Mappings"))
     {
         for (auto* el : mappingsEl->getChildIterator())
         {
@@ -291,6 +277,76 @@ ImportResult importPedalboard2Patch(const juce::XmlElement& root)
         result.warnings.add("Patch is not a simple linear chain; node order is approximate.");
 
     result.patch = std::move(patch);
+    return result;
+}
+
+ImportResult importPedalboard2Patch(const juce::XmlElement& root)
+{
+    ImportResult result;
+
+    if (!isPedalboard2Patch(root))
+    {
+        result.error = "Not a Pedalboard2 patch file";
+        return result;
+    }
+
+    auto* patchEl = root.getChildByName("Patch");
+    if (patchEl == nullptr)
+    {
+        result.error = "Pedalboard2 file has no <Patch>";
+        return result;
+    }
+
+    result = importOnePatch(*patchEl);
+    if (result.patch != nullptr && patchEl->getNextElementWithTagName("Patch") != nullptr)
+        result.warnings.add("File contains multiple patches; only the first was imported.");
+    return result;
+}
+
+BankImportResult importPedalboard2Bank(const juce::XmlElement& root)
+{
+    BankImportResult result;
+
+    if (!isPedalboard2Patch(root))
+    {
+        result.error = "Not a Pedalboard2 patch file";
+        return result;
+    }
+
+    int patchCount = 0;
+    for (auto* el : root.getChildWithTagNameIterator("Patch"))
+    {
+        juce::ignoreUnused(el);
+        ++patchCount;
+    }
+    if (patchCount == 0)
+    {
+        result.error = "Pedalboard2 file has no <Patch>";
+        return result;
+    }
+
+    auto bank = std::make_unique<PatchBank>();
+    bank->patches.clear();
+
+    for (auto* patchEl : root.getChildWithTagNameIterator("Patch"))
+    {
+        const int position = static_cast<int>(bank->patches.size()) + 1;
+        auto one = importOnePatch(*patchEl);
+        if (one.patch == nullptr)
+        {
+            result.error = "Patch " + juce::String(position) + ": " + one.error;
+            return result;
+        }
+
+        // Name-prefix warnings only when there is more than one patch to tell apart.
+        for (const auto& w : one.warnings)
+            result.warnings.add(patchCount > 1 ? ("Patch \"" + one.patch->name + "\": " + w) : w);
+
+        bank->patches.push_back(std::move(*one.patch));
+    }
+
+    bank->activeIndex = 0;
+    result.bank = std::move(bank);
     return result;
 }
 

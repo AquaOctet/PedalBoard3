@@ -215,3 +215,168 @@ TEST_CASE("pdl: write then read round-trips node canvas positions", "[session][p
 
     file.deleteFile();
 }
+
+// ---- Banks (schemaMinor 4, roadmap M3 U2) ----------------------------------
+
+namespace
+{
+
+session::Patch namedChain(const juce::String& name, int nodeId)
+{
+    auto p = makeChain();
+    p.name = name;
+    p.nodes[0].id = static_cast<session::NodeId>(nodeId);
+    p.nodes[0].desc.name = name + " EQ";
+    p.connections = {{session::graphIO, 0, static_cast<session::NodeId>(nodeId), 0},
+                     {static_cast<session::NodeId>(nodeId), 0, session::graphIO, 0}};
+    return p;
+}
+
+} // namespace
+
+TEST_CASE("pdl: writeBank then readBank round-trips a 3-patch bank with its active index", "[session][pdl][bank]")
+{
+    const auto file = tempPdl("bank");
+
+    session::PatchBank bank;
+    bank.patches = {namedChain("One", 1), namedChain("Two", 2), namedChain("Three", 3)};
+    bank.activeIndex = 2;
+
+    REQUIRE(session::pdl::writeBank(bank, file).wasOk());
+
+    auto loaded = session::pdl::readBank(file);
+    REQUIRE(loaded.bank != nullptr);
+    REQUIRE(loaded.error.isEmpty());
+    REQUIRE(loaded.bank->size() == 3);
+    REQUIRE(loaded.bank->activeIndex == 2);
+    REQUIRE(loaded.bank->patches[0].name == "One");
+    REQUIRE(loaded.bank->patches[1].name == "Two");
+    REQUIRE(loaded.bank->patches[2].name == "Three");
+    REQUIRE(loaded.bank->patches[1].nodes[0].id == 2);
+    REQUIRE(loaded.bank->patches[1].nodes[0].state.toString() == "statebytes");
+    REQUIRE(loaded.bank->active().name == "Three");
+
+    // The on-disk shape is the <BANK> form with the new minor.
+    auto xml = juce::parseXML(file);
+    REQUIRE(xml != nullptr);
+    REQUIRE(xml->getIntAttribute("schemaMinor") == 4);
+    REQUIRE(xml->getChildByName("BANK") != nullptr);
+    REQUIRE(xml->getChildByName("PATCH") == nullptr);
+
+    file.deleteFile();
+}
+
+TEST_CASE("pdl: writePatch writes a one-patch bank and readPatch returns it", "[session][pdl][bank]")
+{
+    const auto file = tempPdl("bank-single");
+    REQUIRE(session::pdl::writePatch(makeChain(), file).wasOk());
+
+    auto bank = session::pdl::readBank(file);
+    REQUIRE(bank.bank != nullptr);
+    REQUIRE(bank.bank->size() == 1);
+    REQUIRE(bank.bank->activeIndex == 0);
+
+    auto single = session::pdl::readPatch(file);
+    REQUIRE(single.patch != nullptr);
+    REQUIRE(single.patch->name == "Test Board");
+
+    file.deleteFile();
+}
+
+TEST_CASE("pdl: a schemaMinor 3 file with a bare <PATCH> reads as a one-patch bank", "[session][pdl][bank]")
+{
+    const auto file = tempPdl("bank-legacy");
+
+    juce::XmlElement root("PEDALBOARD");
+    root.setAttribute("schemaMajor", session::pdl::kSchemaMajor);
+    root.setAttribute("schemaMinor", 3);
+    root.addChildElement(session::patchToXml(makeChain()).release());
+    REQUIRE(root.writeTo(file));
+
+    auto loaded = session::pdl::readBank(file);
+    REQUIRE(loaded.bank != nullptr);
+    REQUIRE(loaded.error.isEmpty());
+    REQUIRE(loaded.bank->size() == 1);
+    REQUIRE(loaded.bank->activeIndex == 0);
+    REQUIRE(loaded.bank->active().name == "Test Board");
+    REQUIRE(loaded.bank->active().nodes.size() == 1);
+
+    file.deleteFile();
+}
+
+TEST_CASE("pdl: readPatch on a multi-patch bank returns the active patch", "[session][pdl][bank]")
+{
+    const auto file = tempPdl("bank-active");
+
+    session::PatchBank bank;
+    bank.patches = {namedChain("One", 1), namedChain("Two", 2)};
+    bank.activeIndex = 1;
+    REQUIRE(session::pdl::writeBank(bank, file).wasOk());
+
+    auto single = session::pdl::readPatch(file);
+    REQUIRE(single.patch != nullptr);
+    REQUIRE(single.patch->name == "Two");
+
+    file.deleteFile();
+}
+
+TEST_CASE("pdl: an out-of-range activeIndex is clamped to 0, not fatal", "[session][pdl][bank]")
+{
+    const auto file = tempPdl("bank-clamp");
+
+    juce::XmlElement root("PEDALBOARD");
+    root.setAttribute("schemaMajor", session::pdl::kSchemaMajor);
+    root.setAttribute("schemaMinor", session::pdl::kSchemaMinor);
+    auto* bankEl = root.createNewChildElement("BANK");
+    bankEl->setAttribute("activeIndex", 7);
+    bankEl->addChildElement(session::patchToXml(namedChain("One", 1)).release());
+    bankEl->addChildElement(session::patchToXml(namedChain("Two", 2)).release());
+    REQUIRE(root.writeTo(file));
+
+    auto loaded = session::pdl::readBank(file);
+    REQUIRE(loaded.bank != nullptr);
+    REQUIRE(loaded.bank->activeIndex == 0);
+
+    file.deleteFile();
+}
+
+TEST_CASE("pdl: an invalid patch inside a bank fails the load and names its position", "[session][pdl][bank]")
+{
+    const auto file = tempPdl("bank-invalid");
+
+    auto bad = namedChain("Broken", 2);
+    bad.connections.push_back({2, 0, 99, 0}); // dangling: node 99 does not exist
+
+    juce::XmlElement root("PEDALBOARD");
+    root.setAttribute("schemaMajor", session::pdl::kSchemaMajor);
+    root.setAttribute("schemaMinor", session::pdl::kSchemaMinor);
+    auto* bankEl = root.createNewChildElement("BANK");
+    bankEl->setAttribute("activeIndex", 0);
+    bankEl->addChildElement(session::patchToXml(namedChain("One", 1)).release());
+    bankEl->addChildElement(session::patchToXml(bad).release());
+    REQUIRE(root.writeTo(file));
+
+    auto loaded = session::pdl::readBank(file);
+    REQUIRE(loaded.bank == nullptr);
+    REQUIRE(loaded.error.contains("Patch 2"));
+    REQUIRE(loaded.error.contains("Broken"));
+
+    file.deleteFile();
+}
+
+TEST_CASE("pdl: an empty <BANK> is rejected", "[session][pdl][bank]")
+{
+    const auto file = tempPdl("bank-empty");
+
+    juce::XmlElement root("PEDALBOARD");
+    root.setAttribute("schemaMajor", session::pdl::kSchemaMajor);
+    root.setAttribute("schemaMinor", session::pdl::kSchemaMinor);
+    root.createNewChildElement("BANK");
+    REQUIRE(root.writeTo(file));
+
+    auto loaded = session::pdl::readBank(file);
+    REQUIRE(loaded.bank == nullptr);
+    REQUIRE(loaded.error.isNotEmpty());
+
+    file.deleteFile();
+}

@@ -371,3 +371,90 @@ TEST_CASE("v2 import: channel + range carry across, including an inverted (lo>hi
     REQUIRE_FALSE(b.inverted);
     REQUIRE(b.target.node == res.patch->nodes[2].id);
 }
+
+// ---- Multi-patch files -> PatchBank (roadmap M3 U2) --------------------------
+
+namespace
+{
+
+// kV2Xml with a second <Patch> appended: a one-plugin chain named "Second".
+std::unique_ptr<juce::XmlElement> parseTwoPatchFile()
+{
+    const juce::String second = R"(
+  <Patch tempo="120" name="Second">
+    <FILTERGRAPH>
+      <FILTER uid="1" x="0" y="0">
+        <PLUGIN name="Audio Input" format="Internal" manufacturer="Raw Material Software"
+                uid="246006c0" isInstrument="0" numInputs="0" numOutputs="4"/>
+      </FILTER>
+      <FILTER uid="3" x="900" y="0">
+        <PLUGIN name="Audio Output" format="Internal" manufacturer="Raw Material Software"
+                uid="724248cb" isInstrument="0" numInputs="2" numOutputs="0"/>
+      </FILTER>
+      <FILTER uid="5" x="400" y="0">
+        <PLUGIN name="Delay" format="VST" category="Delay" manufacturer="Acme" version="1.0"
+                file="C:\VST\Delay.dll" uid="77778888" isInstrument="0" numInputs="2" numOutputs="2"/>
+        <STATE>128.abcdef</STATE>
+      </FILTER>
+      <CONNECTION srcFilter="1" srcChannel="0" dstFilter="5" dstChannel="0"/>
+      <CONNECTION srcFilter="1" srcChannel="1" dstFilter="5" dstChannel="1"/>
+      <CONNECTION srcFilter="5" srcChannel="0" dstFilter="3" dstChannel="0"/>
+      <CONNECTION srcFilter="5" srcChannel="1" dstFilter="3" dstChannel="1"/>
+    </FILTERGRAPH>
+  </Patch>
+  <DEVICESETUP)";
+    return juce::parseXML(juce::String(kV2Xml).replace("\n  <DEVICESETUP", second));
+}
+
+} // namespace
+
+TEST_CASE("v2 import: importPedalboard2Bank imports every <Patch> in file order", "[session][v2import][bank]")
+{
+    auto v2 = parseTwoPatchFile();
+    REQUIRE(v2 != nullptr);
+
+    auto res = session::v2::importPedalboard2Bank(*v2);
+    REQUIRE(res.bank != nullptr);
+    REQUIRE(res.error.isEmpty());
+    REQUIRE(res.bank->size() == 2);
+    REQUIRE(res.bank->activeIndex == 0);
+    REQUIRE(res.bank->patches[0].name == "My Board");
+    REQUIRE(res.bank->patches[0].nodes.size() == 3);
+    REQUIRE(res.bank->patches[1].name == "Second");
+    REQUIRE(res.bank->patches[1].nodes.size() == 1);
+    REQUIRE(res.bank->patches[1].nodes[0].desc.name == "Delay");
+    REQUIRE(session::validatePatch(res.bank->patches[1]) == session::PatchValidation::Ok);
+
+    // One state-not-migrated warning per patch, each prefixed with its patch name.
+    REQUIRE(res.warnings.size() == 2);
+    REQUIRE(res.warnings[0].startsWith("Patch \"My Board\": "));
+    REQUIRE(res.warnings[1].startsWith("Patch \"Second\": "));
+
+    // The single-patch entry point still takes the first and says the rest were dropped.
+    auto single = session::v2::importPedalboard2Patch(*v2);
+    REQUIRE(single.patch != nullptr);
+    REQUIRE(single.patch->name == "My Board");
+    REQUIRE(single.warnings.size() == kBaselineWarnings + 1);
+}
+
+TEST_CASE("v2 import: a single-patch file imports as a one-patch bank without prefixes", "[session][v2import][bank]")
+{
+    auto v2 = parse(kV2Xml);
+    auto res = session::v2::importPedalboard2Bank(*v2);
+    REQUIRE(res.bank != nullptr);
+    REQUIRE(res.bank->size() == 1);
+    REQUIRE(res.warnings.size() == kBaselineWarnings);
+    REQUIRE_FALSE(res.warnings[0].startsWith("Patch \""));
+}
+
+TEST_CASE("v2 import: importPedalboard2Bank rejects a non-v2 root and a file with no <Patch>",
+          "[session][v2import][bank]")
+{
+    juce::XmlElement v3("PEDALBOARD");
+    REQUIRE(session::v2::importPedalboard2Bank(v3).bank == nullptr);
+
+    juce::XmlElement empty("Pedalboard2PatchFile");
+    auto res = session::v2::importPedalboard2Bank(empty);
+    REQUIRE(res.bank == nullptr);
+    REQUIRE(res.error.isNotEmpty());
+}

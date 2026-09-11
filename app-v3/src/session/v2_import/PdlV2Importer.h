@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../Patch.h"
+#include "../PatchBank.h"
 
 #include <juce_core/juce_core.h>
 
@@ -15,6 +16,17 @@ namespace pedalboard3::session::v2
 struct ImportResult
 {
     std::unique_ptr<Patch> patch;
+    juce::StringArray warnings;
+    juce::String error;
+};
+
+// Result of importing a whole Pedalboard2 file as a bank (roadmap M3 U2):
+// one v3 Patch per v2 <Patch>, in file order, activeIndex 0. `bank` is null
+// on failure. Warnings from a multi-patch file are prefixed with the patch's
+// name so the user can tell which one they concern.
+struct BankImportResult
+{
+    std::unique_ptr<PatchBank> bank;
     juce::StringArray warnings;
     juce::String error;
 };
@@ -39,6 +51,14 @@ bool isPedalboard2Patch(const juce::XmlElement& root);
 // faithful replacement matches to the installed VST3/AU build whose state
 // format is incompatible (master plan: "lossy-with-warning on plugin state").
 // A warning is emitted per node that had state.
+//
+// Imports only the FIRST <Patch> of the file (with a warning when more exist);
+// importPedalboard2Bank below is the multi-patch path.
 ImportResult importPedalboard2Patch(const juce::XmlElement& root);
+
+// Import every <Patch> of a Pedalboard2 file into a PatchBank, applying the
+// same per-patch transform as importPedalboard2Patch. A patch that fails to
+// import fails the whole bank, naming its 1-based position.
+BankImportResult importPedalboard2Bank(const juce::XmlElement& root);
 
 } // namespace pedalboard3::session::v2

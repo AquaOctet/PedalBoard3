@@ -3,17 +3,26 @@
 namespace pedalboard3::session::pdl
 {
 
-juce::Result writePatch(const Patch& patch, const juce::File& file)
+juce::Result writeBank(const PatchBank& bank, const juce::File& file)
 {
-    auto patchXml = patchToXml(patch);
-    if (patchXml == nullptr)
-        return juce::Result::fail("Failed to serialise patch");
+    if (bank.patches.empty())
+        return juce::Result::fail("Cannot save an empty patch bank");
 
     juce::XmlElement root("PEDALBOARD");
     root.setAttribute("schemaMajor", kSchemaMajor);
     root.setAttribute("schemaMinor", kSchemaMinor);
     root.setAttribute("appVersion", PB3_APP_VERSION);
-    root.addChildElement(patchXml.release());
+
+    auto* bankEl = root.createNewChildElement("BANK");
+    bankEl->setAttribute("activeIndex", bank.isValidIndex(bank.activeIndex) ? bank.activeIndex : 0);
+
+    for (const auto& patch : bank.patches)
+    {
+        auto patchXml = patchToXml(patch);
+        if (patchXml == nullptr)
+            return juce::Result::fail("Failed to serialise patch \"" + patch.name + "\"");
+        bankEl->addChildElement(patchXml.release());
+    }
 
     const auto parent = file.getParentDirectory();
     if (!parent.exists())
@@ -37,9 +46,17 @@ juce::Result writePatch(const Patch& patch, const juce::File& file)
     return juce::Result::ok();
 }
 
-LoadResult readPatch(const juce::File& file)
+juce::Result writePatch(const Patch& patch, const juce::File& file)
 {
-    LoadResult result;
+    PatchBank bank;
+    bank.patches = {patch};
+    bank.activeIndex = 0;
+    return writeBank(bank, file);
+}
+
+BankLoadResult readBank(const juce::File& file)
+{
+    BankLoadResult result;
 
     if (!file.existsAsFile())
     {
@@ -66,27 +83,55 @@ LoadResult readPatch(const juce::File& file)
         return result;
     }
 
-    auto* patchEl = root->getChildByName("PATCH");
-    if (patchEl == nullptr)
+    // schemaMinor >= 4: <BANK> holding the patches. schemaMinor <= 3: a bare
+    // <PATCH> under the root, read as a one-patch bank.
+    auto bank = std::make_unique<PatchBank>();
+    bank->patches.clear();
+
+    const juce::XmlElement* container = root->getChildByName("BANK");
+    int activeIndex = 0;
+    if (container != nullptr)
+        activeIndex = container->getIntAttribute("activeIndex", 0);
+    else
+        container = root.get();
+
+    for (auto* patchEl : container->getChildWithTagNameIterator("PATCH"))
+    {
+        const int position = static_cast<int>(bank->patches.size()) + 1;
+
+        auto patch = patchFromXml(*patchEl);
+        if (patch == nullptr)
+        {
+            result.error = "Patch " + juce::String(position) + " is malformed";
+            return result;
+        }
+        if (validatePatch(*patch) != PatchValidation::Ok)
+        {
+            result.error = "Patch " + juce::String(position) + " (\"" + patch->name +
+                           "\") failed validation (corrupt or inconsistent)";
+            return result;
+        }
+        bank->patches.push_back(std::move(*patch));
+    }
+
+    if (bank->patches.empty())
     {
         result.error = "Patch file has no <PATCH> element";
         return result;
     }
 
-    auto patch = patchFromXml(*patchEl);
-    if (patch == nullptr)
-    {
-        result.error = "Patch file is malformed";
-        return result;
-    }
+    bank->activeIndex = bank->isValidIndex(activeIndex) ? activeIndex : 0;
+    result.bank = std::move(bank);
+    return result;
+}
 
-    if (validatePatch(*patch) != PatchValidation::Ok)
-    {
-        result.error = "Patch failed validation (corrupt or inconsistent)";
-        return result;
-    }
-
-    result.patch = std::move(patch);
+LoadResult readPatch(const juce::File& file)
+{
+    LoadResult result;
+    auto loaded = readBank(file);
+    result.error = loaded.error;
+    if (loaded.bank != nullptr)
+        result.patch = std::make_unique<Patch>(std::move(loaded.bank->active()));
     return result;
 }
 
