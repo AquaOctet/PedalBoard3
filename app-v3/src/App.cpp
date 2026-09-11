@@ -54,8 +54,12 @@ void App::initialise(const juce::String& /*commandLine*/)
     // binds its resolver to session and re-feeds mappings on every patch change.
     controlHub = std::make_unique<session::ControlHub>();
     controlWiring = std::make_unique<session::ControlWiring>(*session, *controlHub);
+    // M3: every live MIDI message goes through the patch switcher, which hands
+    // it to controlHub first and then applies the default Program Change ->
+    // patch rule (see session/PatchSwitcher.h).
+    patchSwitcher = std::make_unique<session::PatchSwitcher>(*bankDocument, *controlHub);
     midiInputManager = std::make_unique<control::MidiInputManager>(
-        engine->getDeviceManager(), [this](const juce::MidiMessage& msg) { controlHub->handleMidi(msg); });
+        engine->getDeviceManager(), [this](const juce::MidiMessage& msg) { patchSwitcher->handleMidi(msg); });
 
     oscServer =
         std::make_unique<control::OscServer>([this](const juce::OSCMessage& msg) { controlHub->handleOsc(msg); });
@@ -97,6 +101,7 @@ void App::shutdown()
     persister.reset();
     midiInputManager.reset();
     oscServer.reset();
+    patchSwitcher.reset(); // after both input edges, before controlHub/bankDocument
     controlWiring.reset();
     controlHub.reset();
     bankDocument.reset();
