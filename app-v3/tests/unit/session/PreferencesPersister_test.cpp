@@ -25,6 +25,7 @@
 
 #include "engine/AudioEngine.h"
 #include "engine/PluginHost.h"
+#include "session/BankDocument.h"
 #include "session/Preferences.h"
 #include "session/PreferencesPersister.h"
 #include "session/Session.h"
@@ -53,6 +54,7 @@ struct PrefsScrubber
             store->removeValue("knownPluginList");
             store->removeValue("activePluginDescription");
             store->removeValue("activePatch");
+            store->removeValue("activeBank");
         }
         prefs_.flush();
     }
@@ -89,7 +91,8 @@ TEST_CASE("PreferencesPersister: a KnownPluginList change writes XML and eagerly
 
     {
         session::Session sess(eng, host);
-        session::PreferencesPersister persister(prefs, eng, host, sess);
+        session::BankDocument doc(sess);
+        session::PreferencesPersister persister(prefs, eng, host, sess, doc);
 
         // Mutate the live KnownPluginList. addToBlacklist sends a change
         // message asynchronously; without a running MessageManager we
@@ -134,7 +137,8 @@ TEST_CASE("PreferencesPersister: change before construction is ignored, change a
     REQUIRE(prefs.getKnownPluginList() == nullptr);
 
     {
-        session::PreferencesPersister persister(prefs, eng, host, sess);
+        session::BankDocument doc(sess);
+        session::PreferencesPersister persister(prefs, eng, host, sess, doc);
 
         // Post-construction mutation -- listener fires, persister writes.
         host.getKnownPluginList().addToBlacklist(kSyntheticBlacklistPath);
@@ -172,7 +176,8 @@ TEST_CASE("PreferencesPersister: lifetime -- outliving the persister with a Sess
     session::Session sess(eng, host);
 
     {
-        session::PreferencesPersister persister(prefs, eng, host, sess);
+        session::BankDocument doc(sess);
+        session::PreferencesPersister persister(prefs, eng, host, sess, doc);
     } // dtor deregisters from sess + host.knownPluginList + eng.deviceManager
 
     // After dtor, sending a synchronous change must not re-enter the

@@ -6,6 +6,7 @@
 #include "engine/PluginHost.h"
 #include "engine/PluginScanner.h"
 #include "engine/processors/TestToneProcessor.h"
+#include "session/BankDocument.h"
 #include "session/PdlSerializer.h"
 #include "session/Preferences.h"
 #include "session/Session.h"
@@ -95,54 +96,58 @@ const juce::PluginDescription* findKnownByName(const juce::Array<juce::PluginDes
     return best;
 }
 
-struct LoadedPatch
+struct LoadedBank
 {
-    std::unique_ptr<session::Patch> patch;
+    std::unique_ptr<session::PatchBank> bank;
     juce::StringArray warnings;
     juce::String error;
 };
 
-// Load a patch file for File > Open, transparently handling both v3 .pdl and
-// legacy Pedalboard2 (.pdl v2) files. For a v2 file it imports the topology and
-// resolves each plugin to an installed one by name (dropping unmatched, with a
-// warning); state is not migrated across the VST2 -> VST3 format change.
-LoadedPatch loadOpenedPatch(const juce::File& file, engine::PluginHost& host)
+// Load a patch BANK for File > Open, transparently handling both v3 .pdl and
+// legacy Pedalboard2 (.pdl v2) files. For a v2 file it imports every patch's
+// topology and resolves each plugin to an installed one by name (dropping
+// unmatched, with a warning); state is not migrated across the VST2 -> VST3
+// format change.
+LoadedBank loadOpenedBank(const juce::File& file, engine::PluginHost& host)
 {
-    LoadedPatch out;
+    LoadedBank out;
 
     auto xml = juce::parseXML(file);
     if (xml != nullptr && session::v2::isPedalboard2Patch(*xml))
     {
-        auto imp = session::v2::importPedalboard2Patch(*xml);
+        auto imp = session::v2::importPedalboard2Bank(*xml);
         out.warnings = imp.warnings;
         out.error = imp.error;
-        if (imp.patch == nullptr)
+        if (imp.bank == nullptr)
             return out;
 
         const auto known = host.getKnownPlugins();
-        std::vector<session::PatchNode> kept;
-        for (auto& node : imp.patch->nodes)
+        for (auto& patch : imp.bank->patches)
         {
-            if (const auto* match = findKnownByName(known, node.desc.name))
+            std::vector<session::PatchNode> kept;
+            for (auto& node : patch.nodes)
             {
-                node.desc = *match;    // resolve to the installed plugin
-                node.state.setSize(0); // cross-format; state already not migrated
-                kept.push_back(std::move(node));
+                if (const auto* match = findKnownByName(known, node.desc.name))
+                {
+                    node.desc = *match;    // resolve to the installed plugin
+                    node.state.setSize(0); // cross-format; state already not migrated
+                    kept.push_back(std::move(node));
+                }
+                else
+                {
+                    out.warnings.add("Skipped \"" + node.desc.name +
+                                     "\" - not found in your scanned plugins (scan it, or no installed equivalent).");
+                }
             }
-            else
-            {
-                out.warnings.add("Skipped \"" + node.desc.name +
-                                 "\" - not found in your scanned plugins (scan it, or no installed equivalent).");
-            }
+            patch.nodes = std::move(kept);
+            patch.connections = session::linearChainConnections(patch.nodes);
         }
-        imp.patch->nodes = std::move(kept);
-        imp.patch->connections = session::linearChainConnections(imp.patch->nodes);
-        out.patch = std::move(imp.patch);
+        out.bank = std::move(imp.bank);
         return out;
     }
 
-    auto loaded = session::pdl::readPatch(file);
-    out.patch = std::move(loaded.patch);
+    auto loaded = session::pdl::readBank(file);
+    out.bank = std::move(loaded.bank);
     out.error = loaded.error;
     return out;
 }
@@ -151,6 +156,11 @@ LoadedPatch loadOpenedPatch(const juce::File& file, engine::PluginHost& host)
 TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas) : ctx_(ctx), canvas_(canvas)
 {
     setOpaque(true);
+
+    // Caller-managed editor lifecycle (D1b / AC-UI-P): every whole-patch swap
+    // the bank document issues destroys the live instances, so open editors
+    // must close first. Unbound again in the dtor.
+    ctx_.bankDocument.beforeSwap = [this] { canvas_.closeAllEditors(); };
 
     fileButton_.onClick = [this] { openFileMenu(); };
     addPluginButton_.onClick = [this] { openAddPluginMenu(); };
@@ -203,6 +213,7 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas) : ctx_(ctx), c
 
 TransportBar::~TransportBar()
 {
+    ctx_.bankDocument.beforeSwap = nullptr;
     ctx_.session.removeChangeListener(this);
 
     // Join any in-flight rescan before AppContext/Session/PluginHost tear down
@@ -658,9 +669,9 @@ void TransportBar::openFileMenu()
 
 void TransportBar::savePatch()
 {
-    // Snapshot the chain WITH live plugin state so a later load restores
-    // knob settings (master plan §4.5 / §4.2.B).
-    auto snapshot = ctx_.session.getActivePatchWithState();
+    // Snapshot the whole bank, the active slot refreshed WITH live plugin
+    // state so a later load restores knob settings (master plan §4.5 / §4.2.B).
+    auto snapshot = ctx_.bankDocument.snapshotForSave();
 
     const auto dir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("Pedalboard 3");
     fileChooser_ =
@@ -680,7 +691,7 @@ void TransportBar::savePatch()
             if (!file.hasFileExtension("pdl"))
                 file = file.withFileExtension("pdl");
 
-            const auto result = session::pdl::writePatch(snapshot, file);
+            const auto result = session::pdl::writeBank(snapshot, file);
             const bool ok = result.wasOk();
 
             const auto opts =
@@ -709,8 +720,8 @@ void TransportBar::openPatch()
                 return; // cancelled
 
             // Handles both v3 .pdl and legacy Pedalboard2 (.pdl v2) files.
-            auto loaded = loadOpenedPatch(file, ctx_.pluginHost);
-            if (loaded.patch == nullptr)
+            auto loaded = loadOpenedBank(file, ctx_.pluginHost);
+            if (loaded.bank == nullptr)
             {
                 const auto msg =
                     loaded.error.isNotEmpty() ? loaded.error : juce::String("Couldn't read the patch file.");
@@ -724,28 +735,31 @@ void TransportBar::openPatch()
             }
 
             // Drop nodes that are unsafe to construct (instruments or blacklisted
-            // crash-on-construct plugins) BEFORE replacePatch — replacePatch calls
-            // createInstance directly (bypassing the scanner's guards). Rebuild a
-            // linear chain over the survivors so connections stay valid.
-            auto& patch = *loaded.patch;
-            const auto countBefore = patch.nodes.size();
-            patch.nodes.erase(std::remove_if(patch.nodes.begin(),
-                                             patch.nodes.end(),
-                                             [this](const session::PatchNode& n)
-                                             { return !session::isNodeSafeForChain(ctx_.pluginHost, n); }),
-                              patch.nodes.end());
-            if (patch.nodes.size() != countBefore)
-                patch.connections = session::linearChainConnections(patch.nodes);
+            // crash-on-construct plugins) BEFORE any of these patches can go
+            // live — replacePatch calls createInstance directly (bypassing the
+            // scanner's guards), and every slot is one switch away from live.
+            // Rebuild a linear chain over the survivors so connections stay valid.
+            for (auto& patch : loaded.bank->patches)
+            {
+                const auto countBefore = patch.nodes.size();
+                patch.nodes.erase(std::remove_if(patch.nodes.begin(),
+                                                 patch.nodes.end(),
+                                                 [this](const session::PatchNode& n)
+                                                 { return !session::isNodeSafeForChain(ctx_.pluginHost, n); }),
+                                  patch.nodes.end());
+                if (patch.nodes.size() != countBefore)
+                    patch.connections = session::linearChainConnections(patch.nodes);
+            }
 
-            // If Test Tone is on, drop it: the loaded patch becomes the live graph
-            // via Session. Clear the toggle so the UI agrees.
+            // If Test Tone is on, drop it: the loaded bank's active patch becomes
+            // the live graph via the bank document. Clear the toggle so the UI
+            // agrees (loadBank re-enables live capture itself).
             if (toneButton_.getToggleState())
                 toneButton_.setToggleState(false, juce::dontSendNotification);
 
-            // CALLER-MANAGED EDITOR LIFECYCLE (D1b / AC-UI-P): close every open
-            // editor BEFORE replacePatch destroys the live instances.
-            canvas_.closeAllEditors();
-            ctx_.session.replacePatch(std::move(patch));
+            // Editors close via BankDocument::beforeSwap before the swap
+            // destroys the live instances.
+            ctx_.bankDocument.loadBank(std::move(*loaded.bank));
             updateAddPluginEnabled();
 
             // Surface import notes (Pedalboard2 conversion: dropped state, skipped
@@ -767,6 +781,14 @@ void TransportBar::onTestToneToggled()
 {
     if (toneButton_.getToggleState())
     {
+        // The live graph is about to stop being the active patch: capture its
+        // state into the bank slot first, then suspend live capture so a
+        // switch/save while the tone plays cannot overwrite the slot with the
+        // empty patch clearPatch installs (BankDocument re-enables it on its
+        // next swap).
+        ctx_.bankDocument.storeActive();
+        ctx_.bankDocument.setLiveCaptureEnabled(false);
+
         // CALLER-MANAGED EDITOR LIFECYCLE (D1b / AC-UI-P): close
         // every open EditorWindow synchronously BEFORE Session
         // destroys the underlying plugin instances on clearPatch.
@@ -777,16 +799,13 @@ void TransportBar::onTestToneToggled()
     }
     else
     {
-        // Toggle OFF: route through Session::clearPatch instead of
-        // audioEngine.loadGraph(nullptr). The latter would leave
-        // Session::liveGraph_ pointing at the now-destroyed tone graph
-        // (a dangling pointer); the next addPlugin would crash with a
-        // null vtable read inside juce::AudioProcessorGraph::Pimpl.
-        // clearPatch goes through the worker → commitLoadPatch path,
-        // which builds a fresh empty-passthrough graph and updates
-        // liveGraph_ atomically. The brief audible silence between the
-        // tone stopping and the empty graph swapping in is acceptable.
-        ctx_.session.clearPatch();
+        // Toggle OFF: bring the active bank slot back through Session's
+        // worker → commitLoadPatch path (NOT audioEngine.loadGraph(nullptr),
+        // which would leave Session::liveGraph_ dangling at the destroyed
+        // tone graph and crash the next addPlugin). The slot holds the
+        // state captured when the tone went on, so the board comes back as
+        // it was. The brief audible silence during the swap is acceptable.
+        ctx_.bankDocument.reloadActive();
     }
     updateAddPluginEnabled();
 }

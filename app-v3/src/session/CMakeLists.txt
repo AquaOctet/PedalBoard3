@@ -20,6 +20,8 @@ add_library(pb3_session_core STATIC
     Patch.h
     PatchBank.cpp
     PatchBank.h
+    BankDocument.cpp
+    BankDocument.h
     PdlSerializer.cpp
     PdlSerializer.h
     v2_import/PdlV2Importer.cpp
@@ -70,6 +72,7 @@ pb3_apply_strict_warnings(pb3_session_core
     PreferencesPersister.cpp
     Patch.cpp
     PatchBank.cpp
+    BankDocument.cpp
     PdlSerializer.cpp
     v2_import/PdlV2Importer.cpp
     ControlParameterApplier.cpp

@@ -47,6 +47,7 @@ void App::initialise(const juce::String& /*commandLine*/)
     }
 
     session = std::make_unique<session::Session>(*engine, *pluginHost);
+    bankDocument = std::make_unique<session::BankDocument>(*session);
 
     // M2: ControlHub is the message-thread entry point live MIDI/OSC devices
     // feed (device edges land in App::initialise too, once built); ControlWiring
@@ -67,9 +68,10 @@ void App::initialise(const juce::String& /*commandLine*/)
         juce::Logger::writeToLog("Pedalboard 3: OSC listener warning — " + error);
     }
 
-    persister = std::make_unique<session::PreferencesPersister>(*preferences, *engine, *pluginHost, *session);
+    persister =
+        std::make_unique<session::PreferencesPersister>(*preferences, *engine, *pluginHost, *session, *bankDocument);
 
-    context.emplace(AppContext{*engine, *pluginHost, *preferences, *session, *controlHub, *oscServer});
+    context.emplace(AppContext{*engine, *pluginHost, *preferences, *session, *bankDocument, *controlHub, *oscServer});
     mainWindow = std::make_unique<ui::MainWindow>(getApplicationName(), *context);
 
     // Restore the previously-active patch, gated by the KnownPluginList
@@ -97,6 +99,7 @@ void App::shutdown()
     oscServer.reset();
     controlWiring.reset();
     controlHub.reset();
+    bankDocument.reset();
     session.reset();
     pluginHost.reset();
     engine.reset();
@@ -112,10 +115,10 @@ void App::shutdown()
 
 void App::restoreActivePatchIfAny()
 {
-    if (preferences == nullptr || pluginHost == nullptr || session == nullptr)
+    if (preferences == nullptr || pluginHost == nullptr || session == nullptr || bankDocument == nullptr)
         return;
 
-    auto saved = preferences->getActivePatch();
+    auto saved = preferences->getActiveBank();
     if (saved == nullptr)
         return;
 
@@ -129,37 +132,42 @@ void App::restoreActivePatchIfAny()
     {
         juce::Logger::writeToLog("Pedalboard 3: previous launch crashed during patch restore — "
                                  "discarding the saved patch to recover.");
-        preferences->clearActivePatch();
+        preferences->clearActiveBank();
         session::clearRestoreInFlightMarker(*preferences);
         preferences->flush();
         return;
     }
 
-    // Cross-check against the plugin host (AC-1.D.3-L). The restore path calls
-    // createInstance directly, bypassing the instrument sweep + known-problem
-    // floor that only guard the scanner. Drop any node that's an instrument or
-    // blacklisted (known crash-on-construct) so it never reaches createInstance.
-    const auto savedCount = saved->nodes.size();
-    saved->nodes.erase(std::remove_if(saved->nodes.begin(),
-                                      saved->nodes.end(),
-                                      [this](const session::PatchNode& n)
-                                      { return !session::isNodeSafeForChain(*pluginHost, n); }),
-                       saved->nodes.end());
-
-    if (saved->nodes.size() != savedCount)
+    // Cross-check against the plugin host (AC-1.D.3-L), per patch. The restore
+    // path calls createInstance directly, bypassing the instrument sweep +
+    // known-problem floor that only guard the scanner. Drop any node that's an
+    // instrument or blacklisted (known crash-on-construct) so it never reaches
+    // createInstance — not only in the active patch: every slot can become
+    // live with one Program Change.
+    for (auto& patch : saved->patches)
     {
-        // Dropping nodes left the saved connections dangling — rebuild a clean
-        // linear chain over the survivors so the restored graph is valid.
-        saved->connections = session::linearChainConnections(saved->nodes);
+        const auto savedCount = patch.nodes.size();
+        patch.nodes.erase(std::remove_if(patch.nodes.begin(),
+                                         patch.nodes.end(),
+                                         [this](const session::PatchNode& n)
+                                         { return !session::isNodeSafeForChain(*pluginHost, n); }),
+                          patch.nodes.end());
+
+        if (patch.nodes.size() != savedCount)
+        {
+            // Dropping nodes left the saved connections dangling — rebuild a
+            // clean linear chain over the survivors so the graph is valid.
+            patch.connections = session::linearChainConnections(patch.nodes);
+        }
     }
 
-    // Arm the crash-loop marker BEFORE handing the patch to the worker, and
-    // flush so it survives a hard crash. replacePatch is async; on success
+    // Arm the crash-loop marker BEFORE handing the active patch to the worker,
+    // and flush so it survives a hard crash. replacePatch is async; on success
     // PreferencesPersister clears the marker on the Idle transition.
-    session::writeRestoreInFlightMarker(*preferences, session::patchIdentityString(*saved));
+    session::writeRestoreInFlightMarker(*preferences, session::patchIdentityString(saved->active()));
     preferences->flush();
 
-    session->replacePatch(*saved);
+    bankDocument->loadBank(std::move(*saved));
 }
 
 } // namespace pedalboard3

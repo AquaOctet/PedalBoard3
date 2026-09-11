@@ -424,3 +424,78 @@ TEST_CASE("Preferences: ActivePatch with structural corruption is rejected", "[s
     prefs.clearActivePatch();
     prefs.flush();
 }
+
+// ---- Active BANK (roadmap M3 U3) ---------------------------------------------
+
+TEST_CASE("Preferences: ActiveBank round-trips and supersedes the legacy ActivePatch", "[session][preferences][bank]")
+{
+    session::Preferences prefs;
+    prefs.clearActiveBank();
+    prefs.flush();
+    REQUIRE(prefs.getActiveBank() == nullptr);
+
+    session::PatchBank bank;
+    auto second = makeFakeChain();
+    second.name = "Second";
+    bank.patches = {makeFakeChain(), second};
+    bank.activeIndex = 1;
+
+    prefs.setActiveBank(bank);
+    prefs.flush();
+
+    auto restored = prefs.getActiveBank();
+    REQUIRE(restored != nullptr);
+    REQUIRE(restored->size() == 2);
+    REQUIRE(restored->activeIndex == 1);
+    REQUIRE(restored->patches[0].name == "TestChain");
+    REQUIRE(restored->patches[1].name == "Second");
+    REQUIRE(restored->patches[1].nodes.size() == 2);
+    REQUIRE(restored->patches[1].nodes[1].bypass);
+
+    // The legacy single-patch value is gone once a bank is written.
+    REQUIRE(prefs.getActivePatch() == nullptr);
+
+    prefs.clearActiveBank();
+    prefs.flush();
+    REQUIRE(prefs.getActiveBank() == nullptr);
+}
+
+TEST_CASE("Preferences: a legacy ActivePatch restores as a one-patch bank", "[session][preferences][bank]")
+{
+    session::Preferences prefs;
+    prefs.clearActiveBank();
+    prefs.setActivePatch(makeFakeChain());
+    prefs.flush();
+
+    auto bank = prefs.getActiveBank();
+    REQUIRE(bank != nullptr);
+    REQUIRE(bank->size() == 1);
+    REQUIRE(bank->activeIndex == 0);
+    REQUIRE(bank->active().name == "TestChain");
+
+    prefs.clearActiveBank();
+    prefs.flush();
+    REQUIRE(prefs.getActivePatch() == nullptr);
+}
+
+TEST_CASE("Preferences: a bank with a corrupt patch is rejected", "[session][preferences][bank]")
+{
+    session::Preferences prefs;
+    prefs.clearActiveBank();
+
+    auto* store = prefs.getStore();
+    REQUIRE(store != nullptr);
+    auto bad = makeFakeChain();
+    bad.connections.push_back({1, 0, 99, 0}); // dangling
+    session::PatchBank bank;
+    bank.patches = {makeFakeChain(), bad};
+    auto xml = session::bankToXml(bank);
+    REQUIRE(xml != nullptr);
+    store->setValue("activeBank", xml.get());
+    prefs.flush();
+
+    REQUIRE(prefs.getActiveBank() == nullptr);
+
+    prefs.clearActiveBank();
+    prefs.flush();
+}

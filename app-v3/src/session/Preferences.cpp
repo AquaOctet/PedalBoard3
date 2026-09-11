@@ -10,6 +10,7 @@ constexpr auto kAudioDeviceStateKey = "audioDeviceState";
 constexpr auto kKnownPluginListKey = "knownPluginList";
 constexpr auto kActivePluginDescriptionKey = "activePluginDescription";
 constexpr auto kActivePatchKey = "activePatch";
+constexpr auto kActiveBankKey = "activeBank";
 constexpr auto kOscPortKey = "oscPort";
 constexpr auto kOscMulticastAddressKey = "oscMulticastAddress";
 
@@ -157,6 +158,48 @@ void Preferences::clearActivePatch()
 {
     if (auto* store = props_.getUserSettings())
         store->removeValue(kActivePatchKey);
+}
+
+std::unique_ptr<PatchBank> Preferences::getActiveBank()
+{
+    auto* store = props_.getUserSettings();
+    if (store == nullptr)
+        return nullptr;
+
+    if (auto xml = readXml(*store, kActiveBankKey))
+        return bankFromXml(*xml);
+
+    // Legacy: a pre-bank build persisted one patch under activePatch.
+    if (auto legacy = getActivePatch())
+    {
+        auto bank = std::make_unique<PatchBank>();
+        bank->patches = {std::move(*legacy)};
+        bank->activeIndex = 0;
+        return bank;
+    }
+    return nullptr;
+}
+
+void Preferences::setActiveBank(const PatchBank& bank)
+{
+    auto* store = props_.getUserSettings();
+    if (store == nullptr)
+        return;
+
+    if (auto xml = bankToXml(bank))
+    {
+        store->setValue(kActiveBankKey, xml.get());
+        store->removeValue(kActivePatchKey); // one source of truth from here on
+    }
+}
+
+void Preferences::clearActiveBank()
+{
+    if (auto* store = props_.getUserSettings())
+    {
+        store->removeValue(kActiveBankKey);
+        store->removeValue(kActivePatchKey);
+    }
 }
 
 int Preferences::getOscPort()

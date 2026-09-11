@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Patch.h"
+#include "PatchBank.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_data_structures/juce_data_structures.h>
@@ -77,6 +78,17 @@ public:
     std::unique_ptr<Patch> getActivePatch();
     void setActivePatch(const Patch& patch);
     void clearActivePatch();
+
+    // The whole active patch BANK (roadmap M3 U3) — supersedes the single
+    // ActivePatch above for auto-restore. XML root is <BANK> (see
+    // session::bankToXml). getActiveBank falls back to a legacy ActivePatch
+    // value (as a one-patch bank, index 0) so a settings file written by a
+    // pre-bank build still restores; setActiveBank drops that legacy value.
+    // Returns nullptr on first run, malformed XML, or any structurally
+    // invalid patch.
+    std::unique_ptr<PatchBank> getActiveBank();
+    void setActiveBank(const PatchBank& bank);
+    void clearActiveBank(); // clears the legacy ActivePatch value too
 
     // OSC listener config (M2, KTD4). Plain scalar values via
     // juce::PropertiesFile's typed getters — no XML needed. Port defaults to
