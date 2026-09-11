@@ -8,11 +8,14 @@ namespace pedalboard3::ui
 {
 
 // StatusBar — fixed-height (32px) strip across the bottom of
-// MainWindow. Listens to Session and renders:
+// MainWindow. Listens to Session and the AudioDeviceManager and renders:
 //
-//   left:  ● (state dot, coloured per Session::State) +
-//          "Chain: N plugin(s)" + state text + lastError pill
-//   right: build version "v3.0.0-pre"
+//   left:   ● (state dot, coloured per Session::State) +
+//           "Chain: N plugin(s)" + state text
+//   middle: lastError pill (when set) and the audio-device readout
+//           (device, sample rate, buffer; or why there is no device),
+//           refreshed on every AudioDeviceManager change
+//   right:  build version
 //
 // Listener-driven (per AC-UI-K and the deferred-implementation
 // note about Timer-poll alternative). If Idle/Building flickers
@@ -35,10 +38,12 @@ public:
 private:
     void changeListenerCallback(juce::ChangeBroadcaster*) override;
     void refresh();
+    void refreshDeviceInfo();
 
     AppContext& ctx_;
     juce::Label leftLabel_;
     juce::Label errorLabel_;
+    juce::Label deviceLabel_;
     juce::Label rightLabel_;
     juce::Colour stateDotColour_;
 

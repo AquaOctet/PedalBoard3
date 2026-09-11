@@ -1,7 +1,10 @@
 #include "StatusBar.h"
 
 #include "ColourScheme.h"
+#include "engine/AudioEngine.h"
 #include "session/Session.h"
+
+#include <juce_audio_devices/juce_audio_devices.h>
 
 namespace pedalboard3::ui
 {
@@ -31,6 +34,13 @@ StatusBar::StatusBar(AppContext& ctx) : ctx_(ctx), stateDotColour_(tokens::statu
     errorLabel_.setVisible(false);
     addAndMakeVisible(errorLabel_);
 
+    deviceLabel_.setColour(juce::Label::textColourId, tokens::fgMuted);
+    deviceLabel_.setFont(juce::Font(juce::FontOptions(12.0f)));
+    deviceLabel_.setJustificationType(juce::Justification::centredRight);
+    deviceLabel_.setMinimumHorizontalScale(0.85f);
+    deviceLabel_.setInterceptsMouseClicks(false, false);
+    addAndMakeVisible(deviceLabel_);
+
     rightLabel_.setText(juce::String("v") + JUCE_APPLICATION_VERSION_STRING + "-pre", juce::dontSendNotification);
     rightLabel_.setColour(juce::Label::textColourId, tokens::fgMuted);
     rightLabel_.setFont(juce::Font(juce::FontOptions(11.0f)));
@@ -39,11 +49,16 @@ StatusBar::StatusBar(AppContext& ctx) : ctx_(ctx), stateDotColour_(tokens::statu
     addAndMakeVisible(rightLabel_);
 
     ctx_.session.addChangeListener(this);
+    if (auto* dm = ctx_.audioEngine.getDeviceManager())
+        dm->addChangeListener(this);
+    refreshDeviceInfo();
     refresh();
 }
 
 StatusBar::~StatusBar()
 {
+    if (auto* dm = ctx_.audioEngine.getDeviceManager())
+        dm->removeChangeListener(this);
     ctx_.session.removeChangeListener(this);
 }
 
@@ -73,13 +88,49 @@ void StatusBar::resized()
     auto left = bounds.removeFromLeft(280);
     leftLabel_.setBounds(left);
 
-    // Whatever is left of `bounds` is the error pill area.
-    errorLabel_.setBounds(bounds.reduced(kBarPadding, 2));
+    // Middle: the device readout sits right-aligned; an error pill, when
+    // shown, takes the left half so both stay readable.
+    if (errorLabel_.isVisible())
+    {
+        deviceLabel_.setBounds(bounds.removeFromRight(bounds.getWidth() / 2));
+        errorLabel_.setBounds(bounds.reduced(kBarPadding, 2));
+    }
+    else
+    {
+        deviceLabel_.setBounds(bounds);
+    }
 }
 
-void StatusBar::changeListenerCallback(juce::ChangeBroadcaster*)
+void StatusBar::changeListenerCallback(juce::ChangeBroadcaster* source)
 {
-    refresh();
+    if (source == &ctx_.session)
+        refresh();
+    else
+        refreshDeviceInfo(); // the AudioDeviceManager
+}
+
+void StatusBar::refreshDeviceInfo()
+{
+    auto* dm = ctx_.audioEngine.getDeviceManager();
+    auto* dev = dm != nullptr ? dm->getCurrentAudioDevice() : nullptr;
+
+    if (dev == nullptr)
+    {
+        // Surface the actual reason audio is silent (e.g. a driver that
+        // failed to open) rather than a generic placeholder.
+        const auto& err = ctx_.audioEngine.getLastInitError();
+        deviceLabel_.setColour(juce::Label::textColourId, tokens::accentWarning);
+        deviceLabel_.setText(dm == nullptr      ? juce::String("No audio device")
+                             : err.isNotEmpty() ? "Audio device error: " + err + " — open Audio Settings"
+                                                : juce::String("No audio device — open Audio Settings"),
+                             juce::dontSendNotification);
+        return;
+    }
+
+    deviceLabel_.setColour(juce::Label::textColourId, tokens::fgMuted);
+    deviceLabel_.setText(dev->getName() + "  •  " + juce::String(static_cast<int>(dev->getCurrentSampleRate())) +
+                             " Hz  /  " + juce::String(dev->getCurrentBufferSizeSamples()) + " samples",
+                         juce::dontSendNotification);
 }
 
 void StatusBar::refresh()
@@ -124,6 +175,7 @@ void StatusBar::refresh()
         errorLabel_.setVisible(false);
     }
 
+    resized(); // the middle split depends on whether the error pill is showing
     repaint();
 }
 
