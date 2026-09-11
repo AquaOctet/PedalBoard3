@@ -2,8 +2,11 @@
 
 #include "AppContext.h"
 #include "AppMappingsWindow.h"
+#include "BankSidebar.h"
+#include "BodyLayout.h"
 #include "ColourScheme.h"
 #include "FileActions.h"
+#include "PatchRail.h"
 #include "session/AppCommands.h"
 #include "session/BankDocument.h"
 #include "session/Preferences.h"
@@ -30,7 +33,8 @@ class MainWindow::RootComponent : public juce::Component, public juce::Applicati
 {
 public:
     explicit RootComponent(AppContext& ctxRef)
-        : ctx_(ctxRef), files_(ctx_), canvas_(ctx_), transportBar_(ctx_, canvas_, files_), statusBar_(ctx_)
+        : ctx_(ctxRef), files_(ctx_), canvas_(ctx_), transportBar_(ctx_, canvas_, files_), statusBar_(ctx_),
+          bankSidebar_(ctx_), patchRail_(ctx_)
     {
         addAndMakeVisible(transportBar_);
         addAndMakeVisible(viewport_);
@@ -42,8 +46,31 @@ public:
         // (wheel = vertical, shift+wheel = horizontal — Viewport defaults).
         viewport_.setScrollBarsShown(/*vert*/ true, /*horiz*/ true);
 
+        // The body's side panel (UI refresh U4 / U6): the patch bank on the
+        // left, folding to an icon strip on a narrow window.
+        addChildComponent(bankSidebar_);
+        addChildComponent(patchRail_);
+        patchesShown_ = ctx_.preferences.getPanelShown("patches", true);
+        statusBar_.setPatchesShown(patchesShown_);
+        statusBar_.onPatchesToggled = [this](bool shown) { setPatchesShown(shown); };
+        bankSidebar_.onCollapse = [this] { setPatchesShown(false); };
+        bankSidebar_.onDismiss = [this] { closePatchesOverlay(); };
+        bankSidebar_.onRenameActive = [this] { transportBar_.promptRenamePatch(); };
+        bankSidebar_.onRemoveActive = [this] { transportBar_.confirmRemovePatch(); };
+        patchRail_.onOpenPanel = [this]
+        {
+            patchesOverlay_ = !patchesOverlay_;
+            resized();
+        };
+        // A click on the canvas closes a slid-open panel.
+        viewport_.addMouseListener(this, true);
+
         setSize(kInitialWidth, kInitialHeight);
     }
+
+    ~RootComponent() override { viewport_.removeMouseListener(this); }
+
+    void mouseDown(const juce::MouseEvent&) override { closePatchesOverlay(); }
 
     void paint(juce::Graphics& g) override { g.fillAll(tokens::bgWindow); }
 
@@ -103,7 +130,49 @@ public:
         auto bounds = getLocalBounds();
         transportBar_.setBounds(bounds.removeFromTop(kTransportBarHeight));
         statusBar_.setBounds(bounds.removeFromBottom(kStatusBarHeight));
-        viewport_.setBounds(bounds);
+
+        // Left panel | canvas (the right panel, the plugin browser, comes with
+        // U5). On a narrow window the panel folds to an icon strip whose
+        // button slides it open over the canvas (plan KD3). The canvas
+        // re-centres itself when the viewport's size changes.
+        const auto panels = body::layout(bounds, patchesShown_, /*rightShown*/ false);
+        if (!panels.folded)
+            patchesOverlay_ = false;
+        viewport_.setBounds(panels.canvas);
+
+        patchRail_.setVisible(patchesShown_ && panels.folded);
+        if (patchRail_.isVisible())
+            patchRail_.setBounds(panels.left);
+
+        const bool docked = patchesShown_ && !panels.folded;
+        const bool overlaid = patchesShown_ && panels.folded && patchesOverlay_;
+        bankSidebar_.setVisible(docked || overlaid);
+        if (docked)
+        {
+            bankSidebar_.setBounds(panels.left);
+        }
+        else if (overlaid)
+        {
+            bankSidebar_.setBounds(body::overlayFor(panels, /*leftSide*/ true));
+            bankSidebar_.toFront(true);
+        }
+    }
+
+    void setPatchesShown(bool shown)
+    {
+        patchesShown_ = shown;
+        patchesOverlay_ = false;
+        ctx_.preferences.setPanelShown("patches", shown);
+        statusBar_.setPatchesShown(shown);
+        resized();
+    }
+
+    void closePatchesOverlay()
+    {
+        if (!patchesOverlay_)
+            return;
+        patchesOverlay_ = false;
+        resized();
     }
 
 private:
@@ -113,6 +182,10 @@ private:
     juce::Viewport viewport_;
     TransportBar transportBar_;
     StatusBar statusBar_;
+    BankSidebar bankSidebar_;
+    PatchRail patchRail_;
+    bool patchesShown_{true};
+    bool patchesOverlay_{false}; // a folded panel slid open over the canvas
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RootComponent)
 };

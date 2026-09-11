@@ -4,6 +4,8 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <functional>
+
 namespace pedalboard3::ui
 {
 
@@ -35,6 +37,11 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
 
+    // The panel toggles (UI refresh U6): Patches today. MainWindow installs the
+    // callback and keeps the toggle in step with the panel.
+    std::function<void(bool shown)> onPatchesToggled;
+    void setPatchesShown(bool shown);
+
 private:
     void changeListenerCallback(juce::ChangeBroadcaster*) override;
     void refresh();
@@ -45,6 +52,7 @@ private:
     juce::Label errorLabel_;
     juce::Label deviceLabel_;
     juce::Label rightLabel_;
+    juce::TextButton patchesToggle_{"Patches"};
     juce::Colour stateDotColour_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(StatusBar)

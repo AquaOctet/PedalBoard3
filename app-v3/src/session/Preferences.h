@@ -114,6 +114,11 @@ public:
     juce::String getWindowState();
     void setWindowState(const juce::String& state);
 
+    // Whether a main-window panel is shown (UI refresh U6): "patches" today,
+    // "browser" and "mappings" later. `fallback` until the user toggles it.
+    bool getPanelShown(const juce::String& panel, bool fallback);
+    void setPanelShown(const juce::String& panel, bool shown);
+
     // OSC listener config (M2, KTD4). Plain scalar values via
     // juce::PropertiesFile's typed getters — no XML needed. Port defaults to
     // 9000 when unset. Multicast address is empty ("") when unset, meaning

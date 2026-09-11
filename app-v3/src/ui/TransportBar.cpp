@@ -1,5 +1,6 @@
 #include "TransportBar.h"
 
+#include "AboutWindow.h"
 #include "ColourScheme.h"
 #include "control/OscServer.h"
 #include "engine/AudioEngine.h"
@@ -7,10 +8,12 @@
 #include "engine/PluginScanner.h"
 #include "engine/processors/TestToneProcessor.h"
 #include "FileActions.h"
+#include "Pb3LookAndFeel.h"
 #include "session/BankDocument.h"
 #include "session/EditHistory.h"
 #include "session/Preferences.h"
 #include "session/Session.h"
+#include "SettingsWindow.h"
 #include "SignalCanvas.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
@@ -29,11 +32,11 @@ namespace
 constexpr int kBarPadding = 12;
 constexpr int kButtonGap = 6;
 constexpr int kFileButtonWidth = 64;
-constexpr int kAddButtonWidth = 130;
-constexpr int kOscLabelWidth = 34;
-constexpr int kOscEditorWidth = 50;
-constexpr int kSettingsButtonWidth = 140;
-constexpr int kToneButtonWidth = 100;
+constexpr int kAddButtonWidth = 36; // the square [+]
+constexpr int kActivityWidth = 104; // MIDI and OSC lights
+constexpr int kCpuMeterWidth = 168;
+constexpr int kSettingsButtonWidth = 90;
+constexpr int kToneButtonWidth = 96;
 constexpr int kPluginsButtonWidth = 90;
 // Patch strip (M3 U5): [<] [n/N  Name] [>].
 constexpr int kPatchArrowWidth = 28;
@@ -84,7 +87,8 @@ std::unique_ptr<juce::AudioProcessorGraph> buildTestToneGraph(juce::AudioDeviceM
 } // namespace
 
 TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas, FileActions& files)
-    : ctx_(ctx), canvas_(canvas), files_(files)
+    : ctx_(ctx), canvas_(canvas), files_(files), activityLights_(ctx.controlHub),
+      cpuMeter_(ctx.audioEngine.getDeviceManager())
 {
     setOpaque(true);
 
@@ -95,33 +99,28 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas, FileActions& f
 
     fileButton_.onClick = [this] { openFileMenu(); };
     addPluginButton_.onClick = [this] { openAddPluginMenu(); };
-    settingsButton_.onClick = [this] { openAudioSettings(); };
+    settingsButton_.onClick = [this] { showSettingsWindow(ctx_); };
     pluginsButton_.onClick = [this] { openPluginsMenu(); };
 
     toneButton_.setClickingTogglesState(true);
+    toneButton_.setColour(juce::TextButton::textColourOnId, tokens::accentPrimary);
+    toneButton_.setTooltip("Play a test tone straight to the output, bypassing the chain");
+
+    // Outline buttons (UI refresh U2): quieter than the actions on the left.
+    settingsButton_.getProperties().set(Pb3LookAndFeel::kOutlineButton, true);
+    toneButton_.getProperties().set(Pb3LookAndFeel::kOutlineButton, true);
+    settingsButton_.setTooltip("Audio device, MIDI inputs and the OSC listener");
     toneButton_.onClick = [this] { onTestToneToggled(); };
-
-    oscPortLabel_.setText("OSC:", juce::dontSendNotification);
-    oscPortLabel_.setColour(juce::Label::textColourId, tokens::fgMuted);
-    oscPortLabel_.setFont(juce::Font(juce::FontOptions(12.0f)));
-    oscPortLabel_.setJustificationType(juce::Justification::centredRight);
-    oscPortLabel_.setInterceptsMouseClicks(false, false);
-
-    oscPortEditor_.setInputRestrictions(5, "0123456789");
-    oscPortEditor_.setJustification(juce::Justification::centred);
-    oscPortEditor_.setText(juce::String(ctx_.preferences.getOscPort()), juce::dontSendNotification);
-    oscPortEditor_.setTooltip("OSC listener port (1-65535). Press Enter to apply.");
-    oscPortEditor_.onReturnKey = [this] { applyOscPortChange(); };
-    oscPortEditor_.onFocusLost = [this] { applyOscPortChange(); };
 
     addAndMakeVisible(fileButton_);
     addAndMakeVisible(addPluginButton_);
-    addAndMakeVisible(oscPortLabel_);
-    addAndMakeVisible(oscPortEditor_);
+    addAndMakeVisible(activityLights_);
+    addAndMakeVisible(cpuMeter_);
     addAndMakeVisible(settingsButton_);
     addAndMakeVisible(toneButton_);
     addAndMakeVisible(pluginsButton_);
-    pluginsButton_.setTooltip("Plugin list and rescan");
+    pluginsButton_.setTooltip("Add a plugin, the plugin list, rescan");
+    addPluginButton_.setTooltip("Add plugin");
 
     prevPatchButton_.setTooltip("Previous patch");
     nextPatchButton_.setTooltip("Next patch");
@@ -191,22 +190,23 @@ void TransportBar::resized()
 {
     auto bounds = getLocalBounds().reduced(kBarPadding, 6);
 
-    // Right cluster: OSC port | Audio Settings | Test Tone | Plugins.
-    auto right = bounds.removeFromRight(kOscLabelWidth + kOscEditorWidth + kSettingsButtonWidth + kToneButtonWidth +
-                                        kPluginsButtonWidth + 3 * kButtonGap);
-    oscPortLabel_.setBounds(right.removeFromLeft(kOscLabelWidth));
-    oscPortEditor_.setBounds(right.removeFromLeft(kOscEditorWidth));
+    // Right cluster: MIDI / OSC lights | CPU | Settings | Test Tone.
+    auto right = bounds.removeFromRight(kActivityWidth + kCpuMeterWidth + kSettingsButtonWidth + kToneButtonWidth +
+                                        3 * kButtonGap);
+    activityLights_.setBounds(right.removeFromLeft(kActivityWidth));
+    right.removeFromLeft(kButtonGap);
+    cpuMeter_.setBounds(right.removeFromLeft(kCpuMeterWidth));
     right.removeFromLeft(kButtonGap);
     settingsButton_.setBounds(right.removeFromLeft(kSettingsButtonWidth));
     right.removeFromLeft(kButtonGap);
     toneButton_.setBounds(right.removeFromLeft(kToneButtonWidth));
-    right.removeFromLeft(kButtonGap);
-    pluginsButton_.setBounds(right.removeFromLeft(kPluginsButtonWidth));
 
     bounds.removeFromRight(kBarPadding);
 
-    // Left cluster: File | Add Plugin.
+    // Left cluster: File | Plugins | +.
     fileButton_.setBounds(bounds.removeFromLeft(kFileButtonWidth));
+    bounds.removeFromLeft(kButtonGap);
+    pluginsButton_.setBounds(bounds.removeFromLeft(kPluginsButtonWidth));
     bounds.removeFromLeft(kButtonGap);
     addPluginButton_.setBounds(bounds.removeFromLeft(kAddButtonWidth));
     bounds.removeFromLeft(kBarPadding);
@@ -342,29 +342,28 @@ void TransportBar::confirmRemovePatch()
 void TransportBar::openPluginsMenu()
 {
     juce::PopupMenu menu;
-    menu.addItem(1, "Plugin List...");
-    menu.addItem(2, "Rescan Plugins");
-    menu.showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(pluginsButton_),
-                       [this](int choice)
-                       {
-                           if (choice == 1)
-                               openPluginList();
-                           else if (choice == 2)
-                               rescanPlugins();
-                       });
+    menu.addSubMenu("Add Plugin", makeAddPluginMenu(), canAddPlugin());
+    menu.addSeparator();
+    menu.addItem("Plugin List...", [this] { openPluginList(); });
+    menu.addItem("Rescan Plugins", [this] { rescanPlugins(); });
+    menu.showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(pluginsButton_));
 }
 
 void TransportBar::updateAddPluginEnabled()
 {
-    // Disable while Session is mid-build/swap, AND while Test Tone is
-    // on — the tone graph is not Session-managed, so adding a plugin
-    // would either be a no-op (post-fix) or stale-pointer-crash (pre-fix).
-    const bool idle = ctx_.session.getState() == session::Session::State::Idle;
-    const bool toneOn = toneButton_.getToggleState();
-    addPluginButton_.setEnabled(idle && !toneOn);
+    addPluginButton_.setEnabled(canAddPlugin());
 }
 
-void TransportBar::openAddPluginMenu()
+bool TransportBar::canAddPlugin() const
+{
+    // Not while Session is mid-build/swap, AND not while Test Tone is on —
+    // the tone graph is not Session-managed, so adding a plugin would either
+    // be a no-op (post-fix) or stale-pointer-crash (pre-fix).
+    const bool idle = ctx_.session.getState() == session::Session::State::Idle;
+    return idle && !toneButton_.getToggleState();
+}
+
+juce::PopupMenu TransportBar::makeAddPluginMenu()
 {
     // Effects-only filter: v3.0 ships as a live-performance effect rack;
     // instruments are sidestepped per the master-plan scope and to dodge
@@ -376,10 +375,8 @@ void TransportBar::openAddPluginMenu()
 
     juce::PopupMenu menu;
 
-    // Effects (scanned plugins) take ids 1..effects.size(). A disabled hint
-    // stands in when none are scanned — built-in nodes are still available below,
-    // so an empty plugin list must NOT block the Add menu.
-    int id = 1;
+    // A disabled hint stands in when no effects are scanned — built-in nodes
+    // are still available below, so an empty plugin list must NOT block adding.
     if (effects.isEmpty())
     {
         const auto allKnown = ctx_.pluginHost.getKnownPlugins().size();
@@ -390,87 +387,22 @@ void TransportBar::openAddPluginMenu()
     else
     {
         for (const auto& desc : effects)
-            menu.addItem(id++, desc.name + "  [" + desc.pluginFormatName + "]");
+            menu.addItem(desc.name + "  [" + desc.pluginFormatName + "]",
+                         [this, desc] { ctx_.editHistory.addPlugin(desc); });
     }
 
-    // Built-in nodes (Level, VU, ...) in their own submenu, with ids offset past
-    // the effects so the two id spaces never collide.
-    const int internalIdBase = id;
+    // Built-in nodes (Level, VU, ...) in their own submenu.
     juce::PopupMenu internalMenu;
-    for (int i = 0; i < internals.size(); ++i)
-        internalMenu.addItem(internalIdBase + i, internals.getReference(i).displayName);
+    for (const auto& type : internals)
+        internalMenu.addItem(type.displayName,
+                             [this, typeId = type.typeId] { ctx_.editHistory.addInternalNode(typeId); });
     menu.addSubMenu("Built-in", internalMenu);
-
-    auto opts = juce::PopupMenu::Options{}.withTargetComponent(addPluginButton_);
-    menu.showMenuAsync(opts,
-                       [this, effects, internals, internalIdBase](int chosen)
-                       {
-                           if (chosen <= 0)
-                               return;
-                           if (chosen < internalIdBase)
-                           {
-                               if (chosen <= effects.size())
-                                   ctx_.editHistory.addPlugin(effects.getReference(chosen - 1));
-                               return;
-                           }
-                           const int internalIdx = chosen - internalIdBase;
-                           if (internalIdx >= 0 && internalIdx < internals.size())
-                               ctx_.editHistory.addInternalNode(internals.getReference(internalIdx).typeId);
-                       });
+    return menu;
 }
 
-void TransportBar::openAudioSettings()
+void TransportBar::openAddPluginMenu()
 {
-    auto selector = std::make_unique<juce::AudioDeviceSelectorComponent>(*ctx_.audioEngine.getDeviceManager(),
-                                                                         0,
-                                                                         2,
-                                                                         0,
-                                                                         2,
-                                                                         /*showMidiInputOptions*/ true,
-                                                                         /*showMidiOutputSelector*/ false,
-                                                                         /*showChannelsAsStereoPairs*/ true,
-                                                                         /*hideAdvancedOptionsWithButton*/ false);
-    selector->setSize(500, 420);
-
-    juce::DialogWindow::LaunchOptions options;
-    options.content.setOwned(selector.release());
-    options.dialogTitle = "Audio Settings";
-    options.dialogBackgroundColour = tokens::bgPopover;
-    options.escapeKeyTriggersCloseButton = true;
-    options.useNativeTitleBar = true;
-    options.resizable = false;
-    options.launchAsync();
-}
-
-void TransportBar::applyOscPortChange()
-{
-    const int port = oscPortEditor_.getText().getIntValue();
-    if (port <= 0 || port > 65535)
-    {
-        // Reject a nonsense port back to the last-good persisted value rather
-        // than attempting a bind with it.
-        oscPortEditor_.setText(juce::String(ctx_.preferences.getOscPort()), juce::dontSendNotification);
-        return;
-    }
-
-    // rebind() drops the previous (working) binding before attempting the new
-    // one, so a failure leaves OSC dead either way -- but persist only on
-    // success, so a rejected port never overwrites the last-good saved value.
-    const auto error = ctx_.oscServer.rebind(port, ctx_.preferences.getOscMulticastAddress());
-    if (error.isEmpty())
-    {
-        ctx_.preferences.setOscPort(port);
-        ctx_.preferences.flush();
-    }
-
-    // Surface a bind failure (e.g. port already in use) inline via the
-    // field's colour/tooltip rather than a blocking dialog — the control
-    // layer keeps working regardless of OSC availability (App::initialise
-    // treats a bind failure the same way).
-    oscPortEditor_.setColour(juce::TextEditor::textColourId,
-                             error.isNotEmpty() ? tokens::accentDestructive : tokens::fgPrimary);
-    oscPortEditor_.setTooltip(error.isNotEmpty() ? error
-                                                 : juce::String("OSC listener port (1-65535). Press Enter to apply."));
+    makeAddPluginMenu().showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(addPluginButton_));
 }
 
 void TransportBar::openPluginList()
@@ -711,6 +643,8 @@ void TransportBar::openFileMenu()
     menu.addItem(6, "Reset Default", files_.hasDefault());
     menu.addSeparator();
     menu.addItem(7, "App Mappings...");
+    menu.addSeparator();
+    menu.addItem(8, "About Pedalboard 3");
     menu.showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(fileButton_),
                        [this](int choice)
                        {
@@ -728,6 +662,8 @@ void TransportBar::openFileMenu()
                                files_.resetDefault();
                            else if (choice == 7 && onOpenAppMappings)
                                onOpenAppMappings();
+                           else if (choice == 8)
+                               showAboutWindow();
                        });
 }
 

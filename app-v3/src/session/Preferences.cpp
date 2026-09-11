@@ -275,6 +275,19 @@ void Preferences::setWindowState(const juce::String& state)
         store->setValue(kWindowStateKey, state);
 }
 
+bool Preferences::getPanelShown(const juce::String& panel, bool fallback)
+{
+    if (auto* store = props_.getUserSettings())
+        return store->getBoolValue("panel." + panel, fallback);
+    return fallback;
+}
+
+void Preferences::setPanelShown(const juce::String& panel, bool shown)
+{
+    if (auto* store = props_.getUserSettings())
+        store->setValue("panel." + panel, shown);
+}
+
 int Preferences::getOscPort()
 {
     if (auto* store = props_.getUserSettings())

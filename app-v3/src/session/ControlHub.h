@@ -9,7 +9,9 @@
 #include <juce_audio_basics/juce_audio_basics.h> // juce::MidiMessage
 #include <juce_osc/juce_osc.h>                   // juce::OSCMessage
 
+#include <cstdint>
 #include <functional>
+#include <unordered_map>
 #include <vector>
 
 namespace pedalboard3::session
@@ -78,6 +80,15 @@ public:
     // the resolver.
     void resetLatches() noexcept;
 
+    // Activity counters for the UI's lights (UI refresh U3, plan KD8): every
+    // MIDI or OSC message in, mapped or not, and per node each parameter a
+    // mapped control actually set. Message-thread only like the rest of the
+    // hub; the UI polls them on a timer. Node counts clear on a mapping
+    // re-feed, because after a whole-patch swap an id can mean another plugin.
+    std::uint64_t midiActivity() const noexcept { return midiActivity_; }
+    std::uint64_t oscActivity() const noexcept { return oscActivity_; }
+    std::uint64_t nodeActivity(NodeId node) const noexcept;
+
 private:
     // Single fan-in for both MIDI and OSC updates. Drops non-finite values before
     // they can reach setValueNotifyingHost; routes non-parameter targets to the
@@ -88,6 +99,10 @@ private:
     control::MidiControlSurface midiSurface_; // owns MidiRouter + learn
     control::OscRouter oscRouter_;
     UnhandledTargetSink unhandled_;
+
+    std::uint64_t midiActivity_{0};
+    std::uint64_t oscActivity_{0};
+    std::unordered_map<NodeId, std::uint64_t> nodeActivity_;
 };
 
 } // namespace pedalboard3::session
