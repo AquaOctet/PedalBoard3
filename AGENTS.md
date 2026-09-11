@@ -19,9 +19,9 @@ and `.pdl` format only; do not edit.
 - **Plugin formats:** VST3 (MIT SDK), AU (macOS), CLAP (via vendored
   `juce_clap_hosting` fork), LV2 (Linux), VST2 (opt-in build flag)
 - **Tests:** Catch2 v3 (unit), pluginval (integration), golden-WAV regression
-- **CI:** GitLab CI. Linux on shared runners; Windows/macOS are self-hosted
-  and **not yet provisioned** — CI jobs for those platforms `allow_failure`
-  until Phase 6.
+- **CI:** GitLab CI. Linux on shared runners inside the silkOps factory
+  image (`ci-cd/juce-linux`); Windows/macOS on GitLab SaaS runners with
+  `allow_failure` until Phase 6.
 
 ## Build
 
@@ -56,7 +56,10 @@ cmake --build build/macos-universal
 ```
 
 Windows and Linux CI both build through `cmake --preset` as well; see
-`ci/docker/Dockerfile.linux` and `.gitlab-ci.yml`.
+`.gitlab-ci.yml`. The Linux jobs run inside the silkOps factory image
+`registry.gitlab.com/void-realm-solutions/ci-cd/juce-linux:<tag>` (recipe in
+the `ci-cd` repo under `images/juce-linux/`); the tag is pinned in
+`CI_LINUX_IMAGE` and bumped by a one-line MR.
 
 If `just` isn't available, the repo root carries equivalent wrappers over the
 same presets:
@@ -117,7 +120,9 @@ Without the SDK, Windows builds use WASAPI/DirectSound only (no error).
 ## What requires a human
 
 - Touching `source code/` (read-only reference; never edit)
-- `git push`, `git tag`, any `glab` / `gh` command that creates remote state
+- `git push` of `main`, `git tag`, merging any MR, any `glab` / `gh` command
+  that creates remote state other than the feature-branch push + MR that
+  the `ship-mr` skill performs (see "Shipping and tracking" in `CLAUDE.md`)
 - Any signing, notarization, or release pipeline invocation
 - Installing or modifying runner credentials, certs, or keys
 - Modifying `.gitlab-ci.yml` jobs that carry signing variables (none yet — Phase 6)
@@ -185,7 +190,7 @@ audio drivers and the Phase 1.B.2 SEH code path.
 │   │   └── platform/
 │   ├── external/            # CPM cache / git submodules
 │   └── tests/
-├── ci/                      # Dockerfiles, scripts — Phase 6
+├── ci/                      # CI helper scripts (the Linux image recipe lives in ci-cd)
 ├── scripts/                 # provisioning + dev-loop helpers
 └── justfile
 ```

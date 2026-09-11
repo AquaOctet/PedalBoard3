@@ -1,15 +1,14 @@
 # Pedalboard 3 — GitLab CI pipeline.
 #
 # Linux:
-#   - lint:format runs on saas-linux (a one-line clang-format check;
-#     stock ubuntu:24.04 + a 2-package apt install).
-#   - build:image:linux (pre-build stage) builds ci/docker/Dockerfile.linux
-#     via kaniko on saas-linux and pushes to the project Container
-#     Registry. Runs only when Dockerfile or .gitlab-ci.yml changes;
-#     manual fallback otherwise.
-#   - build:linux + test:linux:unit run on saas-linux using the prebuilt
-#     ci-linux:latest image (so no apt-install at job time — toolchain
-#     comes baked into the image).
+#   - lint:format, build:linux and test:linux:unit run on saas-linux inside
+#     the silkOps factory image `juce-linux` (void-realm-solutions/ci-cd),
+#     pinned to an immutable tag in CI_LINUX_IMAGE below. The toolchain
+#     (clang-18, CMake, Ninja, ccache, just, JUCE dev libs) is baked in, so
+#     no job installs anything. The image recipe lives in the factory
+#     catalog (ci-cd/images/juce-linux); bumping it is a one-line tag
+#     change here. Pulling requires this project to be on ci-cd's job-token
+#     allow-list (Settings > CI/CD > Job token permissions on ci-cd).
 # The self-hosted weeb-cluster runner is parked while its k8s infra
 # settles; once the cluster is stable, flip these tags back to
 # weeb-cluster to win on the ninja compile step. (See AGENTS.md notes
@@ -29,7 +28,6 @@
 
 stages:
   - lint
-  - pre-build
   - build
   - test
   - release
@@ -42,7 +40,10 @@ variables:
   CCACHE_DIR: "${CI_PROJECT_DIR}/.ccache"
   CCACHE_MAXSIZE: "2G"
   DEBIAN_FRONTEND: "noninteractive"
-  CI_LINUX_IMAGE: "${CI_REGISTRY_IMAGE}/ci-linux:latest"
+  # silkOps factory image, immutable tag (never :latest). Registry root is
+  # named explicitly, not via $CI_REGISTRY_IMAGE, which would resolve to
+  # this project's own registry.
+  CI_LINUX_IMAGE: "registry.gitlab.com/void-realm-solutions/ci-cd/juce-linux:18-r1"
 
 default:
   interruptible: true
@@ -79,31 +80,13 @@ default:
 
 # Release jobs: main branch ONLY, and manual (a click in the pipeline UI).
 # They live in the final `release` stage so a pending manual job never
-# blocks earlier stages (the trap documented on .rules-ci-image). Paired
+# blocks earlier stages (a manual-pending job in an early stage blocks
+# downstream stages even with `optional: true` on `needs:`). Paired
 # with `allow_failure: true` on each release job so an un-clicked manual
 # action leaves the pipeline green rather than "blocked".
 .rules-release: &rules-release
   - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     when: manual
-
-# Image build runs only when the recipe (Dockerfile) or pipeline that
-# consumes it changes. NO `when: manual` catch-all: a manual-pending job
-# in pre-build blocks downstream stages even with `optional: true` on
-# build:linux's `needs:`, which would force the user to click the play
-# button before every Linux build runs. Instead, a forced rebuild is
-# triggered by setting `REBUILD_CI_IMAGE=true` via "Run pipeline" in
-# the UI; otherwise the job is absent from the pipeline and build:linux
-# pulls whatever :latest is already in the registry.
-.rules-ci-image: &rules-ci-image
-  - if: '$REBUILD_CI_IMAGE == "true"'
-  - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-    changes:
-      - ci/docker/Dockerfile.linux
-      - .gitlab-ci.yml
-  - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-    changes:
-      - ci/docker/Dockerfile.linux
-      - .gitlab-ci.yml
 
 .cache-linux: &cache-linux
   cache:
@@ -122,15 +105,6 @@ default:
     - key: "cpm-${CI_PROJECT_PATH_SLUG}"
       paths: [ .cpm-cache/ ]
       policy: pull-push
-
-# Lint-only setup: clang-format + just. Skips the heavy build toolchain
-# that ci-linux:latest carries. Lint runs on saas-linux on a stock
-# ubuntu:24.04 image to avoid blocking on cluster state for a check
-# that takes <30 s.
-.lint-setup: &lint-setup
-  - apt-get update -qq
-  - apt-get install -y --no-install-recommends clang-format-18 just
-  - ln -sf /usr/bin/clang-format-18 /usr/local/bin/clang-format
 
 # saas-macos-large-m2pro ships Xcode + Homebrew preinstalled but minimal
 # beyond that. Install only what CMakePresets/just need; everything else
@@ -219,48 +193,16 @@ default:
 # ===========================================================================
 # LINT
 # ===========================================================================
+# The factory image already carries clang-format-18 and just, so lint is
+# a single command with no setup step.
 lint:format:
   stage: lint
-  image: ubuntu:24.04
+  image: "${CI_LINUX_IMAGE}"
   rules: *rules-default
-  before_script: *lint-setup
-  script:
-    - just format-check
-
-# ===========================================================================
-# PRE-BUILD — build the Linux CI image once per Dockerfile change
-# ===========================================================================
-# Runs on saas-linux (no tag), not weeb-cluster: image build is I/O-bound
-# (apt downloads, cmake/ninja tarballs from GitHub, layer push to the
-# Container Registry). saas-linux is on GitLab's backbone, so push is
-# faster than from home-cluster egress. weeb-cluster's 4 vCPU advantage
-# only matters for ninja compiles (build:linux), not Dockerfile builds.
-build:image:linux:
-  stage: pre-build
-  rules: *rules-ci-image
-  image:
-    name: gcr.io/kaniko-project/executor:v1.23.2-debug
-    entrypoint: [""]
   variables:
     GIT_SUBMODULE_STRATEGY: "none"
   script:
-    # Auth to the project's Container Registry via CI_JOB_TOKEN. Kaniko
-    # reads /kaniko/.docker/config.json on startup.
-    - mkdir -p /kaniko/.docker
-    - >
-      printf '{"auths":{"%s":{"auth":"%s"}}}'
-      "${CI_REGISTRY}"
-      "$(printf '%s:%s' "${CI_REGISTRY_USER}" "${CI_REGISTRY_PASSWORD}" | base64 -w0)"
-      > /kaniko/.docker/config.json
-    - >
-      /kaniko/executor
-      --context "${CI_PROJECT_DIR}"
-      --dockerfile "${CI_PROJECT_DIR}/ci/docker/Dockerfile.linux"
-      --destination "${CI_REGISTRY_IMAGE}/ci-linux:latest"
-      --destination "${CI_REGISTRY_IMAGE}/ci-linux:${CI_COMMIT_SHORT_SHA}"
-      --cache=true
-      --cache-repo "${CI_REGISTRY_IMAGE}/ci-linux/cache"
-      --snapshot-mode=redo
+    - just format-check
 
 # ===========================================================================
 # BUILD
@@ -269,9 +211,6 @@ build:linux:
   stage: build
   image: "${CI_LINUX_IMAGE}"
   rules: *rules-default
-  needs:
-    - job: build:image:linux
-      optional: true
   <<: *cache-linux
   variables:
     CMAKE_C_COMPILER_LAUNCHER: ccache
