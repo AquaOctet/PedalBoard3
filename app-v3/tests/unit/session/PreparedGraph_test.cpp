@@ -12,6 +12,7 @@
 
 #include <catch2/catch_approx.hpp>
 
+#include "engine/BypassableInstance.h"
 #include "engine/PluginHost.h"
 #include "session/PreparedGraph.h"
 
@@ -159,4 +160,24 @@ TEST_CASE("PreparedGraph: isNodeSafeForChain accepts known internals, rejects un
     session::PatchNode emptyPlugin;
     emptyPlugin.id = 6;
     REQUIRE_FALSE(session::isNodeSafeForChain(host, emptyPlugin));
+}
+
+TEST_CASE("PreparedGraph: a node's MIDI channel filter is applied to its wrapper at build",
+          "[session][prepared-graph][midi-channel]")
+{
+    engine::PluginHost host;
+
+    session::Patch patch;
+    auto filtered = internalNode(1, "LevelProcessor");
+    filtered.midiChannel = 5;
+    patch.nodes.push_back(filtered);
+    patch.nodes.push_back(internalNode(2, "LevelProcessor"));
+    patch.connections = session::linearChainConnections(patch.nodes);
+
+    juce::String err;
+    auto pg = session::buildPreparedGraph(host, patch, 48000.0, 256, err);
+    REQUIRE(pg.isValid());
+    REQUIRE(pg.nodes[1].bypass != nullptr);
+    REQUIRE(pg.nodes[1].bypass->getMidiChannel() == 5);
+    REQUIRE(pg.nodes[2].bypass->getMidiChannel() == 0);
 }

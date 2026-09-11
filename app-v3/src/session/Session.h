@@ -89,6 +89,7 @@ public:
         juce::String name;
         bool bypassed{false};
         juce::String customName;
+        int midiChannel{0}; // 0 = omni, 1..16 (PatchNode::midiChannel)
 
         // Canvas position (NaN = unpositioned → SignalCanvas auto-lays-out).
         float x{std::numeric_limits<float>::quiet_NaN()};
@@ -150,6 +151,28 @@ public:
     // Bumps the mappings revision (not just stateVersion_) so ControlWiring
     // re-feeds ControlHub with the new mapping live immediately.
     void addMidiMapping(control::MidiMapping);
+
+    // The plugin-parameter mappings (MIDI and OSC) that target one node: what
+    // the per-plugin Mappings dialog edits (roadmap M4 U2/U4).
+    struct NodeMappings
+    {
+        std::vector<control::MidiMapping> midi;
+        std::vector<control::OscMapping> osc;
+    };
+    NodeMappings getNodeMappings(NodeId) const;
+
+    // Replace every PluginParameter mapping that targets `node` with the given
+    // ones; their targets are forced to that node as plugin-parameter targets.
+    // Other nodes' mappings and PatchSelect / AppCommand mappings are left
+    // alone. Bumps the mappings revision so ControlWiring re-feeds the hub
+    // live. Returns false, changing nothing, if the node is not in the active
+    // patch.
+    bool setNodeMappings(NodeId node, std::vector<control::MidiMapping> midi, std::vector<control::OscMapping> osc);
+
+    // Per-node MIDI channel filter (0 = omni, 1..16; clamped): applied to the
+    // node's live wrapper and recorded in the active patch so it persists.
+    // Same guards as setNodeBypass (Idle, committed graph).
+    void setNodeMidiChannel(NodeId, int channel1To16Or0);
 
     // ---- Free-routing edits (interactive canvas, message thread) -----------
 

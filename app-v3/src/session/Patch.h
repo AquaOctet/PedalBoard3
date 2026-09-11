@@ -41,6 +41,12 @@ struct PatchNode
     bool bypass{false};
     juce::String customName;
 
+    // Per-node MIDI channel filter (roadmap M4 / checklist R8): 0 = omni,
+    // 1..16 passes only that channel to the plugin (BypassableInstance does
+    // the filtering). Additive + back-compatible: written only when non-zero,
+    // so older files and unfiltered nodes carry no attribute and read back 0.
+    int midiChannel{0};
+
     // Canvas position for the interactive signal-graph editor. NaN means
     // "unpositioned" — SignalCanvas seeds it from auto-layout, then a drag
     // persists a real value. Additive + back-compatible: pre-position files

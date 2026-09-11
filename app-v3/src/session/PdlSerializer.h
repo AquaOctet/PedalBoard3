@@ -13,7 +13,7 @@ namespace pedalboard3::session::pdl
 // Read/write Pedalboard 3 .pdl files (master plan §4.5). From schemaMinor 4 a
 // .pdl holds a BANK of patches (roadmap M3) in a versioned <PEDALBOARD> root:
 //
-//   <PEDALBOARD schemaMajor="3" schemaMinor="4" appVersion="1.0.0">
+//   <PEDALBOARD schemaMajor="3" schemaMinor="5" appVersion="1.0.0">
 //     <BANK activeIndex="0">
 //       <PATCH name="..."> <NODES/> <CONNECTIONS/> <MAPPINGS/> </PATCH>
 //       <PATCH .../>
@@ -34,7 +34,9 @@ namespace pedalboard3::session::pdl
 // out of scope.
 
 inline constexpr int kSchemaMajor = 3;
-inline constexpr int kSchemaMinor = 4;
+// schemaMinor 5 (roadmap M4) adds the optional per-<NODE> midiChannel filter
+// attribute; a node without it is omni, so schemaMinor 4 files load unchanged.
+inline constexpr int kSchemaMinor = 5;
 
 // Atomically write `bank` to `file` (temp file in the same directory +
 // rename, so a crash mid-write never corrupts an existing .pdl). Creates

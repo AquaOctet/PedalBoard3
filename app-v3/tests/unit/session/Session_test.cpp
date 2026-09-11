@@ -5,6 +5,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/AudioEngine.h"
+#include "engine/BypassableInstance.h"
 #include "engine/PluginHost.h"
 #include "session/Patch.h"
 #include "session/PreparedGraph.h"
@@ -768,4 +769,132 @@ TEST_CASE("Session: a newer LoadPatch supersedes a queued add result (coalescing
     pumpUntilIdle(s);
 
     REQUIRE(s.getNodeCount() == 3); // the add did not land on top of the load
+}
+
+// ---- Per-node mappings and MIDI channel filter (roadmap M4 U2) -------------
+
+namespace
+{
+
+// Like FakeBuilder, but every node sits in a real BypassableInstance whose
+// pointer is recorded (patch order), so a test can read the live MIDI channel
+// filter back. The vector is written on the worker and read after
+// pumpUntilIdle, which synchronises through Session's result hand-off.
+struct WrappingBuilder
+{
+    std::vector<engine::BypassableInstance*> wrappers;
+
+    session::Session::BuildFn fn()
+    {
+        return [this](const session::Patch& p, double sr, int bs, juce::String&) -> session::PreparedGraph
+        {
+            session::PreparedGraph pg;
+            pg.graph = std::make_unique<juce::AudioProcessorGraph>();
+            pg.graph->setPlayConfigDetails(2, 2, sr, bs);
+            auto inNode = pg.graph->addNode(std::make_unique<juce::AudioProcessorGraph::AudioGraphIOProcessor>(
+                juce::AudioProcessorGraph::AudioGraphIOProcessor::audioInputNode));
+            auto outNode = pg.graph->addNode(std::make_unique<juce::AudioProcessorGraph::AudioGraphIOProcessor>(
+                juce::AudioProcessorGraph::AudioGraphIOProcessor::audioOutputNode));
+            std::vector<engine::BypassableInstance*> built;
+            for (const auto& patchNode : p.nodes)
+            {
+                std::unique_ptr<juce::AudioProcessor> proc = std::make_unique<TestGainProcessor>(1.0f);
+                auto* hosted = proc.get();
+                auto wrapped = std::make_unique<engine::BypassableInstance>(std::move(proc));
+                auto* wrapPtr = wrapped.get();
+                auto graphNode = pg.graph->addNode(std::move(wrapped));
+                pg.nodes[patchNode.id] = session::PreparedGraph::NodeRefs{wrapPtr, hosted, graphNode.get()};
+                for (int ch = 0; ch < 2; ++ch)
+                {
+                    pg.graph->addConnection({{inNode->nodeID, ch}, {graphNode->nodeID, ch}});
+                    pg.graph->addConnection({{graphNode->nodeID, ch}, {outNode->nodeID, ch}});
+                }
+                built.push_back(wrapPtr);
+            }
+            pg.graph->prepareToPlay(sr, bs);
+            wrappers = built;
+            return pg;
+        };
+    }
+};
+
+control::MidiMapping ccTo(session::NodeId node, int cc)
+{
+    control::MidiMapping m;
+    m.source.kind = control::MidiSourceKind::ControlChange;
+    m.source.channel = 0;
+    m.source.controller = cc;
+    m.target.kind = control::MidiTargetKind::PluginParameter;
+    m.target.node = node;
+    m.target.parameterIndex = 0;
+    return m;
+}
+
+} // namespace
+
+TEST_CASE("Session: setNodeMappings replaces only that node's parameter mappings", "[session][mappings]")
+{
+    ChainFixture f;
+    control::MidiMapping patchSelect;
+    patchSelect.target.kind = control::MidiTargetKind::PatchSelect;
+    patchSelect.target.patchIndex = 2;
+    f.s.addMidiMapping(ccTo(1, 1));
+    f.s.addMidiMapping(ccTo(2, 2));
+    f.s.addMidiMapping(patchSelect);
+    const auto revision = f.s.getMappingsRevision();
+
+    auto replacement = ccTo(99, 9); // wrong node on purpose: setNodeMappings forces it
+    replacement.target.kind = control::MidiTargetKind::AppCommand;
+    control::OscMapping osc;
+    osc.address = "/pb3/a";
+    REQUIRE(f.s.setNodeMappings(1, {replacement}, {osc}));
+    REQUIRE(f.s.getMappingsRevision() > revision);
+
+    const auto mine = f.s.getNodeMappings(1);
+    REQUIRE(mine.midi.size() == 1);
+    REQUIRE(mine.midi[0].source.controller == 9);
+    REQUIRE(mine.midi[0].target.node == 1);
+    REQUIRE(mine.midi[0].target.kind == control::MidiTargetKind::PluginParameter);
+    REQUIRE(mine.osc.size() == 1);
+    REQUIRE(mine.osc[0].target.node == 1);
+
+    REQUIRE(f.s.getNodeMappings(2).midi.size() == 1); // another node's mapping survives
+    const auto patch = f.s.getActivePatch();
+    REQUIRE(std::count_if(patch.midiMappings.begin(),
+                          patch.midiMappings.end(),
+                          [](const control::MidiMapping& m)
+                          { return m.target.kind == control::MidiTargetKind::PatchSelect; }) == 1);
+
+    REQUIRE(f.s.setNodeMappings(1, {}, {})); // clearing is a valid edit
+    REQUIRE(f.s.getNodeMappings(1).midi.empty());
+    REQUIRE_FALSE(f.s.setNodeMappings(42, {ccTo(42, 1)}, {})); // unknown node: no change
+    REQUIRE(f.s.getNodeMappings(42).midi.empty());
+}
+
+TEST_CASE("Session: setNodeMidiChannel filters the live node and records it in the patch", "[session][midi-channel]")
+{
+    engine::AudioEngine eng;
+    eng.initialise();
+    engine::PluginHost host;
+    WrappingBuilder builder;
+    session::Session s(eng, host, builder.fn());
+    s.replacePatch(makeThreeNodeChain());
+    pumpUntilIdle(s);
+    REQUIRE(builder.wrappers.size() == 3);
+
+    const auto second = s.getNodeIdsInOrder()[1];
+    s.setNodeMidiChannel(second, 7);
+    REQUIRE(builder.wrappers[1]->getMidiChannel() == 7);
+    REQUIRE(builder.wrappers[0]->getMidiChannel() == 0);
+    REQUIRE(s.getActivePatch().findNode(second)->midiChannel == 7);
+    REQUIRE(s.getNodeSnapshots()[1].midiChannel == 7);
+
+    s.setNodeMidiChannel(second, 40); // clamps
+    REQUIRE(builder.wrappers[1]->getMidiChannel() == 16);
+    s.setNodeMidiChannel(second, 0); // back to omni
+    REQUIRE(builder.wrappers[1]->getMidiChannel() == 0);
+    REQUIRE(s.getActivePatch().findNode(second)->midiChannel == 0);
+
+    s.setNodeMidiChannel(99, 5); // unknown node: ignored
+    REQUIRE(s.getNodeCount() == 3);
 }

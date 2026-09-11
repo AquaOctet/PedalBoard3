@@ -453,3 +453,21 @@ TEST_CASE("ControlWiring: lifetime -- outliving the wiring with a Session change
     sess.sendSynchronousChangeMessage();
     SUCCEED();
 }
+
+TEST_CASE("ControlWiring: Session::setNodeMappings (the Mappings dialog's edit) is live immediately",
+          "[session][control-wiring]")
+{
+    Fixture f;
+    f.sess.replacePatch(makeOneNodePatch());
+    pumpUntilIdle(f.sess);
+
+    session::ControlWiring wiring(f.sess, f.hub);
+
+    auto narrowed = ccMapping(21);
+    narrowed.rangeMax = 0.5f;
+    REQUIRE(f.sess.setNodeMappings(1, {narrowed}, {}));
+    f.sess.sendSynchronousChangeMessage();
+
+    f.hub.handleMidi(ccOn(21));
+    REQUIRE(f.paramValue() == Approx(0.5f));
+}
