@@ -5,6 +5,7 @@
 #include "control/OscServer.h"
 #include "engine/AudioEngine.h"
 #include "engine/PluginHost.h"
+#include "session/AppMappings.h"
 #include "session/BankDocument.h"
 #include "session/ControlHub.h"
 #include "session/ControlWiring.h"
@@ -72,6 +73,10 @@ private:
     // AppContext (which hands controlHub out to UI). Destroyed before
     // session in shutdown() — see the reverse-order comment there.
     std::unique_ptr<session::ControlHub> controlHub;
+    // M4: app-level MIDI/OSC mappings. Restored before controlWiring so its
+    // first feed includes them; destroyed after controlWiring and persister,
+    // which both listen to it.
+    std::unique_ptr<session::AppMappings> appMappings;
     std::unique_ptr<session::ControlWiring> controlWiring;
     // M3: Program Change / PatchSelect -> bank switch. Installs controlHub's
     // unhandled-target sink and is the MIDI drain sink below, so it must

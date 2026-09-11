@@ -36,6 +36,8 @@ add_library(pb3_session_core STATIC
     ControlHub.h
     ControlWiring.cpp
     ControlWiring.h
+    AppMappings.cpp
+    AppMappings.h
     NodeId.h
 )
 
@@ -84,4 +86,5 @@ pb3_apply_strict_warnings(pb3_session_core
     ControlParameterApplier.cpp
     ControlHub.cpp
     ControlWiring.cpp
+    AppMappings.cpp
 )

@@ -11,6 +11,7 @@ class PluginHost;
 namespace pedalboard3::session
 {
 
+class AppMappings;
 class BankDocument;
 class Preferences;
 class Session;
@@ -27,7 +28,10 @@ class Session;
 //                               refreshed from Session; clears the
 //                               restore-in-flight marker on success)
 //
-// On destruction deregisters all three. Lifetime invariant: must be
+//   - session::AppMappings     (writes the app-level MIDI/OSC mappings on
+//                               every change)
+//
+// On destruction deregisters all of them. Lifetime invariant: must be
 // destroyed BEFORE the AudioEngine, PluginHost, and Session it observes.
 class PreferencesPersister : private juce::ChangeListener
 {
@@ -36,7 +40,8 @@ public:
                          engine::AudioEngine& engine,
                          engine::PluginHost& host,
                          Session& session,
-                         BankDocument& bankDocument);
+                         BankDocument& bankDocument,
+                         AppMappings& appMappings);
     ~PreferencesPersister() override;
 
 private:
@@ -47,6 +52,7 @@ private:
     engine::PluginHost& host_;
     Session& session_;
     BankDocument& bankDocument_;
+    AppMappings& appMappings_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PreferencesPersister)
 };

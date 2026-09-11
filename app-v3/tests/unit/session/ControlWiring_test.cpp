@@ -18,6 +18,7 @@
 
 #include "engine/AudioEngine.h"
 #include "engine/PluginHost.h"
+#include "session/AppMappings.h"
 #include "session/ControlHub.h"
 #include "session/ControlWiring.h"
 #include "session/Patch.h"
@@ -382,6 +383,57 @@ TEST_CASE("ControlWiring: a v2-imported patch's MIDI mapping reaches the hub aft
     const auto targetNode = imported.patch->midiMappings[0].target.node;
     f.hub.handleMidi(ccOn(74));
     REQUIRE(f.paramValue(targetNode) == Approx(1.0f));
+}
+
+TEST_CASE("ControlWiring: app mappings route beside the patch's and survive a whole-patch swap",
+          "[session][control-wiring][app-mappings]")
+{
+    Fixture f;
+    f.sess.replacePatch(makeOneNodePatchWithMapping(ccMapping(74)));
+    pumpUntilIdle(f.sess);
+
+    session::AppMappings app;
+    control::MidiMapping next;
+    next.source.kind = control::MidiSourceKind::ControlChange;
+    next.source.controller = 64;
+    next.target.kind = control::MidiTargetKind::AppCommand;
+    next.target.commandId = "patch.next";
+    app.setMidi({next});
+
+    session::ControlWiring wiring(f.sess, f.hub, &app);
+    REQUIRE(f.hub.midiMappings().size() == 2); // patch half + app half
+
+    f.hub.handleMidi(ccOn(74)); // the patch mapping still drives its parameter
+    REQUIRE(f.paramValue() == Approx(1.0f));
+
+    f.sess.replacePatch(makeOneNodePatch()); // no mappings of its own
+    pumpUntilIdle(f.sess);
+    f.sess.sendSynchronousChangeMessage();
+    REQUIRE(f.hub.midiMappings().size() == 1);
+    REQUIRE(f.hub.midiMappings()[0].target.commandId == "patch.next");
+}
+
+TEST_CASE("ControlWiring: an AppMappings change re-feeds the hub without a patch swap",
+          "[session][control-wiring][app-mappings]")
+{
+    Fixture f;
+    f.sess.replacePatch(makeOneNodePatch());
+    pumpUntilIdle(f.sess);
+    const auto generation = f.sess.getPatchGeneration();
+
+    session::AppMappings app;
+    session::ControlWiring wiring(f.sess, f.hub, &app);
+    REQUIRE(f.hub.oscMappings().empty());
+
+    control::OscMapping next;
+    next.address = "/pb3/next";
+    next.target.kind = control::MidiTargetKind::AppCommand;
+    next.target.commandId = "patch.next";
+    app.setOsc({next});
+    app.dispatchPendingMessages();
+
+    REQUIRE(f.hub.oscMappings().size() == 1);
+    REQUIRE(f.sess.getPatchGeneration() == generation);
 }
 
 TEST_CASE("ControlWiring: lifetime -- outliving the wiring with a Session change is safe",

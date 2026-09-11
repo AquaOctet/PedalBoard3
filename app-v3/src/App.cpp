@@ -53,7 +53,12 @@ void App::initialise(const juce::String& /*commandLine*/)
     // feed (device edges land in App::initialise too, once built); ControlWiring
     // binds its resolver to session and re-feeds mappings on every patch change.
     controlHub = std::make_unique<session::ControlHub>();
-    controlWiring = std::make_unique<session::ControlWiring>(*session, *controlHub);
+    // M4: app-level MIDI/OSC mappings (next / previous patch, ...), restored
+    // before the wiring so its first feed already includes them.
+    appMappings = std::make_unique<session::AppMappings>();
+    if (auto xml = preferences->getAppMappings())
+        appMappings->restoreFromXml(*xml);
+    controlWiring = std::make_unique<session::ControlWiring>(*session, *controlHub, appMappings.get());
     // M3: every live MIDI message goes through the patch switcher, which hands
     // it to controlHub first and then applies the default Program Change ->
     // patch rule (see session/PatchSwitcher.h).
@@ -72,10 +77,11 @@ void App::initialise(const juce::String& /*commandLine*/)
         juce::Logger::writeToLog("Pedalboard 3: OSC listener warning — " + error);
     }
 
-    persister =
-        std::make_unique<session::PreferencesPersister>(*preferences, *engine, *pluginHost, *session, *bankDocument);
+    persister = std::make_unique<session::PreferencesPersister>(
+        *preferences, *engine, *pluginHost, *session, *bankDocument, *appMappings);
 
-    context.emplace(AppContext{*engine, *pluginHost, *preferences, *session, *bankDocument, *controlHub, *oscServer});
+    context.emplace(
+        AppContext{*engine, *pluginHost, *preferences, *session, *bankDocument, *controlHub, *appMappings, *oscServer});
     mainWindow = std::make_unique<ui::MainWindow>(getApplicationName(), *context);
 
     // Restore the previously-active patch, gated by the KnownPluginList
@@ -103,6 +109,7 @@ void App::shutdown()
     oscServer.reset();
     patchSwitcher.reset(); // after both input edges, before controlHub/bankDocument
     controlWiring.reset();
+    appMappings.reset(); // after controlWiring and persister, which listen to it
     controlHub.reset();
     bankDocument.reset();
     session.reset();

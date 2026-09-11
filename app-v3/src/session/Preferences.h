@@ -90,6 +90,11 @@ public:
     void setActiveBank(const PatchBank& bank);
     void clearActiveBank(); // clears the legacy ActivePatch value too
 
+    // App-level MIDI/OSC mappings (roadmap M4 U3): the <APP_MAPPINGS> XML that
+    // session::AppMappings writes. nullptr on first run.
+    std::unique_ptr<juce::XmlElement> getAppMappings();
+    void setAppMappings(const juce::XmlElement& xml);
+
     // OSC listener config (M2, KTD4). Plain scalar values via
     // juce::PropertiesFile's typed getters — no XML needed. Port defaults to
     // 9000 when unset. Multicast address is empty ("") when unset, meaning
