@@ -1,5 +1,6 @@
 #include "PreferencesPersister.h"
 
+#include "BankDocument.h"
 #include "engine/AudioEngine.h"
 #include "engine/PluginHost.h"
 #include "Preferences.h"
@@ -54,6 +55,20 @@ bool samePatch(const Patch& a, const Patch& b) noexcept
     return a.connections == b.connections;
 }
 
+bool sameBank(const PatchBank& a, const PatchBank& b) noexcept
+{
+    if (a.activeIndex != b.activeIndex || a.patches.size() != b.patches.size())
+        return false;
+    for (size_t i = 0; i < a.patches.size(); ++i)
+    {
+        if (a.patches[i].name != b.patches[i].name)
+            return false;
+        if (!samePatch(a.patches[i], b.patches[i]))
+            return false;
+    }
+    return true;
+}
+
 } // namespace
 
 juce::String readRestoreInFlightMarker(Preferences& prefs)
@@ -83,8 +98,9 @@ void clearRestoreInFlightMarker(Preferences& prefs)
 PreferencesPersister::PreferencesPersister(Preferences& prefs,
                                            engine::AudioEngine& engine,
                                            engine::PluginHost& host,
-                                           Session& session)
-    : prefs_(prefs), engine_(engine), host_(host), session_(session)
+                                           Session& session,
+                                           BankDocument& bankDocument)
+    : prefs_(prefs), engine_(engine), host_(host), session_(session), bankDocument_(bankDocument)
 {
     if (auto* dm = engine_.getDeviceManager())
         dm->addChangeListener(this);
@@ -138,12 +154,22 @@ void PreferencesPersister::changeListenerCallback(juce::ChangeBroadcaster* sourc
 
         if (!isEmpty)
         {
-            // Successful patch state. Dirty-write-only: skip the disk
-            // write if the persisted patch already matches.
-            const auto current = prefs_.getActivePatch();
-            const bool same = current != nullptr && samePatch(*current, active);
+            // Successful patch state. Persist the whole bank with the active
+            // slot refreshed from Session (topology only — no plugin-state
+            // capture on every Idle transition; the slot keeps the bank's
+            // name). Dirty-write-only: skip the disk write if the persisted
+            // bank already matches.
+            auto bank = bankDocument_.bank();
+            if (bankDocument_.isLiveCaptureEnabled())
+            {
+                auto slot = active;
+                slot.name = bank.active().name;
+                bank.active() = std::move(slot);
+            }
+            const auto current = prefs_.getActiveBank();
+            const bool same = current != nullptr && sameBank(*current, bank);
             if (!same)
-                prefs_.setActivePatch(active);
+                prefs_.setActiveBank(bank);
 
             clearRestoreInFlightMarker(prefs_);
             return;
@@ -157,7 +183,18 @@ void PreferencesPersister::changeListenerCallback(juce::ChangeBroadcaster* sourc
         const auto err = session_.getLastError();
         if (err.isEmpty())
         {
-            prefs_.clearActivePatch();
+            // An empty live patch is still a valid bank state (the user
+            // cleared the board, or the bank's active slot is empty): keep
+            // the other slots, drop the active slot's nodes. Test Tone
+            // (capture disabled) leaves the persisted bank alone.
+            if (bankDocument_.isLiveCaptureEnabled())
+            {
+                auto bank = bankDocument_.bank();
+                auto slot = active;
+                slot.name = bank.active().name;
+                bank.active() = std::move(slot);
+                prefs_.setActiveBank(bank);
+            }
             clearRestoreInFlightMarker(prefs_);
         }
     }

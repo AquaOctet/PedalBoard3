@@ -11,6 +11,7 @@ class PluginHost;
 namespace pedalboard3::session
 {
 
+class BankDocument;
 class Preferences;
 class Session;
 
@@ -21,8 +22,9 @@ class Session;
 // On construction registers itself against:
 //   - juce::AudioDeviceManager (writes audioDeviceState XML on change)
 //   - juce::KnownPluginList    (writes knownPluginList XML on change)
-//   - session::Session         (writes/clears activePluginDescription XML
-//                               on every Idle transition; clears the
+//   - session::Session         (writes/clears the active patch BANK on
+//                               every Idle transition, the active slot
+//                               refreshed from Session; clears the
 //                               restore-in-flight marker on success)
 //
 // On destruction deregisters all three. Lifetime invariant: must be
@@ -30,7 +32,11 @@ class Session;
 class PreferencesPersister : private juce::ChangeListener
 {
 public:
-    PreferencesPersister(Preferences& prefs, engine::AudioEngine& engine, engine::PluginHost& host, Session& session);
+    PreferencesPersister(Preferences& prefs,
+                         engine::AudioEngine& engine,
+                         engine::PluginHost& host,
+                         Session& session,
+                         BankDocument& bankDocument);
     ~PreferencesPersister() override;
 
 private:
@@ -40,6 +46,7 @@ private:
     engine::AudioEngine& engine_;
     engine::PluginHost& host_;
     Session& session_;
+    BankDocument& bankDocument_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PreferencesPersister)
 };

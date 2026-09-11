@@ -4,6 +4,7 @@
 
 #include <juce_core/juce_core.h>
 
+#include <memory>
 #include <vector>
 
 namespace pedalboard3::session
@@ -57,5 +58,13 @@ struct PatchBank
     void next() noexcept;
     void previous() noexcept;
 };
+
+// PatchBank <-> XML: a <BANK activeIndex="n"> element holding one <PATCH>
+// child per patch (patchToXml / patchFromXml). Shared by Preferences
+// (auto-restore) and available to any other store. bankFromXml returns
+// nullptr if the element is not a <BANK>, holds no <PATCH>, or any patch
+// fails to parse or validatePatch; an out-of-range activeIndex clamps to 0.
+std::unique_ptr<juce::XmlElement> bankToXml(const PatchBank&);
+std::unique_ptr<PatchBank> bankFromXml(const juce::XmlElement&);
 
 } // namespace pedalboard3::session
