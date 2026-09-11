@@ -471,3 +471,39 @@ TEST_CASE("ControlWiring: Session::setNodeMappings (the Mappings dialog's edit) 
     f.hub.handleMidi(ccOn(21));
     REQUIRE(f.paramValue() == Approx(0.5f));
 }
+
+TEST_CASE("Session: a hand edit to a live parameter is a parameter edit; a mapped MIDI move is not",
+          "[session][control-wiring][modified]")
+{
+    juce::MessageManager::getInstance(); // this thread is the message thread
+    Fixture f;
+    f.sess.replacePatch(makeOneNodePatchWithMapping(ccMapping(74)));
+    pumpUntilIdle(f.sess);
+    session::ControlWiring wiring(f.sess, f.hub);
+
+    struct Counter : juce::ChangeListener
+    {
+        int n{0};
+        void changeListenerCallback(juce::ChangeBroadcaster*) override { ++n; }
+    } edits;
+    f.sess.parameterEdits().addChangeListener(&edits);
+
+    f.hub.handleMidi(ccOff(74)); // mapped CC -> gain 0
+    REQUIRE(f.paramValue() == Approx(0.0f));
+    f.sess.parameterEdits().dispatchPendingMessages();
+    REQUIRE(edits.n == 0);
+
+    f.sess.getHostedPlugin(1)->getParameters()[0]->setValueNotifyingHost(0.5f); // the plugin's editor
+    f.sess.parameterEdits().dispatchPendingMessages();
+    REQUIRE(edits.n == 1);
+
+    // A whole-patch swap detaches from the outgoing processor and attaches to
+    // the new one.
+    f.sess.replacePatch(makeOneNodePatch());
+    pumpUntilIdle(f.sess);
+    f.sess.getHostedPlugin(1)->getParameters()[0]->setValueNotifyingHost(0.25f);
+    f.sess.parameterEdits().dispatchPendingMessages();
+    REQUIRE(edits.n == 2);
+
+    f.sess.parameterEdits().removeChangeListener(&edits);
+}

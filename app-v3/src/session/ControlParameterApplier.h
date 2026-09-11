@@ -38,6 +38,11 @@ public:
     // the node/processor is not found, or the parameter index is out of range.
     bool apply(const control::MidiTarget& target, float value) const;
 
+    // True while apply() is setting a parameter on the calling thread. A
+    // parameter listener uses it to tell a control-surface move (a mapped MIDI
+    // or OSC input) from a hand edit in the plugin's editor (finish pass KD1).
+    static bool isApplyingOnThisThread() noexcept;
+
 private:
     NodeResolver resolve_;
 };

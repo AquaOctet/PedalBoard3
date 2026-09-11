@@ -1,5 +1,6 @@
 #include "Session.h"
 
+#include "ControlParameterApplier.h"
 #include "engine/AudioEngine.h"
 #include "engine/AudioGraphRuntime.h"
 #include "engine/BypassableInstance.h"
@@ -214,6 +215,11 @@ Session::~Session()
         std::lock_guard<std::mutex> lk(resultMutex_);
         results_.clear();
     }
+
+    // The node processors outlive Session (the engine owns the graph and is
+    // torn down after it): stop listening while they are known alive.
+    std::lock_guard<std::mutex> lk(statusMutex_);
+    stopListeningToLiveNodes();
 }
 
 // ---- Public API: whole-patch swap -----------------------------------------
@@ -311,6 +317,9 @@ void Session::removeNode(NodeId id)
     auto it = nodes_.find(id);
     if (it == nodes_.end())
         return;
+
+    if (liveGraph_ != nullptr && it->second.hosted != nullptr)
+        it->second.hosted->removeListener(this);
 
     if (liveGraph_ != nullptr && it->second.graphNode != nullptr)
     {
@@ -950,6 +959,13 @@ void Session::commitLoadPatch(LoadPatchResult&& result)
         return;
     }
 
+    {
+        // Detach from the outgoing processors while they are still alive: the
+        // previous graph is destroyed when this function returns.
+        std::lock_guard<std::mutex> lk(statusMutex_);
+        stopListeningToLiveNodes();
+    }
+
     auto previous = engine_.loadGraph(std::move(result.prepared.graph));
     (void)previous;
 
@@ -958,6 +974,8 @@ void Session::commitLoadPatch(LoadPatchResult&& result)
         activePatch_ = std::move(result.patch);
         nodes_ = std::move(result.prepared.nodes);
         liveGraph_ = currentRuntimeGraph();
+        for (const auto& entry : nodes_)
+            listenTo(entry.second);
         lastError_.clear();
     }
 
@@ -1032,6 +1050,7 @@ void Session::commitAddPlugin(AddPluginResult&& result)
         activePatch_.nodes.push_back(std::move(pn));
 
         nodes_[newId] = PreparedGraph::NodeRefs{wrapPtr, hostedPtr, graphNode.get()};
+        listenTo(nodes_[newId]);
 
         autoConnectNewNode(newId);
     }
@@ -1043,6 +1062,41 @@ void Session::commitAddPlugin(AddPluginResult&& result)
         lastError_.clear();
     }
     publishStateChange(State::Idle);
+}
+
+// ---- Hand-edit detection (finish pass U2) ----------------------------------
+
+void Session::listenTo(const PreparedGraph::NodeRefs& refs)
+{
+    if (refs.hosted != nullptr)
+        refs.hosted->addListener(this);
+}
+
+void Session::stopListeningToLiveNodes()
+{
+    // If a graph was swapped in outside Session (Test Tone), the processors in
+    // nodes_ were destroyed with the old graph.
+    if (liveGraph_ == nullptr || currentRuntimeGraph() != liveGraph_)
+        return;
+    for (const auto& entry : nodes_)
+        if (entry.second.hosted != nullptr)
+            entry.second.hosted->removeListener(this);
+}
+
+void Session::audioProcessorParameterChanged(juce::AudioProcessor*, int, float)
+{
+    // Hand edits come from the message thread. Host automation, the audio
+    // thread and worker-side state loads call from elsewhere, and a mapped
+    // MIDI / OSC input sets parameters inside ControlParameterApplier::apply.
+    if (juce::MessageManager::existsAndIsCurrentThread() && !ControlParameterApplier::isApplyingOnThisThread())
+        parameterEdits_.sendChangeMessage();
+}
+
+void Session::audioProcessorParameterChangeGestureEnd(juce::AudioProcessor*, int)
+{
+    // The end of a drag in the plugin's editor, whichever thread the plugin
+    // reports it from. Control inputs never send gestures.
+    parameterEdits_.sendChangeMessage();
 }
 
 void Session::onBuildResult()

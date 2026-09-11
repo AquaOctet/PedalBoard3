@@ -98,7 +98,10 @@ public:
     // The file the bank was loaded from or last saved to (empty = untitled),
     // and whether the content differs from it: bank structure and patch names,
     // each patch's nodes, bypass, custom names, MIDI channel, connections and
-    // mappings. Not the active patch index, card positions or plugin state.
+    // mappings. Not the active patch index or card positions. Plugin state is
+    // not compared; a hand edit to a live plugin parameter
+    // (Session::parameterEdits) marks the bank modified until the next save or
+    // load.
     // Re-evaluated after every bank edit and every Session change that
     // settles with the live patch being the active slot; a change in the
     // result broadcasts.
@@ -135,6 +138,7 @@ private:
     std::int64_t savedSignature_{0};
     bool modified_{false};
     bool restoredModified_{false};
+    bool stateEdited_{false};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BankDocument)
 };

@@ -33,10 +33,12 @@ BankDocument::BankDocument(Session& session) : session_(session)
 {
     savedSignature_ = signatureOf(bank_);
     session_.addChangeListener(this);
+    session_.parameterEdits().addChangeListener(this);
 }
 
 BankDocument::~BankDocument()
 {
+    session_.parameterEdits().removeChangeListener(this);
     session_.removeChangeListener(this);
 }
 
@@ -51,6 +53,7 @@ void BankDocument::loadBank(PatchBank bank, juce::File file)
     currentFile_ = std::move(file);
     savedSignature_ = signatureOf(bank_);
     restoredModified_ = false;
+    stateEdited_ = false;
     modified_ = false;
     issueReplace();
     sendChangeMessage();
@@ -171,6 +174,7 @@ void BankDocument::markSaved(const juce::File& file)
     currentFile_ = file;
     savedSignature_ = contentSignature();
     restoredModified_ = false;
+    stateEdited_ = false;
     modified_ = false;
     sendChangeMessage();
 }
@@ -188,13 +192,24 @@ void BankDocument::changeListenerCallback(juce::ChangeBroadcaster* source)
     // Only a settled Session says anything about the live patch; while a swap
     // is building (or after it failed) the live patch is not the active slot
     // and contentSignature() falls back to the slot itself.
+    if (source == &session_.parameterEdits())
+    {
+        // A hand edit to a live plugin. Plugin state is not in the content
+        // signature, so this sticks until the next save or load.
+        if (liveMatchesActiveSlot())
+        {
+            stateEdited_ = true;
+            refreshModified();
+        }
+        return;
+    }
     if (source == &session_ && session_.getState() == Session::State::Idle)
         refreshModified();
 }
 
 void BankDocument::refreshModified()
 {
-    const bool modified = restoredModified_ || contentSignature() != savedSignature_;
+    const bool modified = restoredModified_ || stateEdited_ || contentSignature() != savedSignature_;
     if (modified == modified_)
         return;
     modified_ = modified;

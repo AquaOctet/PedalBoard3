@@ -477,3 +477,21 @@ TEST_CASE("BankDocument: a bank restored as unsaved stays modified until saved",
     f.doc.markSaved(tempBankFile("set.pdl"));
     REQUIRE_FALSE(f.doc.isModified());
 }
+
+TEST_CASE("BankDocument: a hand edit to a plugin parameter marks it modified until saved", "[session][bank][modified]")
+{
+    Fixture f;
+    f.doc.loadBank(threeBank(), tempBankFile("set.pdl"));
+    f.settle();
+
+    f.s.parameterEdits().sendSynchronousChangeMessage();
+    REQUIRE(f.doc.isModified());
+
+    f.doc.markSaved(tempBankFile("set.pdl"));
+    REQUIRE_FALSE(f.doc.isModified());
+
+    f.s.parameterEdits().sendSynchronousChangeMessage();
+    REQUIRE(f.doc.isModified());
+    f.doc.loadBank(threeBank(), tempBankFile("set.pdl"));
+    REQUIRE_FALSE(f.doc.isModified());
+}
