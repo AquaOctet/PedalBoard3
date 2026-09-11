@@ -399,6 +399,78 @@ void Session::addMidiMapping(control::MidiMapping mapping)
     bumpVersionAndNotify();
 }
 
+namespace
+{
+bool isParameterMappingOf(const control::MidiTarget& target, NodeId node) noexcept
+{
+    return target.kind == control::MidiTargetKind::PluginParameter && target.node == node;
+}
+} // namespace
+
+Session::NodeMappings Session::getNodeMappings(NodeId id) const
+{
+    std::lock_guard<std::mutex> lk(statusMutex_);
+    NodeMappings out;
+    for (const auto& m : activePatch_.midiMappings)
+        if (isParameterMappingOf(m.target, id))
+            out.midi.push_back(m);
+    for (const auto& m : activePatch_.oscMappings)
+        if (isParameterMappingOf(m.target, id))
+            out.osc.push_back(m);
+    return out;
+}
+
+bool Session::setNodeMappings(NodeId id, std::vector<control::MidiMapping> midi, std::vector<control::OscMapping> osc)
+{
+    std::lock_guard<std::mutex> lk(statusMutex_);
+    if (activePatch_.findNode(id) == nullptr)
+        return false;
+
+    std::erase_if(activePatch_.midiMappings,
+                  [id](const control::MidiMapping& m) { return isParameterMappingOf(m.target, id); });
+    std::erase_if(activePatch_.oscMappings,
+                  [id](const control::OscMapping& m) { return isParameterMappingOf(m.target, id); });
+
+    for (auto& m : midi)
+    {
+        m.target.kind = control::MidiTargetKind::PluginParameter;
+        m.target.node = id;
+        activePatch_.midiMappings.push_back(std::move(m));
+    }
+    for (auto& m : osc)
+    {
+        m.target.kind = control::MidiTargetKind::PluginParameter;
+        m.target.node = id;
+        activePatch_.oscMappings.push_back(std::move(m));
+    }
+
+    mappingsRevision_.fetch_add(1, std::memory_order_release);
+    bumpVersionAndNotify();
+    return true;
+}
+
+void Session::setNodeMidiChannel(NodeId id, int channel1To16Or0)
+{
+    const int channel = juce::jlimit(0, 16, channel1To16Or0);
+
+    // Same guards as setNodeBypass: the cached BypassableInstance* lives inside
+    // the committed graph, which a rebuild or an out-of-band swap can free.
+    if (getState() != State::Idle)
+        return;
+
+    std::lock_guard<std::mutex> lk(statusMutex_);
+    if (auto* current = currentRuntimeGraph(); current == nullptr || current != liveGraph_)
+        return;
+
+    auto it = nodes_.find(id);
+    if (it == nodes_.end() || it->second.bypass == nullptr)
+        return;
+    it->second.bypass->setMidiChannel(channel);
+    if (auto* pn = activePatch_.findNode(id))
+        pn->midiChannel = channel;
+    bumpVersionAndNotify();
+}
+
 // ---- Public API: snapshot accessors ---------------------------------------
 
 Patch Session::getActivePatch() const
@@ -505,6 +577,7 @@ std::vector<Session::NodeSnapshot> Session::getNodeSnapshots() const
         }
         s.bypassed = n.bypass;
         s.customName = n.customName;
+        s.midiChannel = n.midiChannel;
         s.x = n.x;
         s.y = n.y;
         snaps.push_back(std::move(s));

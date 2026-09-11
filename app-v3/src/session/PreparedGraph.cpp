@@ -94,6 +94,8 @@ PreparedGraph buildPreparedGraph(
         auto wrapped = std::make_unique<engine::BypassableInstance>(std::move(proc));
         if (patchNode.bypass)
             wrapped->setBypass(true);
+        if (patchNode.midiChannel != 0)
+            wrapped->setMidiChannel(patchNode.midiChannel);
         auto* wrapPtr = wrapped.get();
 
         auto graphNode = graph->addNode(std::move(wrapped), {}, UpdateKind::async);

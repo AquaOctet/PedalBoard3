@@ -563,3 +563,27 @@ TEST_CASE("Patch: a node with no x/y attributes loads unpositioned (back-compat)
     auto rt2 = session::patchFromXml(*xml);
     REQUIRE_FALSE(rt2->nodes[0].hasPosition());
 }
+
+TEST_CASE("Patch: a node's MIDI channel filter round-trips; omni writes nothing; out of range clamps",
+          "[session][patch][xml][midi-channel]")
+{
+    session::Patch p;
+    auto filtered = makeNode(1, "Filtered");
+    filtered.midiChannel = 10;
+    p.nodes = {filtered, makeNode(2, "Omni")};
+
+    auto xml = session::patchToXml(p);
+    REQUIRE(xml != nullptr);
+    auto* nodes = xml->getChildByName("NODES");
+    REQUIRE(nodes != nullptr);
+    REQUIRE(nodes->getChildElement(0)->getIntAttribute("midiChannel") == 10);
+    REQUIRE_FALSE(nodes->getChildElement(1)->hasAttribute("midiChannel"));
+
+    auto back = session::patchFromXml(*xml);
+    REQUIRE(back != nullptr);
+    REQUIRE(back->nodes[0].midiChannel == 10);
+    REQUIRE(back->nodes[1].midiChannel == 0);
+
+    nodes->getChildElement(0)->setAttribute("midiChannel", 99);
+    REQUIRE(session::patchFromXml(*xml)->nodes[0].midiChannel == 16);
+}

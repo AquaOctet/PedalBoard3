@@ -259,7 +259,7 @@ TEST_CASE("pdl: writeBank then readBank round-trips a 3-patch bank with its acti
     // The on-disk shape is the <BANK> form with the new minor.
     auto xml = juce::parseXML(file);
     REQUIRE(xml != nullptr);
-    REQUIRE(xml->getIntAttribute("schemaMinor") == 4);
+    REQUIRE(xml->getIntAttribute("schemaMinor") == session::pdl::kSchemaMinor);
     REQUIRE(xml->getChildByName("BANK") != nullptr);
     REQUIRE(xml->getChildByName("PATCH") == nullptr);
 

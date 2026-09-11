@@ -239,6 +239,8 @@ std::unique_ptr<juce::XmlElement> patchToXml(const Patch& p)
         nodeEl->setAttribute("id", n.id);
         nodeEl->setAttribute("bypass", n.bypass);
         nodeEl->setAttribute("customName", n.customName);
+        if (n.midiChannel != 0)
+            nodeEl->setAttribute("midiChannel", n.midiChannel);
 
         // Canvas position — only written when set, so unpositioned nodes (and
         // pre-position files) stay attribute-free and auto-lay-out on load.
@@ -342,6 +344,7 @@ std::unique_ptr<Patch> patchFromXml(const juce::XmlElement& root)
             n.id = nodeEl->getIntAttribute("id");
             n.bypass = nodeEl->getBoolAttribute("bypass");
             n.customName = nodeEl->getStringAttribute("customName");
+            n.midiChannel = juce::jlimit(0, 16, nodeEl->getIntAttribute("midiChannel", 0));
 
             // Canvas position — absent attributes leave x/y as NaN (unpositioned),
             // so pre-position files auto-lay-out. Both must be present to count.
