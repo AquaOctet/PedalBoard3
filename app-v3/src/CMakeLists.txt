@@ -42,6 +42,7 @@ add_library(pb3_app_core STATIC
     ui/EditorWindow.h
     ui/FileActions.cpp
     ui/FileActions.h
+    ui/Icons.h
     ui/MappingsDialog.cpp
     ui/MappingsDialog.h
     ui/MeterMath.h
@@ -71,7 +72,7 @@ target_include_directories(pb3_app_core PUBLIC
 # unit that includes App.h needs it. PUBLIC makes it visible through the
 # linkage chain (App.h → pb3_app_core → Pedalboard3/main.cpp).
 target_compile_definitions(pb3_app_core PUBLIC
-    JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:Pedalboard3,JUCE_PROJECT_NAME>"
+    JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:Pedalboard3,JUCE_PRODUCT_NAME>"
     JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:Pedalboard3,JUCE_VERSION>"
 )
 

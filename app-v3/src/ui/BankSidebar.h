@@ -2,6 +2,7 @@
 
 #include "AppContext.h"
 #include "BankRows.h"
+#include "ColourScheme.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -32,7 +33,7 @@ public:
     // Installed by MainWindow's root component.
     std::function<void()> onRenameActive; // the top bar's rename prompt, for the active patch
     std::function<void()> onRemoveActive; // the top bar's remove confirmation
-    std::function<void()> onCollapse;     // the « button: hide the panel
+    std::function<void()> onCollapse;     // the three-bar toggle: collapse to the strip
     std::function<void()> onDismiss;      // a pick or Escape: close a slid-open panel
 
 private:
@@ -48,7 +49,7 @@ private:
     AppContext& ctx_;
     std::vector<bank::Row> rows_;
     juce::ListBox list_;
-    juce::TextButton collapseButton_;
+    juce::ShapeButton collapseButton_{"Patch bank", tokens::fgMuted, tokens::fgPrimary, tokens::accentPrimary};
     juce::TextButton newButton_{"+ New"};
     juce::TextButton duplicateButton_{"Duplicate"};
 

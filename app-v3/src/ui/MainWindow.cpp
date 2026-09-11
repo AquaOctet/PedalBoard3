@@ -47,21 +47,20 @@ public:
         viewport_.setScrollBarsShown(/*vert*/ true, /*horiz*/ true);
 
         // The body's side panel (UI refresh U4 / U6): the patch bank on the
-        // left, folding to an icon strip on a narrow window.
+        // left. Its three-bar toggle, top-left under File, collapses it to an
+        // icon strip and opens it again at any window size (and File > Patch
+        // Bank does the same); below the fold width it folds on its own and the
+        // toggle slides it open over the canvas.
         addChildComponent(bankSidebar_);
         addChildComponent(patchRail_);
-        patchesShown_ = ctx_.preferences.getPanelShown("patches", true);
-        statusBar_.setPatchesShown(patchesShown_);
-        statusBar_.onPatchesToggled = [this](bool shown) { setPatchesShown(shown); };
-        bankSidebar_.onCollapse = [this] { setPatchesShown(false); };
+        patchesOpen_ = ctx_.preferences.getPanelShown("patches", true);
+        bankSidebar_.onCollapse = [this] { togglePatchBank(); };
         bankSidebar_.onDismiss = [this] { closePatchesOverlay(); };
         bankSidebar_.onRenameActive = [this] { transportBar_.promptRenamePatch(); };
         bankSidebar_.onRemoveActive = [this] { transportBar_.confirmRemovePatch(); };
-        patchRail_.onOpenPanel = [this]
-        {
-            patchesOverlay_ = !patchesOverlay_;
-            resized();
-        };
+        patchRail_.onOpenPanel = [this] { togglePatchBank(); };
+        transportBar_.onTogglePatchBank = [this] { togglePatchBank(); };
+        transportBar_.isPatchBankShown = [this] { return bankSidebar_.isVisible(); };
         // A click on the canvas closes a slid-open panel.
         viewport_.addMouseListener(this, true);
 
@@ -132,20 +131,21 @@ public:
         statusBar_.setBounds(bounds.removeFromBottom(kStatusBarHeight));
 
         // Left panel | canvas (the right panel, the plugin browser, comes with
-        // U5). On a narrow window the panel folds to an icon strip whose
-        // button slides it open over the canvas (plan KD3). The canvas
-        // re-centres itself when the viewport's size changes.
-        const auto panels = body::layout(bounds, patchesShown_, /*rightShown*/ false);
-        if (!panels.folded)
+        // U5). The bank is docked when open on a wide window, and otherwise an
+        // icon strip whose toggle slides it open over the canvas (plan KD3).
+        // The canvas re-centres itself when the viewport's size changes.
+        const auto panels =
+            body::layout(bounds, patchesOpen_ ? body::Panel::Open : body::Panel::Collapsed, body::Panel::Hidden);
+        if (!panels.narrow)
             patchesOverlay_ = false;
         viewport_.setBounds(panels.canvas);
 
-        patchRail_.setVisible(patchesShown_ && panels.folded);
-        if (patchRail_.isVisible())
+        patchRail_.setVisible(panels.leftFolded);
+        if (panels.leftFolded)
             patchRail_.setBounds(panels.left);
 
-        const bool docked = patchesShown_ && !panels.folded;
-        const bool overlaid = patchesShown_ && panels.folded && patchesOverlay_;
+        const bool docked = !panels.leftFolded;
+        const bool overlaid = panels.leftFolded && patchesOverlay_;
         bankSidebar_.setVisible(docked || overlaid);
         if (docked)
         {
@@ -158,12 +158,21 @@ public:
         }
     }
 
-    void setPatchesShown(bool shown)
+    // The bank's three-bar toggle and File > Patch Bank. On a wide window,
+    // open or collapse the docked panel (remembered); on a narrow one, slide
+    // it open over the canvas or shut.
+    void togglePatchBank()
     {
-        patchesShown_ = shown;
-        patchesOverlay_ = false;
-        ctx_.preferences.setPanelShown("patches", shown);
-        statusBar_.setPatchesShown(shown);
+        if (getWidth() < body::kDefaultMetrics.foldBelow)
+        {
+            patchesOverlay_ = !patchesOverlay_;
+        }
+        else
+        {
+            patchesOpen_ = !patchesOpen_;
+            patchesOverlay_ = false;
+            ctx_.preferences.setPanelShown("patches", patchesOpen_);
+        }
         resized();
     }
 
@@ -184,7 +193,7 @@ private:
     StatusBar statusBar_;
     BankSidebar bankSidebar_;
     PatchRail patchRail_;
-    bool patchesShown_{true};
+    bool patchesOpen_{true};     // docked, or collapsed to its strip
     bool patchesOverlay_{false}; // a folded panel slid open over the canvas
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RootComponent)

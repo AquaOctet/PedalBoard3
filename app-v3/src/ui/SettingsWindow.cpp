@@ -9,36 +9,162 @@
 
 #include <juce_audio_utils/juce_audio_utils.h>
 
+#include <memory>
+#include <vector>
+
 namespace pedalboard3::ui
 {
 
 namespace
 {
 
-constexpr int kWidth = 520;
-constexpr int kDeviceHeight = 430;
+constexpr int kPad = 16;
 constexpr int kLabelWidth = 130;
 constexpr int kRowHeight = 28;
 
-class SettingsPanel : public juce::Component
+void styleCaption(juce::Label& label, const juce::String& text)
+{
+    label.setText(text, juce::dontSendNotification);
+    label.setFont(juce::Font(juce::FontOptions(12.0f).withStyle("Bold")));
+    label.setColour(juce::Label::textColourId, tokens::fgMuted);
+}
+
+void styleHint(juce::Label& label, const juce::String& text)
+{
+    label.setText(text, juce::dontSendNotification);
+    label.setFont(juce::Font(juce::FontOptions(12.0f)));
+    label.setColour(juce::Label::textColourId, tokens::fgMuted);
+}
+
+void launch(juce::Component* content, const juce::String& title)
+{
+    juce::DialogWindow::LaunchOptions options;
+    options.content.setOwned(content);
+    options.dialogTitle = title;
+    options.dialogBackgroundColour = tokens::bgPopover;
+    options.escapeKeyTriggersCloseButton = true;
+    options.useNativeTitleBar = true;
+    options.resizable = false;
+    options.launchAsync();
+}
+
+// ---- Audio Devices ------------------------------------------------------------
+
+class AudioDevicesPanel : public juce::Component
 {
 public:
-    explicit SettingsPanel(AppContext& ctx)
-        : ctx_(ctx), device_(*ctx.audioEngine.getDeviceManager(),
-                             0,
-                             2,
-                             0,
-                             2,
-                             /*showMidiInputOptions*/ true,
-                             /*showMidiOutputSelector*/ false,
-                             /*showChannelsAsStereoPairs*/ true,
-                             /*hideAdvancedOptionsWithButton*/ false)
+    AudioDevicesPanel(AppContext& ctx, juce::Value& testTone)
+        : device_(*ctx.audioEngine.getDeviceManager(),
+                  0,
+                  2,
+                  0,
+                  2,
+                  /*showMidiInputOptions*/ false, // MIDI Settings has those
+                  /*showMidiOutputSelector*/ false,
+                  /*showChannelsAsStereoPairs*/ true,
+                  /*hideAdvancedOptionsWithButton*/ false)
     {
         addAndMakeVisible(device_);
 
-        oscHeader_.setText("OSC LISTENER", juce::dontSendNotification);
-        oscHeader_.setFont(juce::Font(juce::FontOptions(12.0f)));
-        oscHeader_.setColour(juce::Label::textColourId, tokens::fgMuted);
+        styleCaption(toneHeader_, "TEST TONE");
+        toneButton_.getToggleStateValue().referTo(testTone); // shared with the Settings menu
+        toneButton_.setTooltip("Play a 440 Hz tone straight to the output, bypassing the chain");
+        styleHint(toneHint_, "Checks the output device without the board. Switching patch turns it off.");
+        for (auto* c : std::initializer_list<juce::Component*>{&toneHeader_, &toneButton_, &toneHint_})
+            addAndMakeVisible(c);
+
+        setSize(520, 510);
+    }
+
+    void resized() override
+    {
+        auto area = getLocalBounds();
+        device_.setBounds(area.removeFromTop(420));
+        auto tone = area.reduced(kPad, 6);
+        toneHeader_.setBounds(tone.removeFromTop(22));
+        toneButton_.setBounds(tone.removeFromTop(kRowHeight).removeFromLeft(160));
+        toneHint_.setBounds(tone.removeFromTop(22));
+    }
+
+private:
+    juce::AudioDeviceSelectorComponent device_;
+    juce::Label toneHeader_;
+    juce::ToggleButton toneButton_{"Test Tone"};
+    juce::Label toneHint_;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioDevicesPanel)
+};
+
+// ---- MIDI Settings --------------------------------------------------------------
+
+class MidiSettingsPanel : public juce::Component, private juce::ChangeListener
+{
+public:
+    explicit MidiSettingsPanel(AppContext& ctx) : devices_(*ctx.audioEngine.getDeviceManager())
+    {
+        styleCaption(header_, "MIDI INPUTS");
+        styleHint(hint_, "Enabled inputs drive mapped controls and Program Change patch switching.");
+        styleHint(empty_, "No MIDI inputs found. Connect a controller; it appears here.");
+        for (auto* c : std::initializer_list<juce::Component*>{&header_, &hint_, &empty_})
+            addAndMakeVisible(c);
+
+        devices_.addChangeListener(this); // inputs come and go
+        rebuild();
+    }
+
+    ~MidiSettingsPanel() override { devices_.removeChangeListener(this); }
+
+    void resized() override
+    {
+        auto area = getLocalBounds().reduced(kPad, 12);
+        header_.setBounds(area.removeFromTop(22));
+        hint_.setBounds(area.removeFromTop(24));
+        area.removeFromTop(6);
+        empty_.setBounds(area.removeFromTop(kRowHeight));
+        for (auto& toggle : toggles_)
+            toggle->setBounds(area.removeFromTop(kRowHeight));
+    }
+
+private:
+    void changeListenerCallback(juce::ChangeBroadcaster*) override { rebuild(); }
+
+    void rebuild()
+    {
+        toggles_.clear();
+        for (const auto& input : juce::MidiInput::getAvailableDevices())
+        {
+            auto toggle = std::make_unique<juce::ToggleButton>(input.name);
+            toggle->setToggleState(devices_.isMidiInputDeviceEnabled(input.identifier), juce::dontSendNotification);
+            auto* raw = toggle.get();
+            // The device manager's change message (which rebuilds this list)
+            // arrives asynchronously, so the button outlives its own click.
+            toggle->onClick = [this, raw, id = input.identifier]
+            { devices_.setMidiInputDeviceEnabled(id, raw->getToggleState()); };
+            addAndMakeVisible(*toggle);
+            toggles_.push_back(std::move(toggle));
+        }
+        empty_.setVisible(toggles_.empty());
+        setSize(440, juce::jmax(170, 100 + kRowHeight * static_cast<int>(toggles_.size())));
+        resized();
+    }
+
+    juce::AudioDeviceManager& devices_;
+    juce::Label header_;
+    juce::Label hint_;
+    juce::Label empty_;
+    std::vector<std::unique_ptr<juce::ToggleButton>> toggles_;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MidiSettingsPanel)
+};
+
+// ---- OSC Settings -----------------------------------------------------------------
+
+class OscSettingsPanel : public juce::Component
+{
+public:
+    explicit OscSettingsPanel(AppContext& ctx) : ctx_(ctx)
+    {
+        styleCaption(header_, "OSC LISTENER");
         portLabel_.setText("Port", juce::dontSendNotification);
         groupLabel_.setText("Multicast group", juce::dontSendNotification);
 
@@ -62,13 +188,13 @@ public:
         showStatus("Press Enter, or leave a field, to apply.", false);
 
         for (auto* c : std::initializer_list<juce::Component*>{
-                 &oscHeader_, &portLabel_, &portEditor_, &groupLabel_, &groupEditor_, &statusLabel_})
+                 &header_, &portLabel_, &portEditor_, &groupLabel_, &groupEditor_, &statusLabel_})
             addAndMakeVisible(c);
 
-        setSize(kWidth, 590);
+        setSize(440, 200);
     }
 
-    ~SettingsPanel() override
+    ~OscSettingsPanel() override
     {
         // A focused editor loses focus while the panel is torn down; don't let
         // that run apply() on a half-destroyed panel.
@@ -78,21 +204,18 @@ public:
 
     void resized() override
     {
-        auto area = getLocalBounds();
-        device_.setBounds(area.removeFromTop(kDeviceHeight));
-
-        auto osc = area.reduced(16, 8);
-        oscHeader_.setBounds(osc.removeFromTop(22));
-        osc.removeFromTop(6);
-        auto port = osc.removeFromTop(kRowHeight);
+        auto area = getLocalBounds().reduced(kPad, 12);
+        header_.setBounds(area.removeFromTop(22));
+        area.removeFromTop(6);
+        auto port = area.removeFromTop(kRowHeight);
         portLabel_.setBounds(port.removeFromLeft(kLabelWidth));
         portEditor_.setBounds(port.removeFromLeft(80));
-        osc.removeFromTop(8);
-        auto group = osc.removeFromTop(kRowHeight);
+        area.removeFromTop(8);
+        auto group = area.removeFromTop(kRowHeight);
         groupLabel_.setBounds(group.removeFromLeft(kLabelWidth));
         groupEditor_.setBounds(group.removeFromLeft(160));
-        osc.removeFromTop(8);
-        statusLabel_.setBounds(osc.removeFromTop(40));
+        area.removeFromTop(8);
+        statusLabel_.setBounds(area.removeFromTop(40));
     }
 
 private:
@@ -146,29 +269,31 @@ private:
     }
 
     AppContext& ctx_;
-    juce::AudioDeviceSelectorComponent device_;
-    juce::Label oscHeader_;
+    juce::Label header_;
     juce::Label portLabel_;
     juce::TextEditor portEditor_;
     juce::Label groupLabel_;
     juce::TextEditor groupEditor_;
     juce::Label statusLabel_;
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SettingsPanel)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OscSettingsPanel)
 };
 
 } // namespace
 
-void showSettingsWindow(AppContext& ctx)
+void showAudioDevicesWindow(AppContext& ctx, juce::Value& testTone)
 {
-    juce::DialogWindow::LaunchOptions options;
-    options.content.setOwned(new SettingsPanel(ctx));
-    options.dialogTitle = "Settings";
-    options.dialogBackgroundColour = tokens::bgPopover;
-    options.escapeKeyTriggersCloseButton = true;
-    options.useNativeTitleBar = true;
-    options.resizable = false;
-    options.launchAsync();
+    launch(new AudioDevicesPanel(ctx, testTone), "Audio Devices");
+}
+
+void showMidiSettingsWindow(AppContext& ctx)
+{
+    launch(new MidiSettingsPanel(ctx), "MIDI Settings");
+}
+
+void showOscSettingsWindow(AppContext& ctx)
+{
+    launch(new OscSettingsPanel(ctx), "OSC Settings");
 }
 
 } // namespace pedalboard3::ui

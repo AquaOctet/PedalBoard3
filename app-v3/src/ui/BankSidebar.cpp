@@ -2,6 +2,7 @@
 
 #include "ColourScheme.h"
 #include "FileActions.h" // boardDisplayName
+#include "Icons.h"
 #include "session/BankDocument.h"
 #include "session/Session.h"
 
@@ -28,8 +29,8 @@ BankSidebar::BankSidebar(AppContext& ctx) : ctx_(ctx)
     list_.setColour(juce::ListBox::outlineColourId, juce::Colours::transparentBlack);
     addAndMakeVisible(list_);
 
-    collapseButton_.setButtonText(juce::String(juce::CharPointer_UTF8("\xc2\xab"))); // «
-    collapseButton_.setTooltip("Hide the patch bank (Patches in the status bar shows it again)");
+    collapseButton_.setShape(bankIcon(), false, true, false);
+    collapseButton_.setTooltip("Collapse the patch bank to its strip (File > Patch Bank does the same)");
     collapseButton_.onClick = [this]
     {
         if (onCollapse)
@@ -49,7 +50,7 @@ BankSidebar::BankSidebar(AppContext& ctx) : ctx_(ctx)
         auto& doc = ctx_.bankDocument;
         doc.select(doc.duplicate(doc.activeIndex()));
     };
-    for (auto* button : {&collapseButton_, &newButton_, &duplicateButton_})
+    for (auto* button : std::initializer_list<juce::Button*>{&collapseButton_, &newButton_, &duplicateButton_})
         addAndMakeVisible(button);
 
     ctx_.bankDocument.addChangeListener(this);
@@ -93,7 +94,7 @@ void BankSidebar::paint(juce::Graphics& g)
     const auto header = area.removeFromTop(kHeaderHeight);
     g.setColour(tokens::fgMuted);
     g.setFont(juce::Font(juce::FontOptions(12.0f).withStyle("Bold")));
-    g.drawText("BANK", header, juce::Justification::centredLeft);
+    g.drawText("BANK", header.withTrimmedLeft(28), juce::Justification::centredLeft); // after the toggle
 
     const auto nameRow = area.removeFromTop(kBoardNameHeight);
     const int patches = ctx_.bankDocument.size();
@@ -112,7 +113,7 @@ void BankSidebar::resized()
 {
     auto area = getLocalBounds();
     auto header = area.removeFromTop(kHeaderHeight).reduced(kPad, 6);
-    collapseButton_.setBounds(header.removeFromRight(28));
+    collapseButton_.setBounds(header.removeFromLeft(18).withSizeKeepingCentre(18, 18)); // under File
     area.removeFromTop(kBoardNameHeight);
 
     auto footer = area.removeFromBottom(kFooterHeight).reduced(kPad, 10);
