@@ -16,15 +16,18 @@ class SignalCanvas;
 // MainWindow:
 //
 //   left:   [File] (New, Open, Save, Save As, Save as Default, Reset
-//           Default, App Mappings; the file actions are ui::FileActions) and [+ Add Plugin] (KnownPluginList
-//           effects + built-in nodes; Session::addPlugin — AC-UI-N).
+//           Default, App Mappings; the file actions are ui::FileActions),
+//           [Plugins] (Add Plugin, Plugin List..., Rescan) and [+], which
+//           opens the Add Plugin menu directly: KnownPluginList effects and
+//           built-in nodes, added through EditHistory (AC-UI-N; UI refresh
+//           U1, #32).
 //   centre: the patch strip (roadmap M3 U5): [<] [n/N  Name] [>]. The
 //           arrows step the bank; the name button opens the bank menu
 //           (new, duplicate, rename, remove, go to a patch). Every switch
 //           goes through BankDocument, which closes open editors first via
 //           beforeSwap (D1b / AC-UI-P).
-//   right:  OSC port, Audio Settings..., Test Tone (diagnostic loopback
-//           bypassing the chain) and [Plugins] (Plugin List..., Rescan).
+//   right:  OSC port, Audio Settings... and Test Tone (diagnostic loopback
+//           bypassing the chain).
 //
 // The audio-device readout lives in the StatusBar.
 //
@@ -47,6 +50,10 @@ private:
     void changeListenerCallback(juce::ChangeBroadcaster*) override;
 
     void openAddPluginMenu();
+    // The Add Plugin menu, shared by [+] and Plugins > Add Plugin; each item
+    // carries its own action.
+    juce::PopupMenu makeAddPluginMenu();
+    bool canAddPlugin() const; // Session Idle and Test Tone off
     void openFileMenu();
     void openAudioSettings();
     void openPluginList();
@@ -70,7 +77,7 @@ private:
     FileActions& files_;
 
     juce::TextButton fileButton_{"File"};
-    juce::TextButton addPluginButton_{"+ Add Plugin"};
+    juce::TextButton addPluginButton_{"+"};
     juce::Label oscPortLabel_;
     juce::TextEditor oscPortEditor_;
     juce::TextButton settingsButton_{"Audio Settings..."};

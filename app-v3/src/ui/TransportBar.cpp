@@ -29,7 +29,7 @@ namespace
 constexpr int kBarPadding = 12;
 constexpr int kButtonGap = 6;
 constexpr int kFileButtonWidth = 64;
-constexpr int kAddButtonWidth = 130;
+constexpr int kAddButtonWidth = 36; // the square [+]
 constexpr int kOscLabelWidth = 34;
 constexpr int kOscEditorWidth = 50;
 constexpr int kSettingsButtonWidth = 140;
@@ -121,7 +121,8 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas, FileActions& f
     addAndMakeVisible(settingsButton_);
     addAndMakeVisible(toneButton_);
     addAndMakeVisible(pluginsButton_);
-    pluginsButton_.setTooltip("Plugin list and rescan");
+    pluginsButton_.setTooltip("Add a plugin, the plugin list, rescan");
+    addPluginButton_.setTooltip("Add plugin");
 
     prevPatchButton_.setTooltip("Previous patch");
     nextPatchButton_.setTooltip("Next patch");
@@ -191,22 +192,22 @@ void TransportBar::resized()
 {
     auto bounds = getLocalBounds().reduced(kBarPadding, 6);
 
-    // Right cluster: OSC port | Audio Settings | Test Tone | Plugins.
+    // Right cluster: OSC port | Audio Settings | Test Tone.
     auto right = bounds.removeFromRight(kOscLabelWidth + kOscEditorWidth + kSettingsButtonWidth + kToneButtonWidth +
-                                        kPluginsButtonWidth + 3 * kButtonGap);
+                                        2 * kButtonGap);
     oscPortLabel_.setBounds(right.removeFromLeft(kOscLabelWidth));
     oscPortEditor_.setBounds(right.removeFromLeft(kOscEditorWidth));
     right.removeFromLeft(kButtonGap);
     settingsButton_.setBounds(right.removeFromLeft(kSettingsButtonWidth));
     right.removeFromLeft(kButtonGap);
     toneButton_.setBounds(right.removeFromLeft(kToneButtonWidth));
-    right.removeFromLeft(kButtonGap);
-    pluginsButton_.setBounds(right.removeFromLeft(kPluginsButtonWidth));
 
     bounds.removeFromRight(kBarPadding);
 
-    // Left cluster: File | Add Plugin.
+    // Left cluster: File | Plugins | +.
     fileButton_.setBounds(bounds.removeFromLeft(kFileButtonWidth));
+    bounds.removeFromLeft(kButtonGap);
+    pluginsButton_.setBounds(bounds.removeFromLeft(kPluginsButtonWidth));
     bounds.removeFromLeft(kButtonGap);
     addPluginButton_.setBounds(bounds.removeFromLeft(kAddButtonWidth));
     bounds.removeFromLeft(kBarPadding);
@@ -342,29 +343,28 @@ void TransportBar::confirmRemovePatch()
 void TransportBar::openPluginsMenu()
 {
     juce::PopupMenu menu;
-    menu.addItem(1, "Plugin List...");
-    menu.addItem(2, "Rescan Plugins");
-    menu.showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(pluginsButton_),
-                       [this](int choice)
-                       {
-                           if (choice == 1)
-                               openPluginList();
-                           else if (choice == 2)
-                               rescanPlugins();
-                       });
+    menu.addSubMenu("Add Plugin", makeAddPluginMenu(), canAddPlugin());
+    menu.addSeparator();
+    menu.addItem("Plugin List...", [this] { openPluginList(); });
+    menu.addItem("Rescan Plugins", [this] { rescanPlugins(); });
+    menu.showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(pluginsButton_));
 }
 
 void TransportBar::updateAddPluginEnabled()
 {
-    // Disable while Session is mid-build/swap, AND while Test Tone is
-    // on — the tone graph is not Session-managed, so adding a plugin
-    // would either be a no-op (post-fix) or stale-pointer-crash (pre-fix).
-    const bool idle = ctx_.session.getState() == session::Session::State::Idle;
-    const bool toneOn = toneButton_.getToggleState();
-    addPluginButton_.setEnabled(idle && !toneOn);
+    addPluginButton_.setEnabled(canAddPlugin());
 }
 
-void TransportBar::openAddPluginMenu()
+bool TransportBar::canAddPlugin() const
+{
+    // Not while Session is mid-build/swap, AND not while Test Tone is on —
+    // the tone graph is not Session-managed, so adding a plugin would either
+    // be a no-op (post-fix) or stale-pointer-crash (pre-fix).
+    const bool idle = ctx_.session.getState() == session::Session::State::Idle;
+    return idle && !toneButton_.getToggleState();
+}
+
+juce::PopupMenu TransportBar::makeAddPluginMenu()
 {
     // Effects-only filter: v3.0 ships as a live-performance effect rack;
     // instruments are sidestepped per the master-plan scope and to dodge
@@ -376,10 +376,8 @@ void TransportBar::openAddPluginMenu()
 
     juce::PopupMenu menu;
 
-    // Effects (scanned plugins) take ids 1..effects.size(). A disabled hint
-    // stands in when none are scanned — built-in nodes are still available below,
-    // so an empty plugin list must NOT block the Add menu.
-    int id = 1;
+    // A disabled hint stands in when no effects are scanned — built-in nodes
+    // are still available below, so an empty plugin list must NOT block adding.
     if (effects.isEmpty())
     {
         const auto allKnown = ctx_.pluginHost.getKnownPlugins().size();
@@ -390,33 +388,22 @@ void TransportBar::openAddPluginMenu()
     else
     {
         for (const auto& desc : effects)
-            menu.addItem(id++, desc.name + "  [" + desc.pluginFormatName + "]");
+            menu.addItem(desc.name + "  [" + desc.pluginFormatName + "]",
+                         [this, desc] { ctx_.editHistory.addPlugin(desc); });
     }
 
-    // Built-in nodes (Level, VU, ...) in their own submenu, with ids offset past
-    // the effects so the two id spaces never collide.
-    const int internalIdBase = id;
+    // Built-in nodes (Level, VU, ...) in their own submenu.
     juce::PopupMenu internalMenu;
-    for (int i = 0; i < internals.size(); ++i)
-        internalMenu.addItem(internalIdBase + i, internals.getReference(i).displayName);
+    for (const auto& type : internals)
+        internalMenu.addItem(type.displayName,
+                             [this, typeId = type.typeId] { ctx_.editHistory.addInternalNode(typeId); });
     menu.addSubMenu("Built-in", internalMenu);
+    return menu;
+}
 
-    auto opts = juce::PopupMenu::Options{}.withTargetComponent(addPluginButton_);
-    menu.showMenuAsync(opts,
-                       [this, effects, internals, internalIdBase](int chosen)
-                       {
-                           if (chosen <= 0)
-                               return;
-                           if (chosen < internalIdBase)
-                           {
-                               if (chosen <= effects.size())
-                                   ctx_.editHistory.addPlugin(effects.getReference(chosen - 1));
-                               return;
-                           }
-                           const int internalIdx = chosen - internalIdBase;
-                           if (internalIdx >= 0 && internalIdx < internals.size())
-                               ctx_.editHistory.addInternalNode(internals.getReference(internalIdx).typeId);
-                       });
+void TransportBar::openAddPluginMenu()
+{
+    makeAddPluginMenu().showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(addPluginButton_));
 }
 
 void TransportBar::openAudioSettings()
