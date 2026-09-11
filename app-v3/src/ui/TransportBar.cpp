@@ -8,7 +8,6 @@
 #include "engine/PluginScanner.h"
 #include "engine/processors/TestToneProcessor.h"
 #include "FileActions.h"
-#include "Pb3LookAndFeel.h"
 #include "session/BankDocument.h"
 #include "session/EditHistory.h"
 #include "session/Preferences.h"
@@ -36,7 +35,6 @@ constexpr int kAddButtonWidth = 36; // the square [+]
 constexpr int kActivityWidth = 104; // MIDI and OSC lights
 constexpr int kCpuMeterWidth = 168;
 constexpr int kSettingsButtonWidth = 90;
-constexpr int kToneButtonWidth = 96;
 constexpr int kPluginsButtonWidth = 90;
 // Patch strip (M3 U5): [<] [n/N  Name] [>].
 constexpr int kPatchArrowWidth = 28;
@@ -99,25 +97,18 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas, FileActions& f
 
     fileButton_.onClick = [this] { openFileMenu(); };
     addPluginButton_.onClick = [this] { openAddPluginMenu(); };
-    settingsButton_.onClick = [this] { showSettingsWindow(ctx_); };
+    settingsButton_.onClick = [this]
+    { makeSettingsMenu().showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(settingsButton_)); };
     pluginsButton_.onClick = [this] { openPluginsMenu(); };
 
-    toneButton_.setClickingTogglesState(true);
-    toneButton_.setColour(juce::TextButton::textColourOnId, tokens::accentPrimary);
-    toneButton_.setTooltip("Play a test tone straight to the output, bypassing the chain");
-
-    // Outline buttons (UI refresh U2): quieter than the actions on the left.
-    settingsButton_.getProperties().set(Pb3LookAndFeel::kOutlineButton, true);
-    toneButton_.getProperties().set(Pb3LookAndFeel::kOutlineButton, true);
-    settingsButton_.setTooltip("Audio device, MIDI inputs and the OSC listener");
-    toneButton_.onClick = [this] { onTestToneToggled(); };
+    settingsButton_.setTooltip("Audio devices, MIDI inputs, OSC and the test tone");
+    testTone_.addListener(this);
 
     addAndMakeVisible(fileButton_);
     addAndMakeVisible(addPluginButton_);
     addAndMakeVisible(activityLights_);
     addAndMakeVisible(cpuMeter_);
     addAndMakeVisible(settingsButton_);
-    addAndMakeVisible(toneButton_);
     addAndMakeVisible(pluginsButton_);
     pluginsButton_.setTooltip("Add a plugin, the plugin list, rescan");
     addPluginButton_.setTooltip("Add plugin");
@@ -141,6 +132,7 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas, FileActions& f
 
 TransportBar::~TransportBar()
 {
+    testTone_.removeListener(this);
     ctx_.bankDocument.beforeSwap = nullptr;
     ctx_.bankDocument.removeChangeListener(this);
     ctx_.session.removeChangeListener(this);
@@ -168,8 +160,11 @@ void TransportBar::changeListenerCallback(juce::ChangeBroadcaster* source)
         // strip's arrows) replaced the tone graph with a patch, and the
         // document re-enabled live capture as it did so. Clear the toggle to
         // match; a rename or an add leaves capture off and the tone playing.
-        if (toneButton_.getToggleState() && ctx_.bankDocument.isLiveCaptureEnabled())
-            toneButton_.setToggleState(false, juce::dontSendNotification);
+        if (toneActive_ && ctx_.bankDocument.isLiveCaptureEnabled())
+        {
+            toneActive_ = false;
+            testTone_ = false; // valueChanged() then finds nothing left to do
+        }
         refreshPatchStrip();
     }
 
@@ -190,21 +185,18 @@ void TransportBar::resized()
 {
     auto bounds = getLocalBounds().reduced(kBarPadding, 6);
 
-    // Right cluster: MIDI / OSC lights | CPU | Settings | Test Tone.
-    auto right = bounds.removeFromRight(kActivityWidth + kCpuMeterWidth + kSettingsButtonWidth + kToneButtonWidth +
-                                        3 * kButtonGap);
+    // Right cluster: MIDI / OSC lights | CPU.
+    auto right = bounds.removeFromRight(kActivityWidth + kCpuMeterWidth + kButtonGap);
     activityLights_.setBounds(right.removeFromLeft(kActivityWidth));
     right.removeFromLeft(kButtonGap);
     cpuMeter_.setBounds(right.removeFromLeft(kCpuMeterWidth));
-    right.removeFromLeft(kButtonGap);
-    settingsButton_.setBounds(right.removeFromLeft(kSettingsButtonWidth));
-    right.removeFromLeft(kButtonGap);
-    toneButton_.setBounds(right.removeFromLeft(kToneButtonWidth));
 
     bounds.removeFromRight(kBarPadding);
 
-    // Left cluster: File | Plugins | +.
+    // Left cluster: File | Settings | Plugins | +.
     fileButton_.setBounds(bounds.removeFromLeft(kFileButtonWidth));
+    bounds.removeFromLeft(kButtonGap);
+    settingsButton_.setBounds(bounds.removeFromLeft(kSettingsButtonWidth));
     bounds.removeFromLeft(kButtonGap);
     pluginsButton_.setBounds(bounds.removeFromLeft(kPluginsButtonWidth));
     bounds.removeFromLeft(kButtonGap);
@@ -360,7 +352,7 @@ bool TransportBar::canAddPlugin() const
     // the tone graph is not Session-managed, so adding a plugin would either
     // be a no-op (post-fix) or stale-pointer-crash (pre-fix).
     const bool idle = ctx_.session.getState() == session::Session::State::Idle;
-    return idle && !toneButton_.getToggleState();
+    return idle && !toneActive_;
 }
 
 juce::PopupMenu TransportBar::makeAddPluginMenu()
@@ -642,6 +634,7 @@ void TransportBar::openFileMenu()
     menu.addItem(5, "Save as Default");
     menu.addItem(6, "Reset Default", files_.hasDefault());
     menu.addSeparator();
+    menu.addSubMenu("Settings", makeSettingsMenu());
     menu.addItem(9, "Patch Bank", true, isPatchBankShown && isPatchBankShown());
     menu.addItem(7, "App Mappings...");
     menu.addSeparator();
@@ -670,9 +663,27 @@ void TransportBar::openFileMenu()
                        });
 }
 
-void TransportBar::onTestToneToggled()
+juce::PopupMenu TransportBar::makeSettingsMenu()
 {
-    if (toneButton_.getToggleState())
+    juce::PopupMenu menu;
+    menu.addItem("Audio Devices...", [this] { showAudioDevicesWindow(ctx_, testTone_); });
+    menu.addItem("MIDI Settings...", [this] { showMidiSettingsWindow(ctx_); });
+    menu.addItem("OSC Settings...", [this] { showOscSettingsWindow(ctx_); });
+    menu.addSeparator();
+    menu.addItem("Test Tone", true, toneActive_, [this] { testTone_ = !toneActive_; });
+    return menu;
+}
+
+void TransportBar::valueChanged(juce::Value&)
+{
+    // The Test Tone switch. Act only on a real change: a bank swap that already
+    // replaced the tone turns the switch off after the fact.
+    const bool want = static_cast<bool>(testTone_.getValue());
+    if (want == toneActive_)
+        return;
+    toneActive_ = want;
+
+    if (want)
     {
         // The live graph is about to stop being the active patch: capture its
         // state into the bank slot first, then suspend live capture so a

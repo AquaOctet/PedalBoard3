@@ -18,26 +18,25 @@ class SignalCanvas;
 // MainWindow:
 //
 //   left:   [File] (New, Open, Save, Save As, Save as Default, Reset
-//           Default, App Mappings; the file actions are ui::FileActions),
-//           [Plugins] (Add Plugin, Plugin List..., Rescan) and [+], which
-//           opens the Add Plugin menu directly: KnownPluginList effects and
-//           built-in nodes, added through EditHistory (AC-UI-N; UI refresh
-//           U1, #32).
+//           Default, Settings, Patch Bank, App Mappings, About; the file
+//           actions are ui::FileActions), [Settings] (Audio Devices..., MIDI
+//           Settings..., OSC Settings... and the Test Tone switch; UI refresh
+//           U10), [Plugins] (Add Plugin, Plugin List..., Rescan) and [+],
+//           which opens the Add Plugin menu directly: KnownPluginList effects
+//           and built-in nodes, added through EditHistory (AC-UI-N; U1, #32).
 //   centre: the patch strip (roadmap M3 U5): [<] [n/N  Name] [>]. The
 //           arrows step the bank; the name button opens the bank menu
 //           (new, duplicate, rename, remove, go to a patch). Every switch
 //           goes through BankDocument, which closes open editors first via
 //           beforeSwap (D1b / AC-UI-P).
 //   right:  the MIDI / OSC activity lights and the CPU meter (UI refresh
-//           U3 / U2), then Settings (audio device, MIDI inputs and the OSC
-//           listener; U10) and Test Tone (diagnostic loopback bypassing the
-//           chain) as outline buttons.
+//           U3 / U2).
 //
 // The audio-device readout lives in the StatusBar.
 //
 // Threading: message thread only. Listens to Session (Add Plugin
 // enablement) and BankDocument (patch strip, Test Tone toggle sync).
-class TransportBar : public juce::Component, private juce::ChangeListener
+class TransportBar : public juce::Component, private juce::ChangeListener, private juce::Value::Listener
 {
 public:
     TransportBar(AppContext& ctx, SignalCanvas& canvas, FileActions& files);
@@ -71,7 +70,11 @@ private:
     void openFileMenu();
     void openPluginList();
     void rescanPlugins();
-    void onTestToneToggled();
+    // The Test Tone switch changed (the Settings menu or the Audio Devices
+    // dialog): start or stop the tone.
+    void valueChanged(juce::Value&) override;
+    // The Settings menu, shared by [Settings] and File > Settings.
+    juce::PopupMenu makeSettingsMenu();
     void updateAddPluginEnabled();
     void openPluginsMenu();
 
@@ -86,10 +89,14 @@ private:
     juce::TextButton fileButton_{"File"};
     juce::TextButton addPluginButton_{"+"};
     juce::TextButton settingsButton_{"Settings"};
-    juce::TextButton toneButton_{"Test Tone"}; // toggles
     juce::TextButton pluginsButton_{"Plugins"};
     ActivityLights activityLights_;
     CpuMeter cpuMeter_;
+
+    // The Test Tone switch: the Settings menu's tick and the Audio Devices
+    // dialog's toggle share it; valueChanged() starts or stops the tone.
+    juce::Value testTone_{false};
+    bool toneActive_{false}; // what is actually playing
 
     juce::TextButton prevPatchButton_{"<"};
     juce::TextButton patchButton_;

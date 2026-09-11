@@ -43,10 +43,10 @@ execution: code
 
 - **KD1. Structure, not colour.** Every colour comes from the existing tokens; the refresh changes layout and density. New components style through `Pb3LookAndFeel` and `tokens::`, never literals.
 - **KD2. Top bar: plugin actions on the left.**
-  - The left cluster is `[File ▾] [Plugins ▾] [+]`.
+  - The left cluster is `[File ▾] [Settings ▾] [Plugins ▾] [+]` (Settings joined it on 2026-09-11, KD10).
   - `+` is a square icon button (tooltip "Add plugin") that opens the add list directly: scanned effects first, then built-ins.
   - The Plugins menu puts the same list first as "Add Plugin ▸", then Plugin List… and Rescan Plugins.
-  - The right end is for watching the rig: MIDI/OSC lights, CPU, then Settings and Test Tone as outline buttons. The OSC port field leaves the top bar for the Settings dialog (KD10).
+  - The right end is for watching the rig: the MIDI/OSC lights and the CPU meter. The OSC port field, Settings and Test Tone have left it (KD10).
   - The plugin browser sidebar stays on the right.
 - **KD3. Small windows fold, not hide.** Below about 1200 px wide, both sidebars fold to 48 px icon strips. Clicking a strip icon slides its panel open over the canvas. The left strip keeps the previous / current / next patch one click away. A three-bar toggle at each panel's top-left (under File, for the bank) collapses it to its strip or opens it again at any window size, and File › Patch Bank does the same; there are no status-bar panel toggles (user decision, 2026-09-11).
 - **KD4. Mappings: both views.**
@@ -58,7 +58,7 @@ execution: code
 - **KD7. The canvas centres the board** with Input and Output next to the chain (merged in !60). `ui/CanvasLayout.h` stays the single geometry source, so a card-size change is a metrics change.
 - **KD8. Activity is counted, not pushed.** MIDI/OSC and per-plugin activity are counters the UI polls on a timer. ControlHub runs on the message thread, so plain counters suffice there. Anything read across threads is a relaxed atomic. Nothing allocates or locks off the message thread.
 - **KD9. Canvas zoom and Fit are deferred.** They're new behaviour (a scale on CanvasLayout, scaled hit-testing and cables), not a layout change, so they wait for 1.x (user confirmed, 2026-09-11). The mockup's zoom control is not built.
-- **KD10. Settings replaces Audio Settings.** One Settings dialog holds the audio device, the MIDI inputs, and the OSC port and multicast address. Those are set once per rig and don't need top-bar space at 960 px (user decision, 2026-09-11).
+- **KD10. Settings is a menu on the left, and under File.** It opens three dialogs: Audio Devices (the device and its channels, plus the Test Tone toggle), MIDI Settings (which inputs are enabled) and OSC Settings (the port and multicast group); a ticked Test Tone item sits at the foot of the menu. Test Tone leaves the main screen. These are set once per rig and don't need top-bar space (user decisions, 2026-09-11).
 
 ---
 
@@ -270,7 +270,7 @@ Pure models (layout, rows, zones) live header-only under `app-v3/src/ui/`, as `C
 
 ### U10. Settings dialog: audio device and OSC
 
-- **Goal:** Audio Settings becomes Settings. One dialog holds the audio device and MIDI inputs (the existing `AudioDeviceSelectorComponent`) plus the OSC port and multicast address, which leave the top bar.
+- **Goal:** Audio Settings becomes a Settings menu (KD10) with Audio Devices, MIDI Settings and OSC Settings dialogs and the Test Tone switch; the OSC port and Test Tone leave the top bar.
 - **Requirements:** KD10
 - **Dependencies:** U1
 - **Files:**

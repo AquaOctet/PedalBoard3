@@ -1,5 +1,10 @@
 #pragma once
 
+namespace juce
+{
+class Value;
+} // namespace juce
+
 namespace pedalboard3
 {
 struct AppContext;
@@ -8,10 +13,19 @@ struct AppContext;
 namespace pedalboard3::ui
 {
 
-// Settings (UI refresh U10, plan KD10): the audio device and MIDI inputs
-// (juce::AudioDeviceSelectorComponent) above the OSC listener's port and
-// multicast group, which moved here from the top bar. Opens as a dialog that
-// owns its content.
-void showSettingsWindow(AppContext& ctx);
+// The Settings dialogs (UI refresh U10, plan KD10), opened from the Settings
+// menu on the left of the top bar and from File > Settings. Each opens as a
+// dialog that owns its content.
+
+// The audio device and its channels (juce::AudioDeviceSelectorComponent), and
+// the Test Tone toggle. `testTone` is the top bar's shared on / off value, so
+// the dialog, the Settings menu and the tone itself stay in step.
+void showAudioDevicesWindow(AppContext& ctx, juce::Value& testTone);
+
+// Which MIDI inputs are enabled: they feed mapped controls and Program Change.
+void showMidiSettingsWindow(AppContext& ctx);
+
+// The OSC listener's port and multicast group.
+void showOscSettingsWindow(AppContext& ctx);
 
 } // namespace pedalboard3::ui
