@@ -28,7 +28,8 @@ std::vector<OscRouter::Update> OscRouter::process(const juce::OSCMessage& msg) c
         if (!raw.has_value())
             continue;
 
-        updates.push_back({m.target, scaleToRange(*raw, m.rangeMin, m.rangeMax, m.inverted)});
+        // press reads the raw argument: a TouchOSC-style button sends 1 then 0.
+        updates.push_back({m.target, scaleToRange(*raw, m.rangeMin, m.rangeMax, m.inverted), *raw >= 0.5f});
     }
 
     return updates;

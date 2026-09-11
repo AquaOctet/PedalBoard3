@@ -43,9 +43,10 @@ struct MidiSource
     bool operator==(const MidiSource&) const noexcept = default;
 };
 
-// What a mapping drives. v3 starts with plugin-parameter targets; PatchSelect
-// and AppCommand are reserved so the model + persistence are forward-compatible
-// (their routing lands with the command dispatcher in a later increment).
+// What a mapping drives. PluginParameter targets are applied to the live graph
+// by session::ControlHub; PatchSelect targets switch the bank and AppCommand
+// targets run a command from session/AppCommands.h, both through
+// session::PatchSwitcher.
 enum class MidiTargetKind
 {
     PluginParameter, // `node` + `parameterIndex`
@@ -71,6 +72,13 @@ struct ParameterUpdate
 {
     MidiTarget target;
     float value{0.0f};
+    // True when the message that produced this update reads as a button press:
+    // a Control Change value of 64 or more, a note-on, any Program Change, a
+    // Pitch Bend, an OSC argument of 0.5 or more, or a latch toggle. App
+    // commands run only on a press, so a release (or a Program Change 0, whose
+    // value is 0) cannot re-trigger a non-idempotent command like "next patch".
+    // Parameter targets ignore it and track the value.
+    bool press{true};
 };
 
 // One source → target binding with value shaping.

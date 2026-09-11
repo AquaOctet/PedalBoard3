@@ -10,8 +10,7 @@ ControlHub::ControlHub()
 {
     // Wire the MIDI surface's sink into the single apply path. Installed once;
     // the lambda captures `this`, which is why the hub is non-movable.
-    midiSurface_.setParameterSink([this](const control::MidiTarget& target, float value)
-                                  { applyUpdate(target, value); });
+    midiSurface_.setParameterSink([this](const control::ParameterUpdate& update) { applyUpdate(update); });
 }
 
 void ControlHub::setNodeResolver(NodeResolver resolver)
@@ -51,7 +50,7 @@ void ControlHub::handleOsc(const juce::OSCMessage& msg)
     // OSC has no learn flow; every matching mapping routes immediately, even
     // while MIDI learn is armed (the two surfaces are independent).
     for (const auto& update : oscRouter_.process(msg))
-        applyUpdate(update.target, update.value);
+        applyUpdate(update);
 }
 
 void ControlHub::armMidiLearn(LearnCallback onLearned)
@@ -79,19 +78,19 @@ void ControlHub::resetLatches() noexcept
     midiSurface_.reset();
 }
 
-void ControlHub::applyUpdate(const control::MidiTarget& target, float value)
+void ControlHub::applyUpdate(const control::ParameterUpdate& update)
 {
-    if (target.kind == control::MidiTargetKind::PluginParameter)
+    if (update.target.kind == control::MidiTargetKind::PluginParameter)
     {
         // Drop NaN/inf before it can reach setValueNotifyingHost (jlimit does not
         // sanitise non-finite input). OSC arguments are the realistic source.
-        if (!std::isfinite(value))
+        if (!std::isfinite(update.value))
             return;
-        applier_.apply(target, value); // false on no-resolver / unknown-node / bad-index — ignored
+        applier_.apply(update.target, update.value); // false on no-resolver / unknown-node / bad-index — ignored
     }
     else if (unhandled_)
     {
-        unhandled_(target, value); // PatchSelect / AppCommand seam
+        unhandled_(update); // PatchSelect / AppCommand seam
     }
 }
 

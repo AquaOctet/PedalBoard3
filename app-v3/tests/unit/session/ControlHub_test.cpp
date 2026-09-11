@@ -381,9 +381,9 @@ TEST_CASE("ControlHub: non-parameter targets go to the unhandled sink, not the g
     int unhandledCount = 0;
     control::MidiTarget seen;
     h.hub.setUnhandledTargetSink(
-        [&](const control::MidiTarget& t, float)
+        [&](const control::ParameterUpdate& u)
         {
-            seen = t;
+            seen = u.target;
             ++unhandledCount;
         });
 
@@ -462,4 +462,20 @@ TEST_CASE("ControlHub: a single dedicated consumer thread drives the parameter",
     consumer.join();
 
     REQUIRE(h.gainA() == Approx(static_cast<float>(last) / 127.0f));
+}
+
+TEST_CASE("ControlHub: the unhandled sink sees each update's press flag", "[session][control][hub]")
+{
+    Harness h;
+    auto m = ccMap(1, 20, 1, 0);
+    m.target.kind = control::MidiTargetKind::AppCommand;
+    m.target.commandId = "patch.next";
+    h.setMidiMappings({m});
+
+    std::vector<bool> presses;
+    h.hub.setUnhandledTargetSink([&](const control::ParameterUpdate& u) { presses.push_back(u.press); });
+
+    h.hub.handleMidi(cc(1, 20, 127));
+    h.hub.handleMidi(cc(1, 20, 0));
+    REQUIRE(presses == std::vector<bool>{true, false});
 }

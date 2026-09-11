@@ -28,8 +28,9 @@ namespace pedalboard3::control
 class MidiControlSurface
 {
 public:
-    // Applies one routed update. Installed by the engine layer.
-    using ParameterSink = std::function<void(const MidiTarget&, float)>;
+    // Applies one routed update (target, value and press flag). Installed by
+    // the engine layer.
+    using ParameterSink = std::function<void(const ParameterUpdate&)>;
     // Receives the captured source when a MIDI-learn completes.
     using LearnCallback = std::function<void(const MidiSource&)>;
 

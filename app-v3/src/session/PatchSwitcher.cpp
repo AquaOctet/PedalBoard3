@@ -1,5 +1,6 @@
 #include "PatchSwitcher.h"
 
+#include "AppCommands.h"
 #include "BankDocument.h"
 #include "ControlHub.h"
 
@@ -10,8 +11,7 @@ namespace pedalboard3::session
 
 PatchSwitcher::PatchSwitcher(BankDocument& bank, ControlHub& hub) : bank_(bank), hub_(hub)
 {
-    hub_.setUnhandledTargetSink([this](const control::MidiTarget& target, float value)
-                                { onUnhandledTarget(target, value); });
+    hub_.setUnhandledTargetSink([this](const control::ParameterUpdate& update) { onUnhandledTarget(update); });
 }
 
 PatchSwitcher::~PatchSwitcher()
@@ -24,24 +24,32 @@ void PatchSwitcher::handleMidi(const juce::MidiMessage& msg)
     // Read before the hub call: a captured message disarms learn.
     const bool learnWasArmed = hub_.isLearning();
 
-    mappingSelectedThisMessage_ = false;
+    mappingOwnedThisMessage_ = false;
     hub_.handleMidi(msg);
-    const bool mappingSelected = std::exchange(mappingSelectedThisMessage_, false);
+    const bool mappingOwned = std::exchange(mappingOwnedThisMessage_, false);
 
-    if (learnWasArmed || mappingSelected || !msg.isProgramChange())
+    if (learnWasArmed || mappingOwned || !msg.isProgramChange())
         return;
 
     bank_.select(msg.getProgramChangeNumber()); // no-op when out of range or already active
 }
 
-void PatchSwitcher::onUnhandledTarget(const control::MidiTarget& target, float /*value*/)
+void PatchSwitcher::onUnhandledTarget(const control::ParameterUpdate& update)
 {
-    // AppCommand targets reach the same sink; dispatching them is M4 work.
-    if (target.kind != control::MidiTargetKind::PatchSelect)
-        return;
-
-    mappingSelectedThisMessage_ = true;
-    bank_.select(target.patchIndex);
+    switch (update.target.kind)
+    {
+    case control::MidiTargetKind::PatchSelect:
+        mappingOwnedThisMessage_ = true;
+        bank_.select(update.target.patchIndex);
+        break;
+    case control::MidiTargetKind::AppCommand:
+        mappingOwnedThisMessage_ = true;
+        if (update.press)
+            invokeAppCommand(bank_, update.target.commandId); // unknown ids are ignored
+        break;
+    case control::MidiTargetKind::PluginParameter:
+        break; // applied by ControlHub; never reaches this sink
+    }
 }
 
 } // namespace pedalboard3::session
