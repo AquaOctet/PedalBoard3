@@ -8,6 +8,7 @@
 #include "session/BankDocument.h"
 #include "session/ControlHub.h"
 #include "session/ControlWiring.h"
+#include "session/PatchSwitcher.h"
 #include "session/Preferences.h"
 #include "session/PreferencesPersister.h"
 #include "session/Session.h"
@@ -72,6 +73,10 @@ private:
     // session in shutdown() — see the reverse-order comment there.
     std::unique_ptr<session::ControlHub> controlHub;
     std::unique_ptr<session::ControlWiring> controlWiring;
+    // M3: Program Change / PatchSelect -> bank switch. Installs controlHub's
+    // unhandled-target sink and is the MIDI drain sink below, so it must
+    // outlive both input edges and die before controlHub and bankDocument.
+    std::unique_ptr<session::PatchSwitcher> patchSwitcher;
     // M2: feeds ControlHub::handleMidi from live MIDI input devices. Captures
     // controlHub by reference in its sink, so must be destroyed before it.
     std::unique_ptr<control::MidiInputManager> midiInputManager;
