@@ -79,12 +79,12 @@ std::vector<MidiRouter::Update> MidiRouter::process(const juce::MidiMessage& msg
             }
 
             if (toggled)
-                updates.push_back({m.target, applyRange(m, st.outputOn ? 1.0f : 0.0f)});
+                updates.push_back({m.target, applyRange(m, st.outputOn ? 1.0f : 0.0f), true}); // a toggle is a press
             continue;
         }
 
         if (const auto raw = rawNormalized(m.source.kind, msg))
-            updates.push_back({m.target, applyRange(m, *raw)});
+            updates.push_back({m.target, applyRange(m, *raw), readPress(m.source.kind, msg) != Press::Up});
     }
 
     return updates;

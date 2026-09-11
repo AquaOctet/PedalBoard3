@@ -40,7 +40,7 @@ TEST_CASE("MidiControlSurface: routes a mapped CC to the parameter sink", "[cont
 {
     MidiControlSurface s;
     std::vector<Applied> applied;
-    s.setParameterSink([&](const MidiTarget& t, float v) { applied.push_back({t, v}); });
+    s.setParameterSink([&](const ParameterUpdate& u) { applied.push_back({u.target, u.value}); });
     s.setMappings({ccToParam(1, 7, 5, 2)});
 
     s.handleIncomingMidi(juce::MidiMessage::controllerEvent(1, 7, 127));
@@ -66,7 +66,7 @@ TEST_CASE("MidiControlSurface: learn captures the next message and suppresses ro
 {
     MidiControlSurface s;
     std::vector<Applied> applied;
-    s.setParameterSink([&](const MidiTarget& t, float v) { applied.push_back({t, v}); });
+    s.setParameterSink([&](const ParameterUpdate& u) { applied.push_back({u.target, u.value}); });
     s.setMappings({ccToParam(1, 7, 5, 0)}); // a pre-existing mapping
 
     MidiSource learned;
@@ -123,7 +123,7 @@ TEST_CASE("MidiControlSurface: cancelLearn leaves no stale capture", "[control][
 {
     MidiControlSurface s;
     std::vector<Applied> applied;
-    s.setParameterSink([&](const MidiTarget& t, float v) { applied.push_back({t, v}); });
+    s.setParameterSink([&](const ParameterUpdate& u) { applied.push_back({u.target, u.value}); });
     s.setMappings({ccToParam(1, 7, 5, 0)});
 
     int learnCount = 0;

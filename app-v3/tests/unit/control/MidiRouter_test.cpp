@@ -145,3 +145,50 @@ TEST_CASE("MidiRouter: reset and setMappings clear latch state", "[control][rout
     out = r.process(juce::MidiMessage::controllerEvent(1, 64, 127));
     REQUIRE(out[0].value == Approx(1.0f));
 }
+
+TEST_CASE("MidiRouter: press follows the button edge for CC and Note; every Program Change is a press",
+          "[control][router]")
+{
+    MidiRouter r;
+    MidiMapping note;
+    note.source.kind = MidiSourceKind::Note;
+    note.source.channel = 1;
+    note.source.controller = 60;
+    MidiMapping pc;
+    pc.source.kind = MidiSourceKind::ProgramChange;
+    pc.source.channel = 0;
+    r.setMappings({ccToParam(1, 20, 1, 0), note, pc});
+
+    REQUIRE(r.process(juce::MidiMessage::controllerEvent(1, 20, 127))[0].press);
+    REQUIRE(r.process(juce::MidiMessage::controllerEvent(1, 20, 64))[0].press);
+    REQUIRE_FALSE(r.process(juce::MidiMessage::controllerEvent(1, 20, 63))[0].press);
+    REQUIRE_FALSE(r.process(juce::MidiMessage::controllerEvent(1, 20, 0))[0].press);
+
+    REQUIRE(r.process(juce::MidiMessage::noteOn(1, 60, 0.8f))[0].press);
+    const auto off = r.process(juce::MidiMessage::noteOff(1, 60));
+    REQUIRE(off.size() == 1);
+    REQUIRE_FALSE(off[0].press);
+
+    const auto pc0 = r.process(juce::MidiMessage::programChange(1, 0));
+    REQUIRE(pc0.size() == 1);
+    REQUIRE(pc0[0].press); // a Program Change 0 is a press even though its value is 0
+    REQUIRE(pc0[0].value == Approx(0.0f));
+}
+
+TEST_CASE("MidiRouter: a latch toggle is always a press; the release emits nothing", "[control][router]")
+{
+    MidiRouter r;
+    auto m = ccToParam(1, 64, 1, 0);
+    m.latch = true;
+    r.setMappings({m});
+
+    const auto on = r.process(juce::MidiMessage::controllerEvent(1, 64, 127));
+    REQUIRE(on.size() == 1);
+    REQUIRE(on[0].press);
+    REQUIRE(r.process(juce::MidiMessage::controllerEvent(1, 64, 0)).empty());
+
+    const auto offToggle = r.process(juce::MidiMessage::controllerEvent(1, 64, 127));
+    REQUIRE(offToggle.size() == 1);
+    REQUIRE(offToggle[0].press);
+    REQUIRE(offToggle[0].value == Approx(0.0f));
+}

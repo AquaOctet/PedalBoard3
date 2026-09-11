@@ -112,3 +112,16 @@ TEST_CASE("OscRouter: a missing argument produces no update", "[control][oscrout
 
     REQUIRE(r.process(juce::OSCMessage("/pb3/gain", 1.0f)).empty());
 }
+
+TEST_CASE("OscRouter: press is set for an argument of 0.5 or more, before range and invert", "[control][oscrouter]")
+{
+    OscRouter r;
+    auto m = addrToParam("/pb3/button", 1, 0);
+    m.inverted = true; // inversion shapes the value, not the press
+    r.setMappings({m});
+
+    REQUIRE(r.process(juce::OSCMessage("/pb3/button", 1.0f))[0].press);
+    REQUIRE(r.process(juce::OSCMessage("/pb3/button", 0.5f))[0].press);
+    REQUIRE_FALSE(r.process(juce::OSCMessage("/pb3/button", 0.49f))[0].press);
+    REQUIRE_FALSE(r.process(juce::OSCMessage("/pb3/button", 0.0f))[0].press);
+}
