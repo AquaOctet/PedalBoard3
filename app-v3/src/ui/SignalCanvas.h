@@ -63,7 +63,7 @@ namespace pedalboard3::ui
 // gradient (audio), cyan (MIDI), dimming (bypassed source), or selection
 // highlight. Derived from `connections_` (arbitrary topology), not chain
 // adjacency.
-class SignalCanvas : public juce::Component, private juce::ChangeListener
+class SignalCanvas : public juce::Component, public juce::DragAndDropTarget, private juce::ChangeListener
 {
 public:
     using NodeId = pedalboard3::session::NodeId;
@@ -87,6 +87,11 @@ public:
     void mouseDrag(const juce::MouseEvent&) override;
     void mouseUp(const juce::MouseEvent&) override;
     bool keyPressed(const juce::KeyPress&) override;
+
+    // Drops from the plugin browser (UI refresh U5): the plugin is added where
+    // it lands, its card centred on the pointer.
+    bool isInterestedInDragSource(const SourceDetails&) override;
+    void itemDropped(const SourceDetails&) override;
 
 private:
     void changeListenerCallback(juce::ChangeBroadcaster*) override;

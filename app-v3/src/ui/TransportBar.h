@@ -54,6 +54,10 @@ public:
     std::function<void()> onTogglePatchBank;
     std::function<bool()> isPatchBankShown;
 
+    // Plugins > Plugin Browser (UI refresh U5): the same pattern.
+    std::function<void()> onTogglePluginBrowser;
+    std::function<bool()> isPluginBrowserShown;
+
     // Rename / remove the playing patch through the bar's prompts; the bank
     // sidebar (UI refresh U4) uses them too.
     void promptRenamePatch();

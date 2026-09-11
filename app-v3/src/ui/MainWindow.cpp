@@ -7,6 +7,7 @@
 #include "ColourScheme.h"
 #include "FileActions.h"
 #include "PatchRail.h"
+#include "PluginBrowser.h"
 #include "session/AppCommands.h"
 #include "session/BankDocument.h"
 #include "session/Preferences.h"
@@ -29,12 +30,16 @@ constexpr int kInitialHeight = 540;
 
 // Container for the three-zone vertical layout. MainWindow owns one
 // of these; everything chain-related lives inside.
-class MainWindow::RootComponent : public juce::Component, public juce::ApplicationCommandTarget
+// The root is also the drag container, so a row dragged out of the plugin
+// browser can land on the canvas (UI refresh U5).
+class MainWindow::RootComponent : public juce::Component,
+                                  public juce::ApplicationCommandTarget,
+                                  public juce::DragAndDropContainer
 {
 public:
     explicit RootComponent(AppContext& ctxRef)
         : ctx_(ctxRef), files_(ctx_), canvas_(ctx_), transportBar_(ctx_, canvas_, files_), statusBar_(ctx_),
-          bankSidebar_(ctx_), patchRail_(ctx_)
+          bankSidebar_(ctx_), patchRail_(ctx_), pluginBrowser_(ctx_)
     {
         addAndMakeVisible(transportBar_);
         addAndMakeVisible(viewport_);
@@ -55,12 +60,24 @@ public:
         addChildComponent(patchRail_);
         patchesOpen_ = ctx_.preferences.getPanelShown("patches", true);
         bankSidebar_.onCollapse = [this] { togglePatchBank(); };
-        bankSidebar_.onDismiss = [this] { closePatchesOverlay(); };
+        bankSidebar_.onDismiss = [this] { closeOverlays(); };
         bankSidebar_.onRenameActive = [this] { transportBar_.promptRenamePatch(); };
         bankSidebar_.onRemoveActive = [this] { transportBar_.confirmRemovePatch(); };
         patchRail_.onOpenPanel = [this] { togglePatchBank(); };
         transportBar_.onTogglePatchBank = [this] { togglePatchBank(); };
         transportBar_.isPatchBankShown = [this] { return bankSidebar_.isVisible(); };
+
+        // The plugin browser on the right (UI refresh U5): the same open /
+        // collapse / slide-open behaviour, its toggle at the top-right, and
+        // Plugins > Plugin Browser.
+        addChildComponent(pluginBrowser_);
+        addChildComponent(browserRail_);
+        browserOpen_ = ctx_.preferences.getPanelShown("browser", true);
+        pluginBrowser_.onCollapse = [this] { togglePluginBrowser(); };
+        pluginBrowser_.onDismiss = [this] { closeOverlays(); };
+        browserRail_.onOpenPanel = [this] { togglePluginBrowser(); };
+        transportBar_.onTogglePluginBrowser = [this] { togglePluginBrowser(); };
+        transportBar_.isPluginBrowserShown = [this] { return pluginBrowser_.isVisible(); };
         // A click on the canvas closes a slid-open panel.
         viewport_.addMouseListener(this, true);
 
@@ -69,7 +86,7 @@ public:
 
     ~RootComponent() override { viewport_.removeMouseListener(this); }
 
-    void mouseDown(const juce::MouseEvent&) override { closePatchesOverlay(); }
+    void mouseDown(const juce::MouseEvent&) override { closeOverlays(); }
 
     void paint(juce::Graphics& g) override { g.fillAll(tokens::bgWindow); }
 
@@ -130,14 +147,15 @@ public:
         transportBar_.setBounds(bounds.removeFromTop(kTransportBarHeight));
         statusBar_.setBounds(bounds.removeFromBottom(kStatusBarHeight));
 
-        // Left panel | canvas (the right panel, the plugin browser, comes with
-        // U5). The bank is docked when open on a wide window, and otherwise an
-        // icon strip whose toggle slides it open over the canvas (plan KD3).
+        // Bank | canvas | plugin browser. A panel is docked when open on a wide
+        // window, and otherwise an icon strip whose toggle slides it open over
+        // the canvas (plan KD3).
         // The canvas re-centres itself when the viewport's size changes.
-        const auto panels =
-            body::layout(bounds, patchesOpen_ ? body::Panel::Open : body::Panel::Collapsed, body::Panel::Hidden);
+        const auto panels = body::layout(bounds,
+                                         patchesOpen_ ? body::Panel::Open : body::Panel::Collapsed,
+                                         browserOpen_ ? body::Panel::Open : body::Panel::Collapsed);
         if (!panels.narrow)
-            patchesOverlay_ = false;
+            patchesOverlay_ = browserOverlay_ = false;
         viewport_.setBounds(panels.canvas);
 
         patchRail_.setVisible(panels.leftFolded);
@@ -156,6 +174,23 @@ public:
             bankSidebar_.setBounds(body::overlayFor(panels, /*leftSide*/ true));
             bankSidebar_.toFront(true);
         }
+
+        browserRail_.setVisible(panels.rightFolded);
+        if (panels.rightFolded)
+            browserRail_.setBounds(panels.right);
+
+        const bool browserDocked = !panels.rightFolded;
+        const bool browserOverlaid = panels.rightFolded && browserOverlay_;
+        pluginBrowser_.setVisible(browserDocked || browserOverlaid);
+        if (browserDocked)
+        {
+            pluginBrowser_.setBounds(panels.right);
+        }
+        else if (browserOverlaid)
+        {
+            pluginBrowser_.setBounds(body::overlayFor(panels, /*leftSide*/ false));
+            pluginBrowser_.toFront(true);
+        }
     }
 
     // The bank's three-bar toggle and File > Patch Bank. On a wide window,
@@ -166,6 +201,7 @@ public:
         if (getWidth() < body::kDefaultMetrics.foldBelow)
         {
             patchesOverlay_ = !patchesOverlay_;
+            browserOverlay_ = false; // one slid-open panel at a time
         }
         else
         {
@@ -176,11 +212,30 @@ public:
         resized();
     }
 
-    void closePatchesOverlay()
+    // The browser's three-bar toggle and Plugins > Plugin Browser, like the
+    // bank's.
+    void togglePluginBrowser()
     {
-        if (!patchesOverlay_)
+        if (getWidth() < body::kDefaultMetrics.foldBelow)
+        {
+            browserOverlay_ = !browserOverlay_;
+            patchesOverlay_ = false; // one slid-open panel at a time
+        }
+        else
+        {
+            browserOpen_ = !browserOpen_;
+            browserOverlay_ = false;
+            ctx_.preferences.setPanelShown("browser", browserOpen_);
+        }
+        resized();
+    }
+
+    // A pick, Escape or a click on the canvas closes a slid-open panel.
+    void closeOverlays()
+    {
+        if (!patchesOverlay_ && !browserOverlay_)
             return;
-        patchesOverlay_ = false;
+        patchesOverlay_ = browserOverlay_ = false;
         resized();
     }
 
@@ -195,6 +250,10 @@ private:
     PatchRail patchRail_;
     bool patchesOpen_{true};     // docked, or collapsed to its strip
     bool patchesOverlay_{false}; // a folded panel slid open over the canvas
+    PluginBrowser pluginBrowser_;
+    BrowserRail browserRail_;
+    bool browserOpen_{true};
+    bool browserOverlay_{false};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RootComponent)
 };

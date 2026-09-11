@@ -29,7 +29,7 @@ BankSidebar::BankSidebar(AppContext& ctx) : ctx_(ctx)
     list_.setColour(juce::ListBox::outlineColourId, juce::Colours::transparentBlack);
     addAndMakeVisible(list_);
 
-    collapseButton_.setShape(bankIcon(), false, true, false);
+    collapseButton_.setShape(panelToggleIcon(), false, true, false);
     collapseButton_.setTooltip("Collapse the patch bank to its strip (File > Patch Bank does the same)");
     collapseButton_.onClick = [this]
     {

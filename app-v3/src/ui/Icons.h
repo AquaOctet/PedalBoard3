@@ -5,9 +5,10 @@
 namespace pedalboard3::ui
 {
 
-// The patch bank's three-bar toggle (UI refresh U6): the same icon on the open
-// sidebar, where it collapses the panel, and on its strip, where it opens it.
-inline juce::Path bankIcon()
+// The side panels' three-bar toggle (UI refresh U6): on an open panel it
+// collapses it, on the panel's strip it opens it. Used by the patch bank and
+// the plugin browser.
+inline juce::Path panelToggleIcon()
 {
     juce::Path bars;
     bars.addRoundedRectangle(0.0f, 0.0f, 14.0f, 2.5f, 1.0f);

@@ -119,6 +119,11 @@ public:
     bool getPanelShown(const juce::String& panel, bool fallback);
     void setPanelShown(const juce::String& panel, bool shown);
 
+    // The plugin browser's recently used entries, newest first (UI refresh U5):
+    // browser ids, "plugin:<identifier>" or "internal:<typeId>".
+    juce::StringArray getRecentPlugins();
+    void setRecentPlugins(const juce::StringArray& ids);
+
     // OSC listener config (M2, KTD4). Plain scalar values via
     // juce::PropertiesFile's typed getters — no XML needed. Port defaults to
     // 9000 when unset. Multicast address is empty ("") when unset, meaning

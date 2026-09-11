@@ -237,3 +237,18 @@ TEST_CASE("EditHistory: edit.undo and edit.redo run through the app commands, no
     REQUIRE(session::invokeAppCommand(doc, session::appcommands::kRedo, &f.h));
     REQUIRE(f.s.getActivePatch().findNode(a)->customName == "Drive");
 }
+
+TEST_CASE("EditHistory: an add at a position commits there, and undo removes it", "[session][edit-history]")
+{
+    Fixture f;
+    f.h.addInternalNode("LevelProcessor", juce::Point<float>{320.0f, 180.0f});
+    f.settle();
+    REQUIRE(f.s.getNodeCount() == 1);
+    const auto node = f.s.getActivePatch().nodes.front();
+    REQUIRE(node.x == 320.0f);
+    REQUIRE(node.y == 180.0f);
+
+    REQUIRE(f.h.undo());
+    f.settle();
+    REQUIRE(f.s.getNodeCount() == 0);
+}
