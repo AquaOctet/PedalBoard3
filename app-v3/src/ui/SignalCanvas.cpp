@@ -61,9 +61,10 @@ SignalCanvas::SignalCanvas(AppContext& ctx) : ctx_(ctx)
 
 SignalCanvas::~SignalCanvas()
 {
-    // Only this canvas arms MIDI learn; drop any pending arm before dying so
-    // a MIDI message arriving after teardown can't invoke a dangling `this`.
-    ctx_.controlHub.cancelMidiLearn();
+    // The mappings dialog is the only thing that arms MIDI learn; destroying
+    // it cancels a pending arm, so a MIDI message arriving after teardown can't
+    // invoke a dangling callback.
+    mappingsWindow_.reset();
     ctx_.session.removeChangeListener(this);
     editors_.clear();
 }
@@ -71,6 +72,7 @@ SignalCanvas::~SignalCanvas()
 void SignalCanvas::closeAllEditors()
 {
     editors_.clear();
+    closeMappings(); // node ids can be reused across the swap that follows
 }
 
 bool SignalCanvas::isGraphIO(NodeId id) const noexcept
@@ -90,9 +92,9 @@ void SignalCanvas::changeListenerCallback(juce::ChangeBroadcaster*)
         lastPatchGeneration_ = gen;
         editors_.clear();
         // A whole-patch swap can reuse NodeIds for different plugins
-        // (crash-hunt #7) — an in-flight learn's captured target id would no
-        // longer mean what the user picked it for.
-        cancelMidiLearnIfArmed();
+        // (crash-hunt #7), so the mappings dialog's node id would no longer
+        // mean the plugin it was opened for.
+        closeMappings();
     }
 
     auto snaps = ctx_.session.getNodeSnapshots();
@@ -168,7 +170,7 @@ std::unique_ptr<PluginCard> SignalCanvas::makeCard(const PluginCard::NodeSnapsho
         [this](NodeId id) { onCardRemove(id); },
         [this](NodeId id) { onCardDragging(id); },
         [this](NodeId id, juce::Point<int> p) { onCardMoved(id, p); },
-        [this](NodeId id) { onCardMidiLearn(id); },
+        [this](NodeId id) { openMappings(id); },
     };
     return std::make_unique<PluginCard>(s, std::move(cb));
 }
@@ -441,8 +443,8 @@ void SignalCanvas::onCardRemove(NodeId id)
     // BypassableInstance inline before firing the async change
     // message, so a listener-side close would be too late.
     editors_.erase(id);
-    if (midiLearnArmedNode_ && *midiLearnArmedNode_ == id)
-        cancelMidiLearnIfArmed(); // the card (and its visual) is about to go away too
+    if (mappingsWindow_ != nullptr && mappingsWindow_->getNodeId() == id)
+        closeMappings(); // its node is about to go away
     ctx_.session.removeNode(id);
 }
 
@@ -464,82 +466,36 @@ void SignalCanvas::onCardDragging(NodeId)
     repaint();
 }
 
-void SignalCanvas::cancelMidiLearnIfArmed()
+void SignalCanvas::openMappings(NodeId id)
 {
-    if (!midiLearnArmedNode_)
-        return;
-    ctx_.controlHub.cancelMidiLearn();
-    auto it = idToIndex_.find(*midiLearnArmedNode_);
-    if (it != idToIndex_.end())
-        cards_[it->second]->setMidiLearnArmed(false);
-    midiLearnArmedNode_.reset();
-}
-
-void SignalCanvas::onCardMidiLearn(NodeId id)
-{
-    // Clicking Learn again on the already-armed card cancels it (AC: cancel
-    // while armed creates no mapping and re-enables normal routing).
-    if (midiLearnArmedNode_ && *midiLearnArmedNode_ == id)
+    if (mappingsWindow_ != nullptr)
     {
-        cancelMidiLearnIfArmed();
-        return;
+        if (mappingsWindow_->getNodeId() == id)
+        {
+            mappingsWindow_->toFront(true);
+            return;
+        }
+        closeMappings();
     }
 
-    auto* proc = ctx_.session.getHostedPlugin(id);
-    if (proc == nullptr)
-        return;
-    const auto& params = proc->getParameters();
-    if (params.isEmpty())
-        return;
+    juce::String title = "Plugin";
+    for (const auto& s : ctx_.session.getNodeSnapshots())
+    {
+        if (s.id == id)
+        {
+            title = s.customName.isNotEmpty() ? s.customName : s.name;
+            break;
+        }
+    }
 
-    juce::PopupMenu menu;
-    for (int i = 0; i < params.size(); ++i)
-        menu.addItem(i + 1, params[i]->getName(64));
+    // Same contract as EditorWindow: the close button calls back and the
+    // canvas drops the window.
+    mappingsWindow_ = std::make_unique<MappingsWindow>(ctx_, id, title, [this] { closeMappings(); });
+}
 
-    // A juce::PopupMenu is an independent top-level window, not tied to the
-    // lifetime of the component that opened it: closing the app while this
-    // picker is still open does not force-dismiss it, so a raw `this` capture
-    // would fire into a destroyed SignalCanvas. SafePointer guards both this
-    // callback and the nested armMidiLearn one.
-    juce::Component::SafePointer<SignalCanvas> safeThis(this);
-    menu.showMenuAsync(juce::PopupMenu::Options{},
-                       [safeThis, id](int result)
-                       {
-                           if (safeThis == nullptr)
-                               return;
-                           if (result <= 0)
-                               return; // dismissed with no selection
-
-                           const int parameterIndex = result - 1;
-
-                           // Only one card armed at a time (ControlHub::armMidiLearn re-arming
-                           // silently replaces the previous learn — mirror that in the UI too).
-                           safeThis->cancelMidiLearnIfArmed();
-
-                           safeThis->midiLearnArmedNode_ = id;
-                           if (auto it = safeThis->idToIndex_.find(id); it != safeThis->idToIndex_.end())
-                               safeThis->cards_[it->second]->setMidiLearnArmed(true);
-
-                           safeThis->ctx_.controlHub.armMidiLearn(
-                               [safeThis, id, parameterIndex](const control::MidiSource& source)
-                               {
-                                   if (safeThis == nullptr)
-                                       return;
-                                   control::MidiMapping mapping;
-                                   mapping.source = source;
-                                   mapping.target.kind = control::MidiTargetKind::PluginParameter;
-                                   mapping.target.node = id;
-                                   mapping.target.parameterIndex = parameterIndex;
-                                   safeThis->ctx_.session.addMidiMapping(mapping);
-
-                                   if (safeThis->midiLearnArmedNode_ && *safeThis->midiLearnArmedNode_ == id)
-                                   {
-                                       if (auto it = safeThis->idToIndex_.find(id); it != safeThis->idToIndex_.end())
-                                           safeThis->cards_[it->second]->setMidiLearnArmed(false);
-                                       safeThis->midiLearnArmedNode_.reset();
-                                   }
-                               });
-                       });
+void SignalCanvas::closeMappings()
+{
+    mappingsWindow_.reset();
 }
 
 // ----- Port drag-to-connect / cable selection (U4) ---------------------------
