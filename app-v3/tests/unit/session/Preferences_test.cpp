@@ -629,3 +629,16 @@ TEST_CASE("DefaultBank: Don't Save at quit reverts the persisted bank to the sav
     prefs.flush();
     dir.deleteRecursively();
 }
+
+TEST_CASE("Preferences: the window state round-trips", "[session][preferences][window]")
+{
+    session::Preferences prefs;
+    const auto previous = prefs.getWindowState(); // the developer's real window; put it back
+
+    prefs.setWindowState("120 80 1280 720");
+    prefs.flush();
+    REQUIRE(prefs.getWindowState() == "120 80 1280 720");
+
+    prefs.setWindowState(previous);
+    prefs.flush();
+}

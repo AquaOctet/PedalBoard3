@@ -139,11 +139,15 @@ MainWindow::MainWindow(const juce::String& name, AppContext& context)
     updateTitle();
 
     centreWithSize(kInitialWidth, kInitialHeight);
+    restoreWindowPosition();
     setVisible(true);
 }
 
 MainWindow::~MainWindow()
 {
+    // Finish pass U6: remember where the window was. Preferences saves it on
+    // teardown (App::shutdown destroys this window before Preferences).
+    ctx_.preferences.setWindowState(getWindowStateAsString());
     ctx_.bankDocument.removeChangeListener(this);
     ctx_.bankDocument.onSaveRequested = nullptr;
     appMappingsWindow_.reset();
@@ -205,6 +209,21 @@ void MainWindow::updateTitle()
 {
     const auto& doc = ctx_.bankDocument;
     setName(juce::String(doc.isModified() ? "* " : "") + boardDisplayName(doc.currentFile()) + " - " + appName_);
+}
+
+void MainWindow::restoreWindowPosition()
+{
+    const auto saved = ctx_.preferences.getWindowState();
+    if (saved.isEmpty() || !restoreWindowStateFromString(saved))
+        return;
+
+    // The title bar has to land on a display the user can reach; after a
+    // monitor is unplugged the saved spot can be off every screen.
+    const auto titleStrip = getBounds().withHeight(kTransportBarHeight).reduced(kTransportBarHeight, 0);
+    for (const auto& display : juce::Desktop::getInstance().getDisplays().displays)
+        if (display.userArea.intersects(titleStrip))
+            return;
+    centreWithSize(kInitialWidth, kInitialHeight);
 }
 
 } // namespace pedalboard3::ui

@@ -109,6 +109,11 @@ public:
     std::unique_ptr<juce::XmlElement> getKeyMappings();
     void setKeyMappings(const juce::XmlElement& xml);
 
+    // The main window's position and size (finish pass U6): the string
+    // juce::ResizableWindow::getWindowStateAsString writes. Empty on first run.
+    juce::String getWindowState();
+    void setWindowState(const juce::String& state);
+
     // OSC listener config (M2, KTD4). Plain scalar values via
     // juce::PropertiesFile's typed getters — no XML needed. Port defaults to
     // 9000 when unset. Multicast address is empty ("") when unset, meaning

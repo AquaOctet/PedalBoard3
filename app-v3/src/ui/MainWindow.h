@@ -49,6 +49,9 @@ private:
     void changeListenerCallback(juce::ChangeBroadcaster*) override;
     void openAppMappings();
     void updateTitle();
+    // Reopen where the window was left (finish pass U6), unless that spot is
+    // no longer on a connected display.
+    void restoreWindowPosition();
 
     class RootComponent;
     AppContext& ctx_;

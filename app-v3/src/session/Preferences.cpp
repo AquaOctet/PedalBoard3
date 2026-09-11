@@ -15,6 +15,7 @@ constexpr auto kActiveBankFileKey = "activeBankFile";
 constexpr auto kActiveBankModifiedKey = "activeBankModified";
 constexpr auto kAppMappingsKey = "appMappings";
 constexpr auto kKeyMappingsKey = "keyMappings";
+constexpr auto kWindowStateKey = "windowState";
 constexpr auto kOscPortKey = "oscPort";
 constexpr auto kOscMulticastAddressKey = "oscMulticastAddress";
 
@@ -259,6 +260,19 @@ void Preferences::setKeyMappings(const juce::XmlElement& xml)
 {
     if (auto* store = props_.getUserSettings())
         store->setValue(kKeyMappingsKey, &xml);
+}
+
+juce::String Preferences::getWindowState()
+{
+    if (auto* store = props_.getUserSettings())
+        return store->getValue(kWindowStateKey);
+    return {};
+}
+
+void Preferences::setWindowState(const juce::String& state)
+{
+    if (auto* store = props_.getUserSettings())
+        store->setValue(kWindowStateKey, state);
 }
 
 int Preferences::getOscPort()
