@@ -56,6 +56,25 @@ if(NOT PB3_LINT_ONLY)
             "JUCE_BUILD_EXAMPLES OFF"
     )
 
+    # Let CMake own the MSVC debug-info format. JUCE's
+    # juce_recommended_config_flags hard-codes "/Od /Zi" for Debug, and that
+    # explicit /Zi comes AFTER the /Z7 CMake emits when
+    # CMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded is requested, so the PDB
+    # side-channel wins and ccache reports every JUCE-consuming object as
+    # "unsupported compiler option" (CI: 185/294 uncacheable). Strip /Zi here;
+    # CMake still defaults to ProgramDatabase (/Zi) when nothing is requested,
+    # so local Debug builds are unchanged, while CI passes Embedded (/Z7) and
+    # gets cacheable objects.
+    if(MSVC AND TARGET juce_recommended_config_flags)
+        get_target_property(_pb3_juce_cfg_opts juce_recommended_config_flags INTERFACE_COMPILE_OPTIONS)
+        if(_pb3_juce_cfg_opts)
+            string(REPLACE "/Od /Zi" "/Od" _pb3_juce_cfg_opts "${_pb3_juce_cfg_opts}")
+            string(REPLACE "/Zi" "" _pb3_juce_cfg_opts "${_pb3_juce_cfg_opts}")
+            set_target_properties(juce_recommended_config_flags
+                PROPERTIES INTERFACE_COMPILE_OPTIONS "${_pb3_juce_cfg_opts}")
+        endif()
+    endif()
+
     # Mark every JUCE module's INTERFACE_INCLUDE_DIRECTORIES as SYSTEM so
     # GCC/Clang treat JUCE headers as system headers (-isystem) and don't
     # emit warnings from them. This is the second half of the warning-

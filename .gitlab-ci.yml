@@ -18,10 +18,14 @@
 # green MR doesn't need a slow re-run on merge); main runs only the fast
 # Linux gate plus the manual release jobs. `allow_failure: true` while it
 # stabilises.
-# Windows: build + unit tests on GitLab.com's saas-windows-medium-amd64
-# (Windows Server 2022, VS 2022 Build Tools + CMake preinstalled). Same
-# MR-only posture as macOS (no ~34 min Windows re-run on main), same
-# `allow_failure: true`. Installer signing for releases is still Phase 6 work.
+# Windows: build + unit tests in ONE job on GitLab.com's
+# saas-windows-medium-amd64 (Windows Server 2022, VS 2022 Build Tools + CMake
+# preinstalled). Same MR-only posture as macOS, same `allow_failure: true`.
+# MSVC objects are cached with ccache (pinned release zip, /Z7 debug info so
+# the objects are cacheable); a warm cache turns the ~25 min JUCE compile
+# into a few minutes. ctest runs in the build job because a second Windows
+# VM boot + setup costs more than the tests themselves. Installer signing
+# for releases is still Phase 6 work.
 #
 # Full multi-platform + signing pipeline lives in the plan at
 # docs/plans/2026-04-12-001-feat-pedalboard-3-rewrite-plan.md (Appendix C).
@@ -69,8 +73,8 @@ default:
   - if: '$CI_COMMIT_BRANCH == "v3-rewrite"'
   - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
 
-# Windows build/test runs on every MR push (the gate) + v3-rewrite, but NOT on
-# main — same rationale as macOS: skip the ~34 min Windows Debug re-run on a
+# Windows build+test runs on every MR push (the gate) + v3-rewrite, but NOT on
+# main — same rationale as macOS: skip the slow Windows Debug re-run on a
 # merge that was already green on its MR. On main, Windows is exercised only by
 # the manual release:windows job. `allow_failure: true` until the runs stabilise.
 # Signing-cert provisioning for installers remains Phase 6 (not needed here).
@@ -97,13 +101,18 @@ default:
       paths: [ .ccache/ ]
       policy: pull-push
 
-# Windows runner has no ccache (sccache is the analog but not yet wired).
-# CPM cache alone is the big-ticket item — it saves the JUCE source tarball
-# fetch (+ Catch2 etc.) per pipeline. ~50 MB cache, ~30 s saved on rerun.
+# Windows: the CPM cache saves the JUCE source tarball fetch (+ Catch2 etc.)
+# per pipeline; the ccache cache holds the MSVC objects (ccache 4.x speaks
+# cl.exe — see .windows-setup for how it gets onto the runner). Keyed per job
+# so Debug (build:windows) and RelWithDebInfo (release:windows) objects don't
+# evict each other.
 .cache-windows: &cache-windows
   cache:
     - key: "cpm-${CI_PROJECT_PATH_SLUG}"
       paths: [ .cpm-cache/ ]
+      policy: pull-push
+    - key: "ccache-${CI_JOB_NAME_SLUG}"
+      paths: [ .ccache/ ]
       policy: pull-push
 
 # saas-macos-large-m2pro ships Xcode + Homebrew preinstalled but minimal
@@ -132,6 +141,38 @@ default:
 # -First 1 is safer than the bare -property form (avoids parsing edge
 # cases when multiple installs are present).
 .windows-setup: &windows-setup
+  # ccache for MSVC (pinned release zip, sha256-verified, no package manager
+  # round-trip). CMake picks the launcher up from the CMAKE_*_COMPILER_LAUNCHER
+  # environment variables. The debug-info format has NO environment form, so
+  # the configure lines below pass -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
+  # explicitly: that switches Debug from /Zi (PDB side-channel, which ccache
+  # reports as "unsupported compiler option" — 294/294 uncacheable on the
+  # first attempt) to /Z7 (debug info inside the .obj). cmake_minimum_required
+  # is 3.25, so policy CMP0141 is already NEW and the variable is honoured.
+  # A failed download leaves ccache unset and the build proceeds uncached.
+  - |
+      $ccacheVer  = "4.11.3"
+      $ccacheSha  = "bfd031cad091b7db7e68c3303be542b0f7fee7a3e716d76ec6f7e6c7ef4b3526"
+      $ccacheDir  = Join-Path $env:CI_PROJECT_DIR ".tools\ccache-$ccacheVer-windows-x86_64"
+      if (-not (Test-Path (Join-Path $ccacheDir "ccache.exe"))) {
+          $zip = Join-Path $env:CI_PROJECT_DIR "ccache.zip"
+          curl.exe --fail --silent --show-error --location --output $zip "https://github.com/ccache/ccache/releases/download/v$ccacheVer/ccache-$ccacheVer-windows-x86_64.zip"
+          if ($LASTEXITCODE -eq 0 -and (Test-Path $zip) -and ((Get-FileHash $zip -Algorithm SHA256).Hash.ToLower() -eq $ccacheSha)) {
+              Expand-Archive -Force -Path $zip -DestinationPath (Join-Path $env:CI_PROJECT_DIR ".tools")
+          } else {
+              Write-Warning "ccache download or checksum failed; building without a compiler cache."
+          }
+          Remove-Item $zip -ErrorAction SilentlyContinue
+          cmd /c "exit 0"
+      }
+      if (Test-Path (Join-Path $ccacheDir "ccache.exe")) {
+          $env:PATH = "$ccacheDir;$env:PATH"
+          $env:CMAKE_C_COMPILER_LAUNCHER   = "ccache"
+          $env:CMAKE_CXX_COMPILER_LAUNCHER = "ccache"
+          $env:CMAKE_MSVC_DEBUG_INFORMATION_FORMAT = "Embedded"
+          ccache --version | Select-Object -First 1
+          ccache --zero-stats | Out-Null
+      }
   # juceaide failure — root cause finally identified in pipeline #136's
   # diagnostic dump. Direct `juceaide.exe version` invocation returned
   # exit code -1073741515 (0xC0000135 / STATUS_DLL_NOT_FOUND), not the
@@ -360,14 +401,14 @@ build:windows:
 
       Patch-JuceForDcomp | Out-Null
 
-      cmake --preset $env:PB3_BUILD_PRESET -S app-v3
+      cmake --preset $env:PB3_BUILD_PRESET -S app-v3 -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
       if ($LASTEXITCODE -ne 0) {
           Write-Host "=== first cmake failed; patching JUCE for dcomp delay-load and retrying ==="
           $applied = Patch-JuceForDcomp
           if ($applied) {
               $juceTools = "build\$($env:PB3_BUILD_PRESET)\_deps\juce-build\tools"
               if (Test-Path $juceTools) { Remove-Item -Recurse -Force $juceTools -ErrorAction SilentlyContinue }
-              cmake --preset $env:PB3_BUILD_PRESET -S app-v3
+              cmake --preset $env:PB3_BUILD_PRESET -S app-v3 -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
           }
           if ($LASTEXITCODE -ne 0) {
               Write-Host "=== cmake configure still failing after delay-load patch; full diagnostic ==="
@@ -390,6 +431,10 @@ build:windows:
           }
       }
     - cmake --build --preset $env:PB3_BUILD_PRESET -- -j $env:NUMBER_OF_PROCESSORS
+    - 'if (Get-Command ccache -ErrorAction SilentlyContinue) { ccache --show-stats -v }'
+    # Unit tests in the same job: a separate test job would re-pay the VM boot,
+    # cache restore and the whole setup above (~8-10 min) for a ~1 min ctest.
+    - ctest --preset $env:PB3_BUILD_PRESET
   artifacts:
     paths:
       - build/windows-dev/
@@ -454,17 +499,6 @@ test:macos:unit:
   before_script: *macos-setup
   script:
     - ctest --preset macos-dev
-
-test:windows:unit:
-  stage: test
-  tags: [ saas-windows-medium-amd64 ]
-  rules: *rules-windows
-  needs: [ build:windows ]
-  allow_failure: true
-  <<: *cache-windows
-  before_script: *windows-setup
-  script:
-    - ctest --preset windows-dev
 
 # ===========================================================================
 # RELEASE — RelWithDebInfo builds, MANUAL on the main branch only.
