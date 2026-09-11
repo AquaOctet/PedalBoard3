@@ -11,6 +11,7 @@ constexpr auto kKnownPluginListKey = "knownPluginList";
 constexpr auto kActivePluginDescriptionKey = "activePluginDescription";
 constexpr auto kActivePatchKey = "activePatch";
 constexpr auto kActiveBankKey = "activeBank";
+constexpr auto kAppMappingsKey = "appMappings";
 constexpr auto kOscPortKey = "oscPort";
 constexpr auto kOscMulticastAddressKey = "oscMulticastAddress";
 
@@ -200,6 +201,19 @@ void Preferences::clearActiveBank()
         store->removeValue(kActiveBankKey);
         store->removeValue(kActivePatchKey);
     }
+}
+
+std::unique_ptr<juce::XmlElement> Preferences::getAppMappings()
+{
+    if (auto* store = props_.getUserSettings())
+        return readXml(*store, kAppMappingsKey);
+    return nullptr;
+}
+
+void Preferences::setAppMappings(const juce::XmlElement& xml)
+{
+    if (auto* store = props_.getUserSettings())
+        store->setValue(kAppMappingsKey, &xml);
 }
 
 int Preferences::getOscPort()

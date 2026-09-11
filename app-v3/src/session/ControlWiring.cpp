@@ -1,12 +1,13 @@
 #include "ControlWiring.h"
 
+#include "AppMappings.h"
 #include "Session.h"
 
 namespace pedalboard3::session
 {
 
-ControlWiring::ControlWiring(Session& session, ControlHub& hub)
-    : session_(session), hub_(hub), lastPatchGeneration_(session.getPatchGeneration()),
+ControlWiring::ControlWiring(Session& session, ControlHub& hub, AppMappings* appMappings)
+    : session_(session), hub_(hub), appMappings_(appMappings), lastPatchGeneration_(session.getPatchGeneration()),
       lastMappingsRevision_(session.getMappingsRevision())
 {
     // Resolve by NodeId per call (session.getHostedPlugin), so this stays
@@ -19,15 +20,25 @@ ControlWiring::ControlWiring(Session& session, ControlHub& hub)
     feedMappings();
 
     session_.addChangeListener(this);
+    if (appMappings_ != nullptr)
+        appMappings_->addChangeListener(this);
 }
 
 ControlWiring::~ControlWiring()
 {
+    if (appMappings_ != nullptr)
+        appMappings_->removeChangeListener(this);
     session_.removeChangeListener(this);
 }
 
-void ControlWiring::changeListenerCallback(juce::ChangeBroadcaster*)
+void ControlWiring::changeListenerCallback(juce::ChangeBroadcaster* source)
 {
+    if (appMappings_ != nullptr && source == appMappings_)
+    {
+        feedMappings(); // the app half changed; the patch did not
+        return;
+    }
+
     const auto generation = session_.getPatchGeneration();
     const auto revision = session_.getMappingsRevision();
 
@@ -53,9 +64,16 @@ void ControlWiring::changeListenerCallback(juce::ChangeBroadcaster*)
 
 void ControlWiring::feedMappings()
 {
-    const auto patch = session_.getActivePatch();
-    hub_.setMidiMappings(patch.midiMappings);
-    hub_.setOscMappings(patch.oscMappings);
+    auto patch = session_.getActivePatch();
+    auto midi = std::move(patch.midiMappings);
+    auto osc = std::move(patch.oscMappings);
+    if (appMappings_ != nullptr)
+    {
+        midi.insert(midi.end(), appMappings_->midi().begin(), appMappings_->midi().end());
+        osc.insert(osc.end(), appMappings_->osc().begin(), appMappings_->osc().end());
+    }
+    hub_.setMidiMappings(std::move(midi));
+    hub_.setOscMappings(std::move(osc));
 }
 
 } // namespace pedalboard3::session

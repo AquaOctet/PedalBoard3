@@ -9,6 +9,7 @@
 namespace pedalboard3::session
 {
 
+class AppMappings;
 class Session;
 
 // Feeds ControlHub from the active Session patch (roadmap M2, plan
@@ -43,7 +44,10 @@ class Session;
 class ControlWiring : private juce::ChangeListener
 {
 public:
-    ControlWiring(Session& session, ControlHub& hub);
+    // `appMappings` (optional): app-level mappings fed beside the patch's and
+    // re-fed on every AppMappings change; they survive patch swaps because
+    // only the patch half of the table comes from Session (roadmap M4 U3).
+    ControlWiring(Session& session, ControlHub& hub, AppMappings* appMappings = nullptr);
     ~ControlWiring() override;
 
 private:
@@ -52,6 +56,7 @@ private:
 
     Session& session_;
     ControlHub& hub_;
+    AppMappings* appMappings_;
 
     std::uint64_t lastPatchGeneration_;
     std::uint64_t lastMappingsRevision_;

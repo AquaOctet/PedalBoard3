@@ -8,6 +8,7 @@ class PluginHost;
 
 namespace pedalboard3::session
 {
+class AppMappings;
 class BankDocument;
 class Preferences;
 class Session;
@@ -47,6 +48,7 @@ struct AppContext
     session::Session& session;
     session::BankDocument& bankDocument;
     session::ControlHub& controlHub;
+    session::AppMappings& appMappings;
     control::OscServer& oscServer;
 };
 

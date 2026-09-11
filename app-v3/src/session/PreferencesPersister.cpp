@@ -1,5 +1,6 @@
 #include "PreferencesPersister.h"
 
+#include "AppMappings.h"
 #include "BankDocument.h"
 #include "engine/AudioEngine.h"
 #include "engine/PluginHost.h"
@@ -99,17 +100,21 @@ PreferencesPersister::PreferencesPersister(Preferences& prefs,
                                            engine::AudioEngine& engine,
                                            engine::PluginHost& host,
                                            Session& session,
-                                           BankDocument& bankDocument)
-    : prefs_(prefs), engine_(engine), host_(host), session_(session), bankDocument_(bankDocument)
+                                           BankDocument& bankDocument,
+                                           AppMappings& appMappings)
+    : prefs_(prefs), engine_(engine), host_(host), session_(session), bankDocument_(bankDocument),
+      appMappings_(appMappings)
 {
     if (auto* dm = engine_.getDeviceManager())
         dm->addChangeListener(this);
     host_.getKnownPluginList().addChangeListener(this);
     session_.addChangeListener(this);
+    appMappings_.addChangeListener(this);
 }
 
 PreferencesPersister::~PreferencesPersister()
 {
+    appMappings_.removeChangeListener(this);
     session_.removeChangeListener(this);
     host_.getKnownPluginList().removeChangeListener(this);
     if (auto* dm = engine_.getDeviceManager())
@@ -140,6 +145,13 @@ void PreferencesPersister::changeListenerCallback(juce::ChangeBroadcaster* sourc
         // to the same crash on next launch. Eager flush makes the blacklist
         // crash-durable.
         prefs_.flush();
+        return;
+    }
+
+    if (source == &appMappings_)
+    {
+        if (auto xml = appMappings_.toXml())
+            prefs_.setAppMappings(*xml);
         return;
     }
 

@@ -499,3 +499,21 @@ TEST_CASE("Preferences: a bank with a corrupt patch is rejected", "[session][pre
     prefs.clearActiveBank();
     prefs.flush();
 }
+
+TEST_CASE("Preferences: app mappings XML round-trips through the store", "[session][preferences][app-mappings]")
+{
+    session::Preferences prefs;
+    juce::XmlElement xml("APP_MAPPINGS");
+    xml.setAttribute("probe", 7);
+    prefs.setAppMappings(xml);
+    prefs.flush();
+
+    auto back = prefs.getAppMappings();
+    REQUIRE(back != nullptr);
+    REQUIRE(back->hasTagName("APP_MAPPINGS"));
+    REQUIRE(back->getIntAttribute("probe") == 7);
+
+    if (auto* store = prefs.getStore())
+        store->removeValue("appMappings");
+    prefs.flush();
+}

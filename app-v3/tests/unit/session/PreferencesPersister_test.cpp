@@ -25,6 +25,7 @@
 
 #include "engine/AudioEngine.h"
 #include "engine/PluginHost.h"
+#include "session/AppMappings.h"
 #include "session/BankDocument.h"
 #include "session/Preferences.h"
 #include "session/PreferencesPersister.h"
@@ -55,6 +56,7 @@ struct PrefsScrubber
             store->removeValue("activePluginDescription");
             store->removeValue("activePatch");
             store->removeValue("activeBank");
+            store->removeValue("appMappings");
         }
         prefs_.flush();
     }
@@ -92,7 +94,8 @@ TEST_CASE("PreferencesPersister: a KnownPluginList change writes XML and eagerly
     {
         session::Session sess(eng, host);
         session::BankDocument doc(sess);
-        session::PreferencesPersister persister(prefs, eng, host, sess, doc);
+        session::AppMappings appMaps;
+        session::PreferencesPersister persister(prefs, eng, host, sess, doc, appMaps);
 
         // Mutate the live KnownPluginList. addToBlacklist sends a change
         // message asynchronously; without a running MessageManager we
@@ -138,7 +141,8 @@ TEST_CASE("PreferencesPersister: change before construction is ignored, change a
 
     {
         session::BankDocument doc(sess);
-        session::PreferencesPersister persister(prefs, eng, host, sess, doc);
+        session::AppMappings appMaps;
+        session::PreferencesPersister persister(prefs, eng, host, sess, doc, appMaps);
 
         // Post-construction mutation -- listener fires, persister writes.
         host.getKnownPluginList().addToBlacklist(kSyntheticBlacklistPath);
@@ -177,7 +181,8 @@ TEST_CASE("PreferencesPersister: lifetime -- outliving the persister with a Sess
 
     {
         session::BankDocument doc(sess);
-        session::PreferencesPersister persister(prefs, eng, host, sess, doc);
+        session::AppMappings appMaps;
+        session::PreferencesPersister persister(prefs, eng, host, sess, doc, appMaps);
     } // dtor deregisters from sess + host.knownPluginList + eng.deviceManager
 
     // After dtor, sending a synchronous change must not re-enter the
@@ -186,4 +191,37 @@ TEST_CASE("PreferencesPersister: lifetime -- outliving the persister with a Sess
     // missed deregistration would crash here).
     sess.sendSynchronousChangeMessage();
     SUCCEED();
+}
+
+TEST_CASE("PreferencesPersister: an AppMappings change writes the app mappings to Preferences",
+          "[session][preferences-persister][app-mappings]")
+{
+    session::Preferences prefs;
+    PrefsScrubber scrub{prefs};
+
+    engine::AudioEngine eng;
+    eng.initialise();
+    engine::PluginHost host;
+
+    {
+        session::Session sess(eng, host);
+        session::BankDocument doc(sess);
+        session::AppMappings appMaps;
+        session::PreferencesPersister persister(prefs, eng, host, sess, doc, appMaps);
+
+        control::MidiMapping next;
+        next.source.kind = control::MidiSourceKind::ControlChange;
+        next.source.controller = 64;
+        next.target.kind = control::MidiTargetKind::AppCommand;
+        next.target.commandId = "patch.next";
+        appMaps.setMidi({next});
+        appMaps.dispatchPendingMessages(); // deliver the change synchronously
+    }
+
+    auto xml = prefs.getAppMappings();
+    REQUIRE(xml != nullptr);
+    session::AppMappings restored;
+    REQUIRE(restored.restoreFromXml(*xml));
+    REQUIRE(restored.midi().size() == 1);
+    REQUIRE(restored.midi()[0].target.commandId == "patch.next");
 }

@@ -177,6 +177,20 @@ void readMappings(const juce::XmlElement& root,
 
 } // namespace
 
+void appendMappingsXml(juce::XmlElement& parent,
+                       const std::vector<control::MidiMapping>& midi,
+                       const std::vector<control::OscMapping>& osc)
+{
+    appendMappings(parent, midi, osc);
+}
+
+void readMappingsXml(const juce::XmlElement& parent,
+                     std::vector<control::MidiMapping>& midi,
+                     std::vector<control::OscMapping>& osc)
+{
+    readMappings(parent, midi, osc);
+}
+
 PatchValidation validatePatch(const Patch& p) noexcept
 {
     // Duplicate NodeIds.

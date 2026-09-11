@@ -143,6 +143,18 @@ juce::String patchIdentityString(const Patch&);
 std::unique_ptr<juce::XmlElement> patchToXml(const Patch&);
 std::unique_ptr<Patch> patchFromXml(const juce::XmlElement&);
 
+// The <MAPPINGS> element patchToXml/patchFromXml use, for any other owner of
+// mapping tables (session::AppMappings). appendMappingsXml adds a <MAPPINGS>
+// child to `parent` (nothing when both tables are empty); readMappingsXml
+// appends what `parent`'s <MAPPINGS> child holds (nothing when absent; a MIDI
+// mapping with an unknown source kind is skipped).
+void appendMappingsXml(juce::XmlElement& parent,
+                       const std::vector<control::MidiMapping>& midi,
+                       const std::vector<control::OscMapping>& osc);
+void readMappingsXml(const juce::XmlElement& parent,
+                     std::vector<control::MidiMapping>& midi,
+                     std::vector<control::OscMapping>& osc);
+
 // Build the canonical linear-chain connection set for `nodes`: stereo audio
 // + MIDI threaded graphIO -> node[0] -> ... -> node[N-1] -> graphIO. For an
 // empty node list, returns the audio + MIDI passthrough. This is the
