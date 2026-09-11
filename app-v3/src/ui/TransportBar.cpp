@@ -34,8 +34,13 @@ constexpr int kOscLabelWidth = 34;
 constexpr int kOscEditorWidth = 50;
 constexpr int kSettingsButtonWidth = 140;
 constexpr int kToneButtonWidth = 100;
-constexpr int kRescanButtonWidth = 130;
-constexpr int kPluginListButtonWidth = 110;
+constexpr int kPluginsButtonWidth = 90;
+// Patch strip (M3 U5): [<] [n/N  Name] [>].
+constexpr int kPatchArrowWidth = 28;
+constexpr int kPatchStripGap = 4;
+constexpr int kPatchNameMaxWidth = 320;
+// Patch-menu item ids at or above this select patch (id - base).
+constexpr int kGoToPatchBase = 1000;
 
 // Build a minimal graph that routes a TestToneProcessor straight to
 // the master output. Lifted from the previous MainWindow.cpp (the
@@ -165,8 +170,7 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas) : ctx_(ctx), c
     fileButton_.onClick = [this] { openFileMenu(); };
     addPluginButton_.onClick = [this] { openAddPluginMenu(); };
     settingsButton_.onClick = [this] { openAudioSettings(); };
-    rescanButton_.onClick = [this] { rescanPlugins(); };
-    pluginListButton_.onClick = [this] { openPluginList(); };
+    pluginsButton_.onClick = [this] { openPluginsMenu(); };
 
     toneButton_.setClickingTogglesState(true);
     toneButton_.onClick = [this] { onTestToneToggled(); };
@@ -190,30 +194,30 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas) : ctx_(ctx), c
     addAndMakeVisible(oscPortEditor_);
     addAndMakeVisible(settingsButton_);
     addAndMakeVisible(toneButton_);
-    addAndMakeVisible(rescanButton_);
-    addAndMakeVisible(pluginListButton_);
+    addAndMakeVisible(pluginsButton_);
+    pluginsButton_.setTooltip("Plugin list and rescan");
 
-    titleLabel_.setText("Pedalboard 3", juce::dontSendNotification);
-    titleLabel_.setColour(juce::Label::textColourId, tokens::fgPrimary);
-    titleLabel_.setFont(juce::Font(juce::FontOptions(15.0f, juce::Font::bold)));
-    titleLabel_.setInterceptsMouseClicks(false, false);
-    addAndMakeVisible(titleLabel_);
+    prevPatchButton_.setTooltip("Previous patch");
+    nextPatchButton_.setTooltip("Next patch");
+    patchButton_.setTooltip("Patch bank: new, duplicate, rename, remove, or go to a patch");
+    prevPatchButton_.onClick = [this] { ctx_.bankDocument.previous(); };
+    nextPatchButton_.onClick = [this] { ctx_.bankDocument.next(); };
+    patchButton_.onClick = [this] { openPatchMenu(); };
+    addAndMakeVisible(prevPatchButton_);
+    addAndMakeVisible(patchButton_);
+    addAndMakeVisible(nextPatchButton_);
 
-    deviceInfoLabel_.setColour(juce::Label::textColourId, tokens::fgMuted);
-    deviceInfoLabel_.setFont(juce::Font(juce::FontOptions(12.0f)));
-    deviceInfoLabel_.setJustificationType(juce::Justification::centred);
-    deviceInfoLabel_.setInterceptsMouseClicks(false, false);
-    addAndMakeVisible(deviceInfoLabel_);
-
-    refreshDeviceInfo();
+    refreshPatchStrip();
     updateAddPluginEnabled();
 
+    ctx_.bankDocument.addChangeListener(this);
     ctx_.session.addChangeListener(this);
 }
 
 TransportBar::~TransportBar()
 {
     ctx_.bankDocument.beforeSwap = nullptr;
+    ctx_.bankDocument.removeChangeListener(this);
     ctx_.session.removeChangeListener(this);
 
     // Join any in-flight rescan before AppContext/Session/PluginHost tear down
@@ -231,8 +235,19 @@ TransportBar::~TransportBar()
     }
 }
 
-void TransportBar::changeListenerCallback(juce::ChangeBroadcaster*)
+void TransportBar::changeListenerCallback(juce::ChangeBroadcaster* source)
 {
+    if (source == &ctx_.bankDocument)
+    {
+        // A swap the bank issued while Test Tone was on (a Program Change, the
+        // strip's arrows) replaced the tone graph with a patch, and the
+        // document re-enabled live capture as it did so. Clear the toggle to
+        // match; a rename or an add leaves capture off and the tone playing.
+        if (toneButton_.getToggleState() && ctx_.bankDocument.isLiveCaptureEnabled())
+            toneButton_.setToggleState(false, juce::dontSendNotification);
+        refreshPatchStrip();
+    }
+
     // Session state may have transitioned; Add Plugin is enabled only
     // when Idle and Test Tone is off (otherwise the chain isn't the
     // live graph being driven by the engine).
@@ -250,9 +265,9 @@ void TransportBar::resized()
 {
     auto bounds = getLocalBounds().reduced(kBarPadding, 6);
 
-    // Right cluster: OSC port | Audio Settings | Test Tone | Rescan | Plugin List.
+    // Right cluster: OSC port | Audio Settings | Test Tone | Plugins.
     auto right = bounds.removeFromRight(kOscLabelWidth + kOscEditorWidth + kSettingsButtonWidth + kToneButtonWidth +
-                                        kRescanButtonWidth + kPluginListButtonWidth + 4 * kButtonGap);
+                                        kPluginsButtonWidth + 3 * kButtonGap);
     oscPortLabel_.setBounds(right.removeFromLeft(kOscLabelWidth));
     oscPortEditor_.setBounds(right.removeFromLeft(kOscEditorWidth));
     right.removeFromLeft(kButtonGap);
@@ -260,51 +275,157 @@ void TransportBar::resized()
     right.removeFromLeft(kButtonGap);
     toneButton_.setBounds(right.removeFromLeft(kToneButtonWidth));
     right.removeFromLeft(kButtonGap);
-    rescanButton_.setBounds(right.removeFromLeft(kRescanButtonWidth));
-    right.removeFromLeft(kButtonGap);
-    pluginListButton_.setBounds(right.removeFromLeft(kPluginListButtonWidth));
+    pluginsButton_.setBounds(right.removeFromLeft(kPluginsButtonWidth));
 
     bounds.removeFromRight(kBarPadding);
 
-    // Left cluster: title text + File + Add Plugin buttons.
-    auto left = bounds.removeFromLeft(120 + kFileButtonWidth + kAddButtonWidth + 2 * kButtonGap);
-    titleLabel_.setBounds(left.removeFromLeft(120));
-    left.removeFromLeft(kButtonGap);
-    fileButton_.setBounds(left.removeFromLeft(kFileButtonWidth));
-    left.removeFromLeft(kButtonGap);
-    addPluginButton_.setBounds(left.removeFromLeft(kAddButtonWidth));
+    // Left cluster: File | Add Plugin.
+    fileButton_.setBounds(bounds.removeFromLeft(kFileButtonWidth));
+    bounds.removeFromLeft(kButtonGap);
+    addPluginButton_.setBounds(bounds.removeFromLeft(kAddButtonWidth));
+    bounds.removeFromLeft(kBarPadding);
 
-    // Centre: device info fills the rest.
-    deviceInfoLabel_.setBounds(bounds);
+    // Patch strip. The name button takes what is left between the clusters,
+    // up to a cap, so it is the part that gives way on a narrow window.
+    const int nameWidth =
+        juce::jlimit(0, kPatchNameMaxWidth, bounds.getWidth() - 2 * (kPatchArrowWidth + kPatchStripGap));
+    prevPatchButton_.setBounds(bounds.removeFromLeft(kPatchArrowWidth));
+    bounds.removeFromLeft(kPatchStripGap);
+    patchButton_.setBounds(bounds.removeFromLeft(nameWidth));
+    bounds.removeFromLeft(kPatchStripGap);
+    nextPatchButton_.setBounds(bounds.removeFromLeft(kPatchArrowWidth));
 }
 
-void TransportBar::refreshDeviceInfo()
+void TransportBar::refreshPatchStrip()
 {
-    auto* dm = ctx_.audioEngine.getDeviceManager();
-    if (dm == nullptr)
+    const auto& doc = ctx_.bankDocument;
+    const int count = doc.size();
+    patchButton_.setButtonText(juce::String(doc.activeIndex() + 1) + "/" + juce::String(count) + "   " +
+                               doc.activePatch().name);
+    prevPatchButton_.setEnabled(count > 1);
+    nextPatchButton_.setEnabled(count > 1);
+}
+
+void TransportBar::openPatchMenu()
+{
+    const auto& bank = ctx_.bankDocument.bank();
+
+    juce::PopupMenu menu;
+    menu.addItem(1, "New Patch");
+    menu.addItem(2, "Duplicate Patch");
+    menu.addItem(3, "Rename Patch...");
+    menu.addItem(4, "Remove Patch...");
+    menu.addSectionHeader("Go to Patch");
+    for (int i = 0; i < bank.size(); ++i)
+        menu.addItem(kGoToPatchBase + i,
+                     juce::String(i + 1) + ".  " + bank.patches[static_cast<size_t>(i)].name,
+                     true,
+                     i == bank.activeIndex);
+
+    menu.showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(patchButton_),
+                       [this](int choice)
+                       {
+                           auto& doc = ctx_.bankDocument;
+                           if (choice == 1)
+                           {
+                               session::Patch fresh;
+                               fresh.name = "Patch " + juce::String(doc.size() + 1);
+                               doc.select(doc.addPatch(std::move(fresh)));
+                           }
+                           else if (choice == 2)
+                           {
+                               doc.select(doc.duplicate(doc.activeIndex()));
+                           }
+                           else if (choice == 3)
+                           {
+                               promptRenamePatch();
+                           }
+                           else if (choice == 4)
+                           {
+                               confirmRemovePatch();
+                           }
+                           else if (choice >= kGoToPatchBase)
+                           {
+                               doc.select(choice - kGoToPatchBase);
+                           }
+                       });
+}
+
+void TransportBar::promptRenamePatch()
+{
+    const int index = ctx_.bankDocument.activeIndex();
+    dialog_ = std::make_unique<juce::AlertWindow>(
+        "Rename Patch", "Name for patch " + juce::String(index + 1) + ":", juce::MessageBoxIconType::NoIcon);
+    dialog_->addTextEditor("name", ctx_.bankDocument.activePatch().name);
+    dialog_->addButton("Rename", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    dialog_->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+
+    juce::Component::SafePointer<TransportBar> safeThis(this);
+    dialog_->enterModalState(true,
+                             juce::ModalCallbackFunction::create(
+                                 [safeThis, index](int result)
+                                 {
+                                     auto* self = safeThis.getComponent();
+                                     if (self == nullptr || self->dialog_ == nullptr)
+                                         return;
+                                     if (result == 1)
+                                         self->ctx_.bankDocument.rename(index,
+                                                                        self->dialog_->getTextEditorContents("name"));
+                                     self->dialog_.reset();
+                                 }),
+                             false);
+}
+
+void TransportBar::confirmRemovePatch()
+{
+    auto& doc = ctx_.bankDocument;
+    const int index = doc.activeIndex();
+
+    // The active slot is a cache of the live patch, so count what is live.
+    const int liveNodes = ctx_.session.getNodeCount();
+    if (liveNodes == 0 && doc.activePatch().nodes.empty())
     {
-        deviceInfoLabel_.setText("(no audio device)", juce::dontSendNotification);
+        doc.remove(index); // nothing to lose
         return;
     }
 
-    auto* dev = dm->getCurrentAudioDevice();
-    if (dev == nullptr)
-    {
-        // Surface the actual reason audio is silent (e.g. a driver that
-        // failed to open) rather than a generic placeholder — otherwise
-        // the failure is invisible except for a log line.
-        const auto& err = ctx_.audioEngine.getLastInitError();
-        deviceInfoLabel_.setText(err.isNotEmpty() ? ("Audio device error: " + err + " — open Audio Settings")
-                                                  : "(no audio device — open Audio Settings)",
-                                 juce::dontSendNotification);
-        return;
-    }
+    const auto noun = liveNodes == 1 ? juce::String("plugin") : juce::String("plugins");
+    dialog_ = std::make_unique<juce::AlertWindow>("Remove Patch",
+                                                  "Remove \"" + doc.activePatch().name + "\" and its " +
+                                                      juce::String(liveNodes) + " " + noun +
+                                                      " from the bank? This can't be undone.",
+                                                  juce::MessageBoxIconType::WarningIcon);
+    dialog_->addButton("Remove", 1);
+    dialog_->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
 
-    juce::String text = dev->getName() + "  •  ";
-    text += juce::String(static_cast<int>(dev->getCurrentSampleRate())) + " Hz";
-    text += "  /  " + juce::String(dev->getCurrentBufferSizeSamples()) + " samples";
-    text += "  •  CPU —  •  Latency —";
-    deviceInfoLabel_.setText(text, juce::dontSendNotification);
+    juce::Component::SafePointer<TransportBar> safeThis(this);
+    dialog_->enterModalState(true,
+                             juce::ModalCallbackFunction::create(
+                                 [safeThis, index](int result)
+                                 {
+                                     auto* self = safeThis.getComponent();
+                                     if (self == nullptr)
+                                         return;
+                                     if (result == 1)
+                                         self->ctx_.bankDocument.remove(index);
+                                     self->dialog_.reset();
+                                 }),
+                             false);
+}
+
+void TransportBar::openPluginsMenu()
+{
+    juce::PopupMenu menu;
+    menu.addItem(1, "Plugin List...");
+    menu.addItem(2, "Rescan Plugins");
+    menu.showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(pluginsButton_),
+                       [this](int choice)
+                       {
+                           if (choice == 1)
+                               openPluginList();
+                           else if (choice == 2)
+                               rescanPlugins();
+                       });
 }
 
 void TransportBar::updateAddPluginEnabled()
