@@ -16,6 +16,7 @@ constexpr auto kActiveBankModifiedKey = "activeBankModified";
 constexpr auto kAppMappingsKey = "appMappings";
 constexpr auto kKeyMappingsKey = "keyMappings";
 constexpr auto kWindowStateKey = "windowState";
+constexpr auto kRecentPluginsKey = "recentPlugins";
 constexpr auto kOscPortKey = "oscPort";
 constexpr auto kOscMulticastAddressKey = "oscMulticastAddress";
 
@@ -286,6 +287,21 @@ void Preferences::setPanelShown(const juce::String& panel, bool shown)
 {
     if (auto* store = props_.getUserSettings())
         store->setValue("panel." + panel, shown);
+}
+
+juce::StringArray Preferences::getRecentPlugins()
+{
+    juce::StringArray ids;
+    if (auto* store = props_.getUserSettings())
+        ids = juce::StringArray::fromLines(store->getValue(kRecentPluginsKey));
+    ids.removeEmptyStrings();
+    return ids;
+}
+
+void Preferences::setRecentPlugins(const juce::StringArray& ids)
+{
+    if (auto* store = props_.getUserSettings())
+        store->setValue(kRecentPluginsKey, ids.joinIntoString("\n"));
 }
 
 int Preferences::getOscPort()

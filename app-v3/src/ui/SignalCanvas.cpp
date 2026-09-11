@@ -4,6 +4,7 @@
 #include "ColourScheme.h"
 #include "control/MidiMapping.h"
 #include "engine/PluginHost.h"
+#include "PluginBrowser.h"
 #include "session/ControlHub.h"
 #include "session/EditHistory.h"
 #include "session/Patch.h"
@@ -682,6 +683,20 @@ bool SignalCanvas::keyPressed(const juce::KeyPress& key)
         return true;
     }
     return false;
+}
+
+bool SignalCanvas::isInterestedInDragSource(const SourceDetails& details)
+{
+    return browserDragId(details.description).isNotEmpty();
+}
+
+void SignalCanvas::itemDropped(const SourceDetails& details)
+{
+    // Canvas position to model coordinates (what the node saves), with the
+    // card centred on the pointer.
+    const auto topLeft = details.localPosition - viewOffset_.value_or(juce::Point<int>{}) -
+                         juce::Point<int>(kCardWidth / 2, kCardHeight / 2);
+    addBrowserEntry(ctx_, browserDragId(details.description), topLeft.toFloat());
 }
 
 } // namespace pedalboard3::ui

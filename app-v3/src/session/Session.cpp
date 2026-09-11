@@ -111,6 +111,7 @@ public:
                 ar.restore = std::move(addReq->restore);
                 ar.restoreIndex = addReq->restoreIndex;
                 ar.restoreConnections = std::move(addReq->restoreConnections);
+                ar.position = addReq->position;
 
                 // Direct host factory — bypasses BuildFn so we get a single
                 // processor back, not a graph. Internal nodes go through the
@@ -285,18 +286,20 @@ void Session::enqueueAddRequest(AddPluginRequest req)
         worker_->notify();
 }
 
-void Session::addPlugin(juce::PluginDescription desc)
+void Session::addPlugin(juce::PluginDescription desc, std::optional<juce::Point<float>> position)
 {
     AddPluginRequest req;
     req.desc = std::move(desc);
+    req.position = position;
     enqueueAddRequest(std::move(req));
 }
 
-void Session::addInternalNode(juce::String internalType)
+void Session::addInternalNode(juce::String internalType, std::optional<juce::Point<float>> position)
 {
     AddPluginRequest req;
     req.kind = NodeKind::Internal;
     req.internalType = std::move(internalType);
+    req.position = position;
     enqueueAddRequest(std::move(req));
 }
 
@@ -1179,6 +1182,11 @@ void Session::commitAddPlugin(AddPluginResult&& result)
                 pn.internalType = std::move(result.internalType);
             else
                 pn.desc = std::move(result.desc);
+            if (result.position.has_value())
+            {
+                pn.x = result.position->getX();
+                pn.y = result.position->getY();
+            }
             activePatch_.nodes.push_back(std::move(pn));
         }
 

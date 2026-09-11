@@ -134,12 +134,16 @@ public:
     // off the message thread; message thread commits incrementally
     // (no whole-graph rebuild). Errors surface via lastError + a change
     // message; the active patch is unchanged on failure.
-    void addPlugin(juce::PluginDescription);
+    //
+    // `position`: where the node's card goes on the canvas (model coordinates,
+    // ui/CanvasLayout.h), e.g. a drop from the plugin browser (UI refresh U5).
+    // Without one the canvas gives it an auto slot.
+    void addPlugin(juce::PluginDescription, std::optional<juce::Point<float>> position = std::nullopt);
 
     // Append a built-in (internal) node to the active patch's chain, by its
     // typeId (e.g. "LevelProcessor"). Same worker pipeline as addPlugin — the
     // worker calls PluginHost::createInternalInstance instead of createInstance.
-    void addInternalNode(juce::String internalType);
+    void addInternalNode(juce::String internalType, std::optional<juce::Point<float>> position = std::nullopt);
 
     // Synchronous: take effect before the call returns.
     void removeNode(NodeId);
@@ -308,6 +312,7 @@ private:
         std::optional<PatchNode> restore;
         int restoreIndex{-1};
         std::vector<PatchConnection> restoreConnections;
+        std::optional<juce::Point<float>> position; // a positioned add (UI refresh U5)
     };
 
     struct LoadPatchResult
@@ -328,6 +333,7 @@ private:
         std::optional<PatchNode> restore; // carried over from the request
         int restoreIndex{-1};
         std::vector<PatchConnection> restoreConnections;
+        std::optional<juce::Point<float>> position;
     };
 
     using Result = std::variant<std::monostate, LoadPatchResult, AddPluginResult>;

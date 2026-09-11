@@ -49,8 +49,8 @@ public:
     std::function<void(NodeId)> beforeNodeRemoved;
 
     // The undoable edits: each forwards to Session and records its inverse.
-    void addPlugin(juce::PluginDescription desc);
-    void addInternalNode(juce::String internalType);
+    void addPlugin(juce::PluginDescription desc, std::optional<juce::Point<float>> position = std::nullopt);
+    void addInternalNode(juce::String internalType, std::optional<juce::Point<float>> position = std::nullopt);
     void removeNode(NodeId id);
     bool addConnection(NodeId src, int srcChannel, NodeId dst, int dstChannel);
     void removeConnection(NodeId src, int srcChannel, NodeId dst, int dstChannel);

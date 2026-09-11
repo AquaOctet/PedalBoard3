@@ -659,3 +659,17 @@ TEST_CASE("Preferences: a panel's shown flag round-trips, with a fallback until 
     prefs.setPanelShown("patches", previous);
     prefs.flush();
 }
+
+TEST_CASE("Preferences: the plugin browser's recents round-trip in order", "[session][preferences][browser]")
+{
+    session::Preferences prefs;
+    const auto previous = prefs.getRecentPlugins(); // the developer's real list; put it back
+
+    prefs.setRecentPlugins({"plugin:b", "internal:LevelProcessor", "plugin:a"});
+    REQUIRE(prefs.getRecentPlugins() == juce::StringArray{"plugin:b", "internal:LevelProcessor", "plugin:a"});
+    prefs.setRecentPlugins({});
+    REQUIRE(prefs.getRecentPlugins().isEmpty());
+
+    prefs.setRecentPlugins(previous);
+    prefs.flush();
+}

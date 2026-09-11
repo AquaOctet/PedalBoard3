@@ -48,7 +48,7 @@ execution: code
   - The Plugins menu puts the same list first as "Add Plugin ▸", then Plugin List… and Rescan Plugins.
   - The right end is for watching the rig: the MIDI/OSC lights and the CPU meter. The OSC port field, Settings and Test Tone have left it (KD10).
   - The plugin browser sidebar stays on the right.
-- **KD3. Small windows fold, not hide.** Below about 1200 px wide, both sidebars fold to 48 px icon strips. Clicking a strip icon slides its panel open over the canvas. The left strip keeps the previous / current / next patch one click away. A three-bar toggle at each panel's top-left (under File, for the bank) collapses it to its strip or opens it again at any window size, and File › Patch Bank does the same; there are no status-bar panel toggles (user decision, 2026-09-11).
+- **KD3. Small windows fold, not hide.** Below about 1200 px wide, both sidebars fold to 48 px icon strips. Clicking a strip icon slides its panel open over the canvas. The left strip keeps the previous / current / next patch one click away. A three-bar toggle at each panel's outer top corner (top-left under File for the bank, top-right for the plugin browser) collapses it to its strip or opens it again at any window size, and File › Patch Bank and Plugins › Plugin Browser do the same; there are no status-bar panel toggles (user decision, 2026-09-11).
 - **KD4. Mappings: both views.**
   - The per-plugin dialog (M4) stays as the close-up: learn, ranges and the plugin's MIDI channel filter.
   - A board-wide panel docks under the canvas and lists every mapping on the board, with the selected card's rows highlighted, not filtered.
@@ -180,7 +180,7 @@ Pure models (layout, rows, zones) live header-only under `app-v3/src/ui/`, as `C
 
 - **Goal:** Lay out the main window body as left panel | canvas | right panel.
   - Below about 1200 px, both panels fold to 48 px icon strips; a strip click slides its panel over the canvas.
-  - A three-bar toggle at each panel's top-left collapses it to its strip and opens it again, at any window size; File › Patch Bank does the same for the bank. The choice persists.
+  - A three-bar toggle at each panel's outer top corner collapses it to its strip and opens it again, at any window size; File › Patch Bank and Plugins › Plugin Browser do the same. The choice persists.
 - **Requirements:** KD3
 - **Dependencies:** U4
 - **Files:**

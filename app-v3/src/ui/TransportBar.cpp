@@ -335,6 +335,14 @@ void TransportBar::openPluginsMenu()
 {
     juce::PopupMenu menu;
     menu.addSubMenu("Add Plugin", makeAddPluginMenu(), canAddPlugin());
+    menu.addItem("Plugin Browser",
+                 true,
+                 isPluginBrowserShown && isPluginBrowserShown(),
+                 [this]
+                 {
+                     if (onTogglePluginBrowser)
+                         onTogglePluginBrowser();
+                 });
     menu.addSeparator();
     menu.addItem("Plugin List...", [this] { openPluginList(); });
     menu.addItem("Rescan Plugins", [this] { rescanPlugins(); });
