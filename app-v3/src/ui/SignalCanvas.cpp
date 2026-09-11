@@ -1,5 +1,6 @@
 #include "SignalCanvas.h"
 
+#include "CanvasLayout.h"
 #include "ColourScheme.h"
 #include "control/MidiMapping.h"
 #include "engine/PluginHost.h"
@@ -22,8 +23,9 @@ constexpr int kCardWidth = 170;
 constexpr int kCardHeight = 140;
 constexpr int kCardSpacingX = 80;
 constexpr int kEndpointWidth = 86;
-constexpr int kCanvasMarginX = 24;
-constexpr int kCanvasMarginY = 24;
+constexpr int kCanvasMargin = 24;
+// Geometry for ui::canvas::layout (CanvasLayout.h).
+constexpr canvas::Metrics kMetrics{kCardWidth, kCardHeight, kEndpointWidth, kCardSpacingX, kCanvasMargin};
 
 constexpr float kCableThickness = 2.5f;
 constexpr float kCableMidiThickness = 2.0f;
@@ -183,62 +185,60 @@ std::unique_ptr<PluginCard> SignalCanvas::makeCard(const PluginCard::NodeSnapsho
 
 void SignalCanvas::layoutCards()
 {
-    // Free positioning: a card sits at its stored (x, y); an unpositioned card
-    // (freshly added, or a pre-position patch) takes a left-to-right auto-slot,
-    // and that slot is immediately seeded back into the Session as the card's
-    // real position. Without the seed, auto-slots are assigned by a running
-    // counter over the *unpositioned* cards only — so the first drag of any
-    // card shifts every remaining auto card one slot left on the next relayout,
-    // piling cards on top of each other.
-    const int rowY = juce::jmax(kCanvasMarginY, getParentHeight() / 2 - kCardHeight / 2);
-    int autoX = kCanvasMarginX + kEndpointWidth + kCardSpacingX;
+    // Cards keep their saved positions (model coordinates); canvas::layout
+    // places Input and Output around them and centres the whole group in the
+    // visible area (CanvasLayout.h). A card with no saved position gets an auto
+    // slot to the right of the others, and that slot is seeded back into the
+    // Session as its real position: auto slots are assigned by a running
+    // counter over the unpositioned cards only, so without the seed the first
+    // drag of any card would shift the rest and pile them up.
+    const juce::Point<int> viewport{getParentWidth(), getParentHeight()};
+
+    std::vector<NodeId> ids;
+    std::vector<std::optional<juce::Point<int>>> saved;
+    ids.reserve(cards_.size());
+    saved.reserve(cards_.size());
+    for (const auto& card : cards_)
+    {
+        ids.push_back(card->getNodeId());
+        saved.push_back(card->hasStoredPosition() ? std::optional<juce::Point<int>>(card->storedPosition())
+                                                  : std::nullopt);
+    }
+
+    // Re-centre when the window size or the set of cards changes. A moved card
+    // keeps the offset, so nothing jumps away from where it was dropped.
+    const bool keepOffset = viewOffset_.has_value() && viewport == lastViewport_ && ids == lastCardIds_;
+    const auto result = canvas::layout(saved, viewport, kMetrics, keepOffset ? viewOffset_ : std::nullopt);
+    viewOffset_ = result.offset;
+    lastViewport_ = viewport;
+    lastCardIds_ = std::move(ids);
 
     idToIndex_.clear();
     idToIndex_.reserve(cards_.size());
-
-    std::vector<session::Session::NodePositionSeed> seeds;
-
-    int contentRight = autoX;
-    int contentBottom = rowY + kCardHeight;
     for (std::size_t i = 0; i < cards_.size(); ++i)
     {
-        int cx, cy;
-        if (cards_[i]->hasStoredPosition())
-        {
-            const auto p = cards_[i]->storedPosition();
-            cx = p.getX();
-            cy = p.getY();
-        }
-        else
-        {
-            cx = autoX;
-            cy = rowY;
-            autoX += kCardWidth + kCardSpacingX;
-            seeds.push_back({cards_[i]->getNodeId(), static_cast<float>(cx), static_cast<float>(cy)});
-        }
-        cards_[i]->setBounds(cx, cy, kCardWidth, kCardHeight);
+        cards_[i]->setBounds(
+            juce::Rectangle<int>(kCardWidth, kCardHeight).withPosition(result.modelPositions[i] + result.offset));
         idToIndex_[cards_[i]->getNodeId()] = i;
-        contentRight = juce::jmax(contentRight, cx + kCardWidth);
-        contentBottom = juce::jmax(contentBottom, cy + kCardHeight);
     }
 
-    // Persist the auto-slots (async change message re-enters layoutCards once,
-    // finds every card positioned, and seeds nothing — no loop). Skip while
-    // parentless: the constructor's first layout runs before the Viewport
-    // adopts the canvas, and would bake positions from zero-sized geometry.
+    // Persist the auto slots (the async change message re-enters layoutCards
+    // once, finds every card positioned, and seeds nothing: no loop). Skip
+    // while parentless: the constructor's first layout runs before the
+    // Viewport adopts the canvas.
+    std::vector<session::Session::NodePositionSeed> seeds;
+    for (const auto i : result.autoPlaced)
+        seeds.push_back({cards_[i]->getNodeId(),
+                         static_cast<float>(result.modelPositions[i].getX()),
+                         static_cast<float>(result.modelPositions[i].getY())});
     if (!seeds.empty() && getParentComponent() != nullptr)
         ctx_.session.seedNodePositions(seeds);
 
-    // Endpoints anchor the I/O at the canvas extremes, vertically centred.
-    const int endpointY = rowY;
-    inputCardBounds_ = {kCanvasMarginX, endpointY, kEndpointWidth, kCardHeight};
-    const int outX = juce::jmax(contentRight + kCardSpacingX, inputCardBounds_.getRight() + kCardSpacingX);
-    outputCardBounds_ = {outX, endpointY, kEndpointWidth, kCardHeight};
+    inputCardBounds_ = result.endpoints.input;
+    outputCardBounds_ = result.endpoints.output;
 
-    // Grow canvas to fit all content; the parent juce::Viewport scrolls.
-    const int targetWidth = juce::jmax(outputCardBounds_.getRight() + kCanvasMarginX, getParentWidth());
-    const int targetHeight = juce::jmax(contentBottom + kCanvasMarginY, getParentHeight());
-    setSize(targetWidth, targetHeight);
+    // At least the visible area, larger when the group is; the Viewport scrolls.
+    setSize(result.canvasSize.getX(), result.canvasSize.getY());
 
     repaint(); // cables are drawn per-cable in paint() from connections_ + live positions
 }
@@ -314,6 +314,12 @@ void SignalCanvas::strokeCable(
 
 void SignalCanvas::resized()
 {
+    layoutCards();
+}
+
+void SignalCanvas::parentSizeChanged()
+{
+    // The window, and with it the viewport, changed size: re-centre the board.
     layoutCards();
 }
 
@@ -462,19 +468,27 @@ void SignalCanvas::closeEditorsFor(NodeId id)
 
 void SignalCanvas::onCardMoved(NodeId id, juce::Point<int> newPos)
 {
-    // Clamp to the canvas margins so a card can't be dragged off the top-left
-    // out of reach, then persist. The resulting change message re-runs
-    // layoutCards, which re-reads the stored position (no jump).
-    const int x = juce::jmax(kCanvasMarginX, newPos.getX());
-    const int y = juce::jmax(kCanvasMarginY, newPos.getY());
-    ctx_.session.setNodePosition(id, static_cast<float>(x), static_cast<float>(y));
+    // Save the drop in model coordinates (canvas position minus the view
+    // offset). The change message re-runs layoutCards, which keeps the offset
+    // for a move, so the card stays where it was dropped; the group only shifts
+    // if it would cross the top-left margin.
+    const auto model = newPos - viewOffset_.value_or(juce::Point<int>{});
+    ctx_.session.setNodePosition(id, static_cast<float>(model.getX()), static_cast<float>(model.getY()));
 }
 
 void SignalCanvas::onCardDragging(NodeId)
 {
     // The card has already moved itself (ComponentDragger); cables are drawn
     // per-cable in paint() from the live card positions, so a repaint glues them
-    // to the moving card.
+    // to the moving card. Input and Output follow the chain live; the offset and
+    // the canvas size settle when the card is dropped.
+    std::vector<juce::Rectangle<int>> live;
+    live.reserve(cards_.size());
+    for (const auto& card : cards_)
+        live.push_back(card->getBounds());
+    const auto ends = canvas::endpointsAround(live, kMetrics);
+    inputCardBounds_ = ends.input;
+    outputCardBounds_ = ends.output;
     repaint();
 }
 
