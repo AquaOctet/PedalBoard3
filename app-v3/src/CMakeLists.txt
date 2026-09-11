@@ -26,6 +26,7 @@ add_library(pb3_app_core STATIC
     AppContext.h
     ui/AppMappingsWindow.cpp
     ui/AppMappingsWindow.h
+    ui/CanvasLayout.h
     ui/ColourScheme.h
     ui/EditorWindow.cpp
     ui/EditorWindow.h

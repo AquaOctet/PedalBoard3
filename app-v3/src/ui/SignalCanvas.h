@@ -48,6 +48,14 @@ namespace pedalboard3::ui
 // is defensive only (catches restore-on-launch and other UI-bypassing
 // paths).
 //
+// Layout:
+// -------
+// Cards keep their saved (x, y) in model coordinates and draw at model + a view
+// offset. The Input / Output endpoints follow the cards (one gap either side,
+// vertically centred on them), and the whole group is centred in the visible
+// area, re-centring when the window resizes or cards come and go
+// (ui/CanvasLayout.h).
+//
 // Cable rendering:
 // ----------------
 // `paint()` draws one stroke per connection (from the cached `connections_`
@@ -71,6 +79,7 @@ public:
 
     void paint(juce::Graphics&) override;
     void resized() override;
+    void parentSizeChanged() override;
 
     // Port drag-to-connect / cable selection live on the canvas (cards delegate
     // their port pixels here via hitTest).
@@ -135,6 +144,12 @@ private:
 
     juce::Rectangle<int> inputCardBounds_;
     juce::Rectangle<int> outputCardBounds_;
+
+    // The view offset (canvas position = saved card position + offset) and
+    // what it was computed for; see layoutCards.
+    std::optional<juce::Point<int>> viewOffset_;
+    juce::Point<int> lastViewport_;
+    std::vector<NodeId> lastCardIds_;
 
     // Cached on each Session change so paint() (which redraws cables per
     // drag-frame to keep them glued to a moving card) never re-copies the whole
