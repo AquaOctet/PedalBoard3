@@ -30,6 +30,7 @@ set(PB3_TEST_SOURCES
     unit/session/PatchBank_test.cpp
     unit/session/BankDocument_test.cpp
     unit/session/PatchSwitcher_test.cpp
+    unit/session/AppCommands_test.cpp
     unit/session/PdlSerializer_test.cpp
     unit/session/PdlV2Importer_test.cpp
     unit/session/ControlParameterApplier_test.cpp

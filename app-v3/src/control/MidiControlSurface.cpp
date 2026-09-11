@@ -23,7 +23,7 @@ void MidiControlSurface::handleIncomingMidi(const juce::MidiMessage& msg)
     const auto updates = router_.process(msg);
     if (sink_)
         for (const auto& u : updates)
-            sink_(u.target, u.value);
+            sink_(u);
 }
 
 void MidiControlSurface::armLearn(LearnCallback onLearned)

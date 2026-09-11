@@ -39,8 +39,9 @@ public:
     using NodeResolver = ControlParameterApplier::NodeResolver;       // std::function<juce::AudioProcessor*(NodeId)>
     using LearnCallback = control::MidiControlSurface::LearnCallback; // std::function<void(const MidiSource&)>
     // Receives PatchSelect / AppCommand updates the applier does not apply to a
-    // plugin parameter — wired to the command dispatcher in a later increment.
-    using UnhandledTargetSink = std::function<void(const control::MidiTarget&, float)>;
+    // plugin parameter, whole (with the press flag), so a command can fire on
+    // a press only. session::PatchSwitcher installs it.
+    using UnhandledTargetSink = std::function<void(const control::ParameterUpdate&)>;
 
     ControlHub();
     ~ControlHub() = default;
@@ -81,7 +82,7 @@ private:
     // Single fan-in for both MIDI and OSC updates. Drops non-finite values before
     // they can reach setValueNotifyingHost; routes non-parameter targets to the
     // unhandled sink.
-    void applyUpdate(const control::MidiTarget& target, float value);
+    void applyUpdate(const control::ParameterUpdate& update);
 
     ControlParameterApplier applier_;
     control::MidiControlSurface midiSurface_; // owns MidiRouter + learn

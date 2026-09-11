@@ -7,6 +7,7 @@
 
 #include "engine/AudioEngine.h"
 #include "engine/PluginHost.h"
+#include "session/AppCommands.h"
 #include "session/BankDocument.h"
 #include "session/ControlHub.h"
 #include "session/PatchSwitcher.h"
@@ -274,4 +275,101 @@ TEST_CASE("PatchSwitcher: destroying the switcher uninstalls the hub sink", "[se
     f.hub.handleOsc(juce::OSCMessage("/pb3/patch", 1.0f)); // must not reach a dead switcher
     f.settle();
     REQUIRE(f.doc.activeIndex() == 0);
+}
+
+// ---- App commands (roadmap M4 U1) ------------------------------------------
+
+namespace
+{
+
+control::MidiMapping midiToCommand(control::MidiSourceKind kind, int controller, const char* commandId)
+{
+    control::MidiMapping m;
+    m.source.kind = kind;
+    m.source.channel = 0; // omni
+    m.source.controller = controller;
+    m.target.kind = control::MidiTargetKind::AppCommand;
+    m.target.commandId = commandId;
+    return m;
+}
+
+} // namespace
+
+TEST_CASE("PatchSwitcher: a CC mapped to patch.next steps once per press, not on release", "[session][patch-switcher]")
+{
+    Fixture f;
+    f.hub.setMidiMappings(
+        {midiToCommand(control::MidiSourceKind::ControlChange, 64, session::appcommands::kNextPatch)});
+
+    f.sw->handleMidi(juce::MidiMessage::controllerEvent(1, 64, 127));
+    f.settle();
+    REQUIRE(f.doc.activeIndex() == 1);
+
+    f.sw->handleMidi(juce::MidiMessage::controllerEvent(1, 64, 0));
+    f.settle();
+    REQUIRE(f.doc.activeIndex() == 1);
+
+    f.sw->handleMidi(juce::MidiMessage::controllerEvent(1, 64, 127));
+    f.settle();
+    REQUIRE(f.doc.activeIndex() == 2);
+}
+
+TEST_CASE("PatchSwitcher: a note mapped to patch.previous wraps and ignores the note-off", "[session][patch-switcher]")
+{
+    Fixture f;
+    f.hub.setMidiMappings({midiToCommand(control::MidiSourceKind::Note, 36, session::appcommands::kPreviousPatch)});
+
+    f.sw->handleMidi(juce::MidiMessage::noteOn(1, 36, 0.9f));
+    f.settle();
+    REQUIRE(f.doc.activeIndex() == 4); // wrapped from 0
+
+    f.sw->handleMidi(juce::MidiMessage::noteOff(1, 36));
+    f.settle();
+    REQUIRE(f.doc.activeIndex() == 4);
+}
+
+TEST_CASE("PatchSwitcher: a Program Change mapped to an app command owns the message, PC 0 included",
+          "[session][patch-switcher]")
+{
+    Fixture f;
+    f.hub.setMidiMappings({midiToCommand(control::MidiSourceKind::ProgramChange, 0, session::appcommands::kNextPatch)});
+
+    f.sw->handleMidi(juce::MidiMessage::programChange(1, 3));
+    f.settle();
+    REQUIRE(f.doc.activeIndex() == 1); // next, not program 3
+
+    f.sw->handleMidi(juce::MidiMessage::programChange(1, 0));
+    f.settle();
+    REQUIRE(f.doc.activeIndex() == 2);
+}
+
+TEST_CASE("PatchSwitcher: an OSC patch.next mapping steps on 1.0 and ignores 0.0", "[session][patch-switcher]")
+{
+    Fixture f;
+    control::OscMapping m;
+    m.address = "/pb3/next";
+    m.target.kind = control::MidiTargetKind::AppCommand;
+    m.target.commandId = session::appcommands::kNextPatch;
+    f.hub.setOscMappings({m});
+
+    f.hub.handleOsc(juce::OSCMessage("/pb3/next", 1.0f));
+    f.settle();
+    REQUIRE(f.doc.activeIndex() == 1);
+
+    f.hub.handleOsc(juce::OSCMessage("/pb3/next", 0.0f));
+    f.settle();
+    REQUIRE(f.doc.activeIndex() == 1);
+}
+
+TEST_CASE("PatchSwitcher: an unknown app command does nothing and still owns its Program Change",
+          "[session][patch-switcher]")
+{
+    Fixture f;
+    const auto gen = f.s.getPatchGeneration();
+    f.hub.setMidiMappings({midiToCommand(control::MidiSourceKind::ProgramChange, 0, "patch.nope")});
+
+    f.sw->handleMidi(juce::MidiMessage::programChange(1, 2));
+    f.settle();
+    REQUIRE(f.doc.activeIndex() == 0);
+    REQUIRE(f.s.getPatchGeneration() == gen);
 }
