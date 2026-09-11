@@ -50,6 +50,11 @@ public:
     // mappings it edits, so it installs this.
     std::function<void()> onOpenAppMappings;
 
+    // Rename / remove the playing patch through the bar's prompts; the bank
+    // sidebar (UI refresh U4) uses them too.
+    void promptRenamePatch();
+    void confirmRemovePatch();
+
 private:
     void changeListenerCallback(juce::ChangeBroadcaster*) override;
 
@@ -68,8 +73,6 @@ private:
     // Patch strip (M3 U5).
     void refreshPatchStrip();
     void openPatchMenu();
-    void promptRenamePatch();
-    void confirmRemovePatch();
 
     AppContext& ctx_;
     SignalCanvas& canvas_;

@@ -642,3 +642,20 @@ TEST_CASE("Preferences: the window state round-trips", "[session][preferences][w
     prefs.setWindowState(previous);
     prefs.flush();
 }
+
+TEST_CASE("Preferences: a panel's shown flag round-trips, with a fallback until set", "[session][preferences][window]")
+{
+    session::Preferences prefs;
+    const bool previous = prefs.getPanelShown("patches", true); // the developer's real setting; put it back
+
+    REQUIRE(prefs.getPanelShown("pb3-test-panel-never-set", true));
+    REQUIRE_FALSE(prefs.getPanelShown("pb3-test-panel-never-set", false));
+
+    prefs.setPanelShown("patches", false);
+    REQUIRE_FALSE(prefs.getPanelShown("patches", true));
+    prefs.setPanelShown("patches", true);
+    REQUIRE(prefs.getPanelShown("patches", false));
+
+    prefs.setPanelShown("patches", previous);
+    prefs.flush();
+}

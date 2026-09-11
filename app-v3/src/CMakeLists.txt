@@ -30,6 +30,10 @@ add_library(pb3_app_core STATIC
     ui/ActivityLights.h
     ui/AppMappingsWindow.cpp
     ui/AppMappingsWindow.h
+    ui/BankRows.h
+    ui/BankSidebar.cpp
+    ui/BankSidebar.h
+    ui/BodyLayout.h
     ui/CanvasLayout.h
     ui/ColourScheme.h
     ui/CpuMeter.cpp
@@ -45,6 +49,8 @@ add_library(pb3_app_core STATIC
     ui/MainWindow.h
     ui/Pb3LookAndFeel.cpp
     ui/Pb3LookAndFeel.h
+    ui/PatchRail.cpp
+    ui/PatchRail.h
     ui/PluginCard.cpp
     ui/PluginCard.h
     ui/SettingsWindow.cpp
@@ -91,12 +97,14 @@ pb3_apply_strict_warnings(pb3_app_core
     ui/AboutWindow.cpp
     ui/ActivityLights.cpp
     ui/AppMappingsWindow.cpp
+    ui/BankSidebar.cpp
     ui/CpuMeter.cpp
     ui/EditorWindow.cpp
     ui/FileActions.cpp
     ui/MappingsDialog.cpp
     ui/MainWindow.cpp
     ui/Pb3LookAndFeel.cpp
+    ui/PatchRail.cpp
     ui/PluginCard.cpp
     ui/SettingsWindow.cpp
     ui/SignalCanvas.cpp

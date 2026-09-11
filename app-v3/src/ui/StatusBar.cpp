@@ -2,6 +2,7 @@
 
 #include "ColourScheme.h"
 #include "engine/AudioEngine.h"
+#include "Pb3LookAndFeel.h"
 #include "session/Session.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
@@ -48,6 +49,17 @@ StatusBar::StatusBar(AppContext& ctx) : ctx_(ctx), stateDotColour_(tokens::statu
     rightLabel_.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(rightLabel_);
 
+    patchesToggle_.setClickingTogglesState(true);
+    patchesToggle_.getProperties().set(Pb3LookAndFeel::kOutlineButton, true);
+    patchesToggle_.setColour(juce::TextButton::textColourOnId, tokens::accentPrimary);
+    patchesToggle_.setTooltip("Show or hide the patch bank");
+    patchesToggle_.onClick = [this]
+    {
+        if (onPatchesToggled)
+            onPatchesToggled(patchesToggle_.getToggleState());
+    };
+    addAndMakeVisible(patchesToggle_);
+
     ctx_.session.addChangeListener(this);
     if (auto* dm = ctx_.audioEngine.getDeviceManager())
         dm->addChangeListener(this);
@@ -84,6 +96,8 @@ void StatusBar::resized()
     auto right = bounds.removeFromRight(140);
     rightLabel_.setBounds(right);
     bounds.removeFromRight(kBarPadding);
+    patchesToggle_.setBounds(bounds.removeFromRight(76));
+    bounds.removeFromRight(kBarPadding);
 
     auto left = bounds.removeFromLeft(280);
     leftLabel_.setBounds(left);
@@ -99,6 +113,11 @@ void StatusBar::resized()
     {
         deviceLabel_.setBounds(bounds);
     }
+}
+
+void StatusBar::setPatchesShown(bool shown)
+{
+    patchesToggle_.setToggleState(shown, juce::dontSendNotification);
 }
 
 void StatusBar::changeListenerCallback(juce::ChangeBroadcaster* source)
