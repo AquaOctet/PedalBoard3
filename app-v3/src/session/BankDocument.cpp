@@ -84,9 +84,18 @@ bool BankDocument::remove(int index)
     return true;
 }
 
-void BankDocument::storeActive()
+bool BankDocument::liveMatchesActiveSlot() const noexcept
 {
     if (!liveCaptureEnabled_)
+        return false;
+    if (!issuedAtGeneration_.has_value())
+        return true;
+    return session_.getState() == Session::State::Idle && session_.getPatchGeneration() > *issuedAtGeneration_;
+}
+
+void BankDocument::storeActive()
+{
+    if (!liveMatchesActiveSlot())
         return;
     auto captured = session_.getActivePatchWithState();
     captured.name = bank_.active().name; // the bank owns patch names
@@ -111,6 +120,7 @@ void BankDocument::issueReplace()
 {
     if (beforeSwap)
         beforeSwap();
+    issuedAtGeneration_ = session_.getPatchGeneration();
     session_.replacePatch(bank_.active());
     liveCaptureEnabled_ = true; // after this swap the live graph IS the active patch
 }

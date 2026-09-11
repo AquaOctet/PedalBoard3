@@ -160,7 +160,7 @@ void PreferencesPersister::changeListenerCallback(juce::ChangeBroadcaster* sourc
             // name). Dirty-write-only: skip the disk write if the persisted
             // bank already matches.
             auto bank = bankDocument_.bank();
-            if (bankDocument_.isLiveCaptureEnabled())
+            if (bankDocument_.liveMatchesActiveSlot())
             {
                 auto slot = active;
                 slot.name = bank.active().name;
@@ -187,7 +187,7 @@ void PreferencesPersister::changeListenerCallback(juce::ChangeBroadcaster* sourc
             // cleared the board, or the bank's active slot is empty): keep
             // the other slots, drop the active slot's nodes. Test Tone
             // (capture disabled) leaves the persisted bank alone.
-            if (bankDocument_.isLiveCaptureEnabled())
+            if (bankDocument_.liveMatchesActiveSlot())
             {
                 auto bank = bankDocument_.bank();
                 auto slot = active;

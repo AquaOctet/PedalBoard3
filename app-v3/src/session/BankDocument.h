@@ -4,7 +4,9 @@
 
 #include <juce_events/juce_events.h>
 
+#include <cstdint>
 #include <functional>
+#include <optional>
 
 namespace pedalboard3::session
 {
@@ -79,6 +81,15 @@ public:
     void setLiveCaptureEnabled(bool enabled) noexcept { liveCaptureEnabled_ = enabled; }
     bool isLiveCaptureEnabled() const noexcept { return liveCaptureEnabled_; }
 
+    // True when Session's live patch IS the active slot's patch: live capture
+    // is enabled (not Test Tone) and the last swap this document issued has
+    // committed. False while that swap is still building, and after it failed
+    // — Session then still holds the PREVIOUS patch, so capturing "the live
+    // patch" would overwrite the active slot with another slot's content (a
+    // fast Program Change sweep, or a patch whose plugin won't load here).
+    // storeActive and PreferencesPersister both gate on this.
+    bool liveMatchesActiveSlot() const noexcept;
+
 private:
     void swapTo(int newIndex); // storeActive (if enabled), set index, replacePatch
     void issueReplace();       // beforeSwap + replacePatch(active slot) + re-enable capture
@@ -86,6 +97,11 @@ private:
     Session& session_;
     PatchBank bank_;
     bool liveCaptureEnabled_{true};
+    // Session::getPatchGeneration() when the last swap was issued; a commit
+    // bumps it past this value, a failed build leaves it. Empty until the
+    // first swap (the live patch then is whatever Session started with, which
+    // the default one-patch bank mirrors).
+    std::optional<std::uint64_t> issuedAtGeneration_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BankDocument)
 };

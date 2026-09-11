@@ -24,8 +24,17 @@ namespace
 // Minimal valid PreparedGraph for any Patch: one TestGainProcessor per node.
 session::Session::BuildFn fakeBuilder()
 {
-    return [](const session::Patch& p, double sr, int bs, juce::String&) -> session::PreparedGraph
+    return [](const session::Patch& p, double sr, int bs, juce::String& errorOut) -> session::PreparedGraph
     {
+        // A node whose identifier starts with /fail/ makes the whole build fail,
+        // the way a missing plugin does in production.
+        for (const auto& n : p.nodes)
+            if (n.desc.fileOrIdentifier.startsWith("/fail/"))
+            {
+                errorOut = "FakeBuilder: unbuildable node";
+                return {};
+            }
+
         session::PreparedGraph pg;
         pg.graph = std::make_unique<juce::AudioProcessorGraph>();
         pg.graph->setPlayConfigDetails(2, 2, sr, bs);
@@ -336,4 +345,50 @@ TEST_CASE("BankDocument: beforeSwap runs before every swap it issues", "[session
     f.doc.reloadActive(); // 4
     f.settle();
     REQUIRE(calls == 4);
+}
+
+TEST_CASE("BankDocument: a second select while the first swap is building leaves the in-flight slot intact",
+          "[session][bank]")
+{
+    Fixture f;
+    f.doc.loadBank(threeBank());
+    f.settle();
+
+    f.doc.select(1); // Session is Building "B" and still holds "A"
+    f.doc.select(2); // must NOT capture "A" into slot 1
+    f.settle();
+
+    REQUIRE(f.doc.activeIndex() == 2);
+    REQUIRE(f.s.getActivePatch().name == "C");
+    REQUIRE(f.doc.bank().patches[1].nodes.size() == 2);
+    REQUIRE(f.doc.bank().patches[1].nodes[0].desc.name == "B0");
+    REQUIRE(f.doc.bank().patches[0].nodes.size() == 1);
+    REQUIRE(f.doc.bank().patches[0].nodes[0].desc.name == "A0");
+}
+
+TEST_CASE("BankDocument: after a failed switch, neither save nor the next switch overwrites the slot",
+          "[session][bank]")
+{
+    Fixture f;
+    auto bank = threeBank();
+    bank.patches[1].nodes[0].desc.fileOrIdentifier = "/fail/B0.vst3";
+    f.doc.loadBank(bank);
+    f.settle();
+
+    REQUIRE(f.doc.select(1));
+    f.settle();
+    REQUIRE(f.s.getLastError().isNotEmpty());
+    REQUIRE(f.s.getActivePatch().name == "A"); // Session kept the previous patch
+    REQUIRE_FALSE(f.doc.liveMatchesActiveSlot());
+
+    const auto saved = f.doc.snapshotForSave();
+    REQUIRE(saved.patches[1].nodes.size() == 2);
+    REQUIRE(saved.patches[1].nodes[0].desc.fileOrIdentifier == "/fail/B0.vst3");
+
+    REQUIRE(f.doc.select(2));
+    f.settle();
+    REQUIRE(f.doc.bank().patches[1].nodes[0].desc.fileOrIdentifier == "/fail/B0.vst3");
+    REQUIRE(f.doc.bank().patches[1].name == "B");
+    REQUIRE(f.s.getActivePatch().name == "C");
+    REQUIRE(f.doc.liveMatchesActiveSlot());
 }
