@@ -5,6 +5,7 @@
 #include "control/OscServer.h"
 #include "engine/AudioEngine.h"
 #include "engine/PluginHost.h"
+#include "session/BankDocument.h"
 #include "session/ControlHub.h"
 #include "session/ControlWiring.h"
 #include "session/Preferences.h"
@@ -45,9 +46,9 @@ public:
     void anotherInstanceStarted(const juce::String&) override {}
 
 private:
-    // Try to restore the previously-active patch per AC-1.D.3-G, gated by
-    // the KnownPluginList cross-check (AC-1.D.3-L) and the restore-in-flight
-    // crash-loop guard (AC-1.D.3-M). Implemented in Unit 5.
+    // Try to restore the previously-active patch BANK per AC-1.D.3-G, gated
+    // by the KnownPluginList cross-check (AC-1.D.3-L) and the
+    // restore-in-flight crash-loop guard (AC-1.D.3-M) on its active patch.
     void restoreActivePatchIfAny();
 
     // Construction order (also reverse destruction order). Each member's
@@ -62,6 +63,10 @@ private:
     std::unique_ptr<engine::AudioEngine> engine;
     std::unique_ptr<engine::PluginHost> pluginHost;
     std::unique_ptr<session::Session> session;
+    // M3: the patch-bank document that drives session's whole-patch swaps.
+    // Constructed right after session; destroyed before it (issues no swap
+    // in its dtor, but PreferencesPersister and UI hold a reference).
+    std::unique_ptr<session::BankDocument> bankDocument;
     // M2: constructed after session (ControlWiring observes it), before
     // AppContext (which hands controlHub out to UI). Destroyed before
     // session in shutdown() — see the reverse-order comment there.
