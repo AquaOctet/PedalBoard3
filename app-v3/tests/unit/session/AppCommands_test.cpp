@@ -39,3 +39,10 @@ TEST_CASE("AppCommands: next and previous patch resolve both ways; unknown ids d
     REQUIRE(session::findAppCommand("") == nullptr);
     REQUIRE(session::findAppCommandByJuceId(0) == nullptr);
 }
+
+TEST_CASE("AppCommands: Save resolves both ways", "[session][app-commands]")
+{
+    const auto* save = session::findAppCommand(session::appcommands::kSave);
+    REQUIRE(save != nullptr);
+    REQUIRE(session::findAppCommandByJuceId(save->juceCommandId) == save);
+}

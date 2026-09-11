@@ -7,6 +7,7 @@
 
 #include "engine/AudioEngine.h"
 #include "engine/PluginHost.h"
+#include "session/AppCommands.h"
 #include "session/BankDocument.h"
 #include "session/PreparedGraph.h"
 #include "session/Session.h"
@@ -391,4 +392,145 @@ TEST_CASE("BankDocument: after a failed switch, neither save nor the next switch
     REQUIRE(f.doc.bank().patches[1].name == "B");
     REQUIRE(f.s.getActivePatch().name == "C");
     REQUIRE(f.doc.liveMatchesActiveSlot());
+}
+
+// ---- File identity and unsaved changes (finish pass U1) --------------------
+
+namespace
+{
+juce::File tempBankFile(const char* name)
+{
+    return juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile(name);
+}
+} // namespace
+
+TEST_CASE("BankDocument: a loaded bank is clean and remembers its file", "[session][bank][modified]")
+{
+    Fixture f;
+    f.doc.loadBank(threeBank(), tempBankFile("set.pdl"));
+    f.settle();
+    f.s.sendSynchronousChangeMessage();
+    REQUIRE_FALSE(f.doc.isModified());
+    REQUIRE(f.doc.currentFile().getFileName() == "set.pdl");
+}
+
+TEST_CASE("BankDocument: an edit to the live patch marks it modified; markSaved clears it", "[session][bank][modified]")
+{
+    Fixture f;
+    f.doc.loadBank(threeBank(), tempBankFile("set.pdl"));
+    f.settle();
+
+    f.s.setNodeCustomName(1, "Drive");
+    f.s.sendSynchronousChangeMessage();
+    REQUIRE(f.doc.isModified());
+
+    f.doc.markSaved(tempBankFile("other.pdl"));
+    REQUIRE_FALSE(f.doc.isModified());
+    REQUIRE(f.doc.currentFile().getFileName() == "other.pdl");
+
+    f.s.removeNode(1);
+    f.s.sendSynchronousChangeMessage();
+    REQUIRE(f.doc.isModified());
+}
+
+TEST_CASE("BankDocument: switching patches and moving cards do not mark it modified", "[session][bank][modified]")
+{
+    Fixture f;
+    f.doc.loadBank(threeBank(), tempBankFile("set.pdl"));
+    f.settle();
+
+    REQUIRE(f.doc.select(1));
+    f.settle();
+    f.s.sendSynchronousChangeMessage();
+    REQUIRE_FALSE(f.doc.isModified());
+
+    f.s.setNodePosition(1, 320.0f, 180.0f);
+    f.s.sendSynchronousChangeMessage();
+    REQUIRE_FALSE(f.doc.isModified());
+}
+
+TEST_CASE("BankDocument: bank edits mark it modified", "[session][bank][modified]")
+{
+    Fixture f;
+    f.doc.loadBank(threeBank(), tempBankFile("set.pdl"));
+    f.settle();
+
+    REQUIRE(f.doc.rename(1, "Lead"));
+    REQUIRE(f.doc.isModified());
+
+    f.doc.markSaved(tempBankFile("set.pdl"));
+    f.doc.addPatch();
+    REQUIRE(f.doc.isModified());
+}
+
+TEST_CASE("BankDocument: a bank restored as unsaved stays modified until saved", "[session][bank][modified]")
+{
+    Fixture f;
+    f.doc.loadBank(threeBank());
+    f.settle();
+    REQUIRE(f.doc.currentFile() == juce::File());
+
+    f.doc.restoreIdentity(tempBankFile("set.pdl"), true);
+    f.s.sendSynchronousChangeMessage();
+    REQUIRE(f.doc.isModified());
+    REQUIRE(f.doc.currentFile().getFileName() == "set.pdl");
+
+    f.doc.markSaved(tempBankFile("set.pdl"));
+    REQUIRE_FALSE(f.doc.isModified());
+}
+
+TEST_CASE("BankDocument: a hand edit to a plugin parameter marks it modified until saved", "[session][bank][modified]")
+{
+    Fixture f;
+    f.doc.loadBank(threeBank(), tempBankFile("set.pdl"));
+    f.settle();
+
+    f.s.parameterEdits().sendSynchronousChangeMessage();
+    REQUIRE(f.doc.isModified());
+
+    f.doc.markSaved(tempBankFile("set.pdl"));
+    REQUIRE_FALSE(f.doc.isModified());
+
+    f.s.parameterEdits().sendSynchronousChangeMessage();
+    REQUIRE(f.doc.isModified());
+    f.doc.loadBank(threeBank(), tempBankFile("set.pdl"));
+    REQUIRE_FALSE(f.doc.isModified());
+}
+
+TEST_CASE("BankDocument: file.save runs the save handler the UI installs", "[session][bank][app-commands]")
+{
+    Fixture f;
+    REQUIRE_FALSE(session::invokeAppCommand(f.doc, session::appcommands::kSave)); // no UI yet
+
+    int saves = 0;
+    f.doc.onSaveRequested = [&saves] { ++saves; };
+    REQUIRE(session::invokeAppCommand(f.doc, session::appcommands::kSave));
+    REQUIRE(saves == 1);
+}
+
+TEST_CASE("dropUnsafeNodes: drops unrecognized built-ins from every patch and rebuilds their chain", "[session][bank]")
+{
+    engine::PluginHost host;
+    const auto internalNode = [](session::NodeId id, const char* type)
+    {
+        session::PatchNode n;
+        n.id = id;
+        n.kind = session::NodeKind::Internal;
+        n.internalType = type;
+        return n;
+    };
+
+    session::PatchBank bank;
+    bank.patches[0].nodes = {internalNode(1, "LevelProcessor"), internalNode(2, "NoSuchNode")};
+    bank.patches[0].connections = session::linearChainConnections(bank.patches[0].nodes);
+    session::Patch clean;
+    clean.nodes = {internalNode(1, "LevelProcessor")};
+    clean.connections = session::linearChainConnections(clean.nodes);
+    bank.patches.push_back(clean);
+
+    REQUIRE(session::dropUnsafeNodes(bank, host) == 1);
+    REQUIRE(bank.patches[0].nodes.size() == 1);
+    REQUIRE(bank.patches[0].nodes[0].internalType == "LevelProcessor");
+    REQUIRE(bank.patches[0].connections == session::linearChainConnections(bank.patches[0].nodes));
+    REQUIRE(bank.patches[1].nodes.size() == 1);
 }

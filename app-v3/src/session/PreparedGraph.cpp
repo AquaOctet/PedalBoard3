@@ -3,6 +3,8 @@
 #include "engine/BypassableInstance.h"
 #include "engine/PluginHost.h"
 
+#include <algorithm>
+
 namespace pedalboard3::session
 {
 
@@ -171,6 +173,25 @@ bool isNodeSafeForChain(const engine::PluginHost& host, const PatchNode& node)
         return false; // unrecognized internal type — drop rather than abort the build
     }
     return host.isDescriptorSafeForChain(node.desc);
+}
+
+int dropUnsafeNodes(PatchBank& bank, const engine::PluginHost& host)
+{
+    int dropped = 0;
+    for (auto& patch : bank.patches)
+    {
+        const auto before = patch.nodes.size();
+        patch.nodes.erase(std::remove_if(patch.nodes.begin(),
+                                         patch.nodes.end(),
+                                         [&host](const PatchNode& n) { return !isNodeSafeForChain(host, n); }),
+                          patch.nodes.end());
+        if (patch.nodes.size() != before)
+        {
+            dropped += static_cast<int>(before - patch.nodes.size());
+            patch.connections = linearChainConnections(patch.nodes);
+        }
+    }
+    return dropped;
 }
 
 } // namespace pedalboard3::session

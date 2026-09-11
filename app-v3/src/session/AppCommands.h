@@ -26,12 +26,14 @@ namespace appcommands
 {
 inline constexpr const char* kNextPatch = "patch.next";
 inline constexpr const char* kPreviousPatch = "patch.previous";
+inline constexpr const char* kSave = "file.save";
 } // namespace appcommands
 
 // Every command, in display order.
-inline constexpr std::array<AppCommandInfo, 2> kAppCommands{{
+inline constexpr std::array<AppCommandInfo, 3> kAppCommands{{
     {appcommands::kNextPatch, "Next Patch", 0x2001},
     {appcommands::kPreviousPatch, "Previous Patch", 0x2002},
+    {appcommands::kSave, "Save", 0x2003},
 }};
 
 // Lookups; nullptr when unknown.
@@ -39,7 +41,9 @@ const AppCommandInfo* findAppCommand(const juce::String& id) noexcept;
 const AppCommandInfo* findAppCommandByJuceId(int juceCommandId) noexcept;
 
 // Run a command against the bank (message thread). Returns false, doing
-// nothing, for an unknown id.
+// nothing, for an unknown id. file.save hands off to
+// BankDocument::onSaveRequested and is unhandled (false) until the UI
+// installs one.
 bool invokeAppCommand(BankDocument& bank, const juce::String& id);
 
 } // namespace pedalboard3::session

@@ -33,6 +33,13 @@ bool invokeAppCommand(BankDocument& bank, const juce::String& id)
         bank.previous();
         return true;
     }
+    if (id == appcommands::kSave)
+    {
+        if (!bank.onSaveRequested)
+            return false;
+        bank.onSaveRequested();
+        return true;
+    }
     return false;
 }
 

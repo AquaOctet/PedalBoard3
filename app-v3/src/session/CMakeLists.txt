@@ -22,6 +22,8 @@ add_library(pb3_session_core STATIC
     PatchBank.h
     BankDocument.cpp
     BankDocument.h
+    DefaultBank.cpp
+    DefaultBank.h
     PatchSwitcher.cpp
     PatchSwitcher.h
     AppCommands.cpp
@@ -79,6 +81,7 @@ pb3_apply_strict_warnings(pb3_session_core
     Patch.cpp
     PatchBank.cpp
     BankDocument.cpp
+    DefaultBank.cpp
     PatchSwitcher.cpp
     AppCommands.cpp
     PdlSerializer.cpp

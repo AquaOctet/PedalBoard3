@@ -34,16 +34,21 @@ class Session;
 //
 // Broadcasts a change message after every bank mutation (switch, add,
 // duplicate, rename, remove, load). Message-thread only, like Session's API.
-class BankDocument : public juce::ChangeBroadcaster
+class BankDocument : public juce::ChangeBroadcaster, private juce::ChangeListener
 {
 public:
     explicit BankDocument(Session& session);
-    ~BankDocument() override = default;
+    ~BankDocument() override;
 
     // Called right before every Session::replacePatch this document issues.
     // The UI binds it to closing open plugin editors (caller-managed editor
     // lifecycle: instances die in the swap).
     std::function<void()> beforeSwap;
+
+    // What the file.save app command runs (Ctrl/Cmd+S, or a mapped MIDI / OSC
+    // trigger). The UI binds it to Save, which asks for a file when the board
+    // is untitled. Unset, file.save does nothing.
+    std::function<void()> onSaveRequested;
 
     const PatchBank& bank() const noexcept { return bank_; }
     int activeIndex() const noexcept { return bank_.activeIndex; }
@@ -51,8 +56,10 @@ public:
     const Patch& activePatch() const noexcept { return bank_.active(); }
 
     // Replace the whole document and make its active patch live. Does not
-    // capture the outgoing patch (the old document is discarded).
-    void loadBank(PatchBank bank);
+    // capture the outgoing patch (the old document is discarded). `file` is
+    // where the bank came from (empty for an untitled or imported board); the
+    // loaded content is the clean baseline.
+    void loadBank(PatchBank bank, juce::File file = {});
 
     // Re-issue the active slot to Session without capturing first (Test Tone
     // off: the live graph was the tone, the slot is the truth).
@@ -90,7 +97,36 @@ public:
     // storeActive and PreferencesPersister both gate on this.
     bool liveMatchesActiveSlot() const noexcept;
 
+    // ---- File identity and unsaved changes (finish pass #26 / #27, plan
+    // docs/plans/2026-09-11-003-feat-finish-pass-core-plan.md, KD1 / KD7).
+    //
+    // The file the bank was loaded from or last saved to (empty = untitled),
+    // and whether the content differs from it: bank structure and patch names,
+    // each patch's nodes, bypass, custom names, MIDI channel, connections and
+    // mappings. Not the active patch index or card positions. Plugin state is
+    // not compared; a hand edit to a live plugin parameter
+    // (Session::parameterEdits) marks the bank modified until the next save or
+    // load.
+    // Re-evaluated after every bank edit and every Session change that
+    // settles with the live patch being the active slot; a change in the
+    // result broadcasts.
+    const juce::File& currentFile() const noexcept { return currentFile_; }
+    bool isModified() const noexcept { return modified_; }
+
+    // The current content becomes the clean baseline and `file` the current
+    // file (Save / Save As).
+    void markSaved(const juce::File& file);
+
+    // After a relaunch: the restored bank belongs to `file` and was unsaved
+    // (`modified`) when the app last ran. A modified restore stays modified
+    // until the next save or load.
+    void restoreIdentity(const juce::File& file, bool modified);
+
 private:
+    void changeListenerCallback(juce::ChangeBroadcaster* source) override; // Session settled
+    void refreshModified();
+    std::int64_t contentSignature() const;
+
     void swapTo(int newIndex); // storeActive (if enabled), set index, replacePatch
     void issueReplace();       // beforeSwap + replacePatch(active slot) + re-enable capture
 
@@ -102,6 +138,12 @@ private:
     // first swap (the live patch then is whatever Session started with, which
     // the default one-patch bank mirrors).
     std::optional<std::uint64_t> issuedAtGeneration_;
+
+    juce::File currentFile_;
+    std::int64_t savedSignature_{0};
+    bool modified_{false};
+    bool restoredModified_{false};
+    bool stateEdited_{false};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BankDocument)
 };

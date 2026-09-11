@@ -3,7 +3,9 @@
 #include "AppContext.h"
 #include "AppMappingsWindow.h"
 #include "ColourScheme.h"
+#include "FileActions.h"
 #include "session/AppCommands.h"
+#include "session/BankDocument.h"
 #include "session/Preferences.h"
 #include "SignalCanvas.h"
 #include "StatusBar.h"
@@ -28,7 +30,7 @@ class MainWindow::RootComponent : public juce::Component, public juce::Applicati
 {
 public:
     explicit RootComponent(AppContext& ctxRef)
-        : ctx_(ctxRef), canvas_(ctx_), transportBar_(ctx_, canvas_), statusBar_(ctx_)
+        : ctx_(ctxRef), files_(ctx_), canvas_(ctx_), transportBar_(ctx_, canvas_, files_), statusBar_(ctx_)
     {
         addAndMakeVisible(transportBar_);
         addAndMakeVisible(viewport_);
@@ -46,6 +48,7 @@ public:
     void paint(juce::Graphics& g) override { g.fillAll(tokens::bgWindow); }
 
     TransportBar& transportBar() noexcept { return transportBar_; }
+    FileActions& files() noexcept { return files_; }
 
     // The canvas sits in a Viewport, which scrolls on Page Up / Page Down and
     // would swallow them before they reached the window's key listener; a
@@ -67,13 +70,18 @@ public:
         const auto* c = session::findAppCommandByJuceId(commandID);
         if (c == nullptr)
             return;
-        result.setInfo(c->name, c->name, "Patch", 0);
+        const juce::String id(c->id);
+        // The category is the id's prefix: "patch.next" -> "Patch".
+        const auto prefix = id.upToFirstOccurrenceOf(".", false, false);
+        result.setInfo(c->name, c->name, prefix.substring(0, 1).toUpperCase() + prefix.substring(1), 0);
         // Page Down / Page Up: what a Bluetooth page-turner foot pedal sends
         // (plan KD3).
-        if (juce::String(c->id) == session::appcommands::kNextPatch)
+        if (id == session::appcommands::kNextPatch)
             result.addDefaultKeypress(juce::KeyPress::pageDownKey, juce::ModifierKeys());
-        else if (juce::String(c->id) == session::appcommands::kPreviousPatch)
+        else if (id == session::appcommands::kPreviousPatch)
             result.addDefaultKeypress(juce::KeyPress::pageUpKey, juce::ModifierKeys());
+        else if (id == session::appcommands::kSave)
+            result.addDefaultKeypress('s', juce::ModifierKeys::commandModifier); // Ctrl+S / Cmd+S
     }
 
     bool perform(const InvocationInfo& info) override
@@ -92,6 +100,7 @@ public:
 
 private:
     AppContext& ctx_;
+    FileActions files_; // before transportBar_, which holds a reference to it
     SignalCanvas canvas_;
     juce::Viewport viewport_;
     TransportBar transportBar_;
@@ -101,7 +110,7 @@ private:
 };
 
 MainWindow::MainWindow(const juce::String& name, AppContext& context)
-    : juce::DocumentWindow(name, tokens::bgWindow, juce::DocumentWindow::allButtons), ctx_(context)
+    : juce::DocumentWindow(name, tokens::bgWindow, juce::DocumentWindow::allButtons), ctx_(context), appName_(name)
 {
     setUsingNativeTitleBar(true);
     setResizable(/*shouldBeResizable*/ true, /*useBottomRightCornerResizer*/ false);
@@ -122,12 +131,25 @@ MainWindow::MainWindow(const juce::String& name, AppContext& context)
     keys->addChangeListener(this);
     root_->transportBar().onOpenAppMappings = [this] { openAppMappings(); };
 
+    // Finish pass U3: file.save (Ctrl/Cmd+S, or a mapped trigger) saves through
+    // the File workflow, and the title follows the board's file and unsaved
+    // changes.
+    ctx_.bankDocument.onSaveRequested = [this] { root_->files().save(); };
+    ctx_.bankDocument.addChangeListener(this);
+    updateTitle();
+
     centreWithSize(kInitialWidth, kInitialHeight);
+    restoreWindowPosition();
     setVisible(true);
 }
 
 MainWindow::~MainWindow()
 {
+    // Finish pass U6: remember where the window was. Preferences saves it on
+    // teardown (App::shutdown destroys this window before Preferences).
+    ctx_.preferences.setWindowState(getWindowStateAsString());
+    ctx_.bankDocument.removeChangeListener(this);
+    ctx_.bankDocument.onSaveRequested = nullptr;
     appMappingsWindow_.reset();
     auto* keys = commandManager_.getKeyMappings();
     keys->removeChangeListener(this);
@@ -146,8 +168,14 @@ void MainWindow::closeButtonPressed()
     juce::JUCEApplication::getInstance()->systemRequestedQuit();
 }
 
-void MainWindow::changeListenerCallback(juce::ChangeBroadcaster*)
+void MainWindow::changeListenerCallback(juce::ChangeBroadcaster* source)
 {
+    if (source == &ctx_.bankDocument)
+    {
+        updateTitle();
+        return;
+    }
+    // Otherwise the key mappings changed (App Mappings window): persist them.
     if (auto xml = commandManager_.getKeyMappings()->createXml(/*saveDifferencesFromDefaultSet*/ true))
         ctx_.preferences.setKeyMappings(*xml);
 }
@@ -163,6 +191,39 @@ void MainWindow::openAppMappings()
     // owner drops the window.
     appMappingsWindow_ = std::make_unique<AppMappingsWindow>(
         ctx_, *commandManager_.getKeyMappings(), [this] { appMappingsWindow_.reset(); });
+}
+
+void MainWindow::requestQuit()
+{
+    root_->files().confirmDiscard("quitting",
+                                  [this](bool discarded)
+                                  {
+                                      if (onQuitConfirmed)
+                                          onQuitConfirmed(discarded);
+                                      else
+                                          juce::JUCEApplication::quit();
+                                  });
+}
+
+void MainWindow::updateTitle()
+{
+    const auto& doc = ctx_.bankDocument;
+    setName(juce::String(doc.isModified() ? "* " : "") + boardDisplayName(doc.currentFile()) + " - " + appName_);
+}
+
+void MainWindow::restoreWindowPosition()
+{
+    const auto saved = ctx_.preferences.getWindowState();
+    if (saved.isEmpty() || !restoreWindowStateFromString(saved))
+        return;
+
+    // The title bar has to land on a display the user can reach; after a
+    // monitor is unplugged the saved spot can be off every screen.
+    const auto titleStrip = getBounds().withHeight(kTransportBarHeight).reduced(kTransportBarHeight, 0);
+    for (const auto& display : juce::Desktop::getInstance().getDisplays().displays)
+        if (display.userArea.intersects(titleStrip))
+            return;
+    centreWithSize(kInitialWidth, kInitialHeight);
 }
 
 } // namespace pedalboard3::ui

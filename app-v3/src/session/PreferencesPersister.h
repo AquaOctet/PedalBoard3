@@ -54,6 +54,10 @@ private:
     BankDocument& bankDocument_;
     AppMappings& appMappings_;
 
+    // Write the bank (its active slot refreshed from Session when that is the
+    // live patch) unless the stored one already matches.
+    void persistBank();
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PreferencesPersister)
 };
 

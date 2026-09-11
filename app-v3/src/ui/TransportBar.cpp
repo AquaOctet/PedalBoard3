@@ -6,11 +6,10 @@
 #include "engine/PluginHost.h"
 #include "engine/PluginScanner.h"
 #include "engine/processors/TestToneProcessor.h"
+#include "FileActions.h"
 #include "session/BankDocument.h"
-#include "session/PdlSerializer.h"
 #include "session/Preferences.h"
 #include "session/Session.h"
-#include "session/v2_import/PdlV2Importer.h"
 #include "SignalCanvas.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
@@ -81,84 +80,10 @@ std::unique_ptr<juce::AudioProcessorGraph> buildTestToneGraph(juce::AudioDeviceM
     return graph;
 }
 
-// Resolve an imported (e.g. Pedalboard2/VST2) plugin descriptor to an installed
-// plugin by display name — case-insensitive, effects preferred over instruments.
-// Returns nullptr when nothing matches. Lets a v2 import reconnect to the user's
-// installed VST3/AU build of the same plugin even though the format differs.
-const juce::PluginDescription* findKnownByName(const juce::Array<juce::PluginDescription>& known,
-                                               const juce::String& name)
-{
-    const juce::PluginDescription* best = nullptr;
-    for (const auto& d : known)
-    {
-        if (!d.name.equalsIgnoreCase(name))
-            continue;
-        if (!d.isInstrument)
-            return &d; // an effect match is exactly what we want
-        if (best == nullptr)
-            best = &d; // remember an instrument match as a last resort
-    }
-    return best;
-}
-
-struct LoadedBank
-{
-    std::unique_ptr<session::PatchBank> bank;
-    juce::StringArray warnings;
-    juce::String error;
-};
-
-// Load a patch BANK for File > Open, transparently handling both v3 .pdl and
-// legacy Pedalboard2 (.pdl v2) files. For a v2 file it imports every patch's
-// topology and resolves each plugin to an installed one by name (dropping
-// unmatched, with a warning); state is not migrated across the VST2 -> VST3
-// format change.
-LoadedBank loadOpenedBank(const juce::File& file, engine::PluginHost& host)
-{
-    LoadedBank out;
-
-    auto xml = juce::parseXML(file);
-    if (xml != nullptr && session::v2::isPedalboard2Patch(*xml))
-    {
-        auto imp = session::v2::importPedalboard2Bank(*xml);
-        out.warnings = imp.warnings;
-        out.error = imp.error;
-        if (imp.bank == nullptr)
-            return out;
-
-        const auto known = host.getKnownPlugins();
-        for (auto& patch : imp.bank->patches)
-        {
-            std::vector<session::PatchNode> kept;
-            for (auto& node : patch.nodes)
-            {
-                if (const auto* match = findKnownByName(known, node.desc.name))
-                {
-                    node.desc = *match;    // resolve to the installed plugin
-                    node.state.setSize(0); // cross-format; state already not migrated
-                    kept.push_back(std::move(node));
-                }
-                else
-                {
-                    out.warnings.add("Skipped \"" + node.desc.name +
-                                     "\" - not found in your scanned plugins (scan it, or no installed equivalent).");
-                }
-            }
-            patch.nodes = std::move(kept);
-            patch.connections = session::linearChainConnections(patch.nodes);
-        }
-        out.bank = std::move(imp.bank);
-        return out;
-    }
-
-    auto loaded = session::pdl::readBank(file);
-    out.bank = std::move(loaded.bank);
-    out.error = loaded.error;
-    return out;
-}
 } // namespace
 
-TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas) : ctx_(ctx), canvas_(canvas)
+TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas, FileActions& files)
+    : ctx_(ctx), canvas_(canvas), files_(files)
 {
     setOpaque(true);
 
@@ -776,130 +701,33 @@ void TransportBar::rescanPlugins()
 void TransportBar::openFileMenu()
 {
     juce::PopupMenu menu;
-    menu.addItem(1, "Open Patch...");
-    menu.addItem(2, "Save Patch As...");
+    menu.addItem(1, "New");
+    menu.addItem(2, "Open...");
+    menu.addItem(3, "Save");
+    menu.addItem(4, "Save As...");
     menu.addSeparator();
-    menu.addItem(3, "App Mappings...");
+    menu.addItem(5, "Save as Default");
+    menu.addItem(6, "Reset Default", files_.hasDefault());
+    menu.addSeparator();
+    menu.addItem(7, "App Mappings...");
     menu.showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(fileButton_),
                        [this](int choice)
                        {
                            if (choice == 1)
-                               openPatch();
+                               files_.newBank();
                            else if (choice == 2)
-                               savePatch();
-                           else if (choice == 3 && onOpenAppMappings)
+                               files_.open();
+                           else if (choice == 3)
+                               files_.save();
+                           else if (choice == 4)
+                               files_.saveAs();
+                           else if (choice == 5)
+                               files_.saveAsDefault();
+                           else if (choice == 6)
+                               files_.resetDefault();
+                           else if (choice == 7 && onOpenAppMappings)
                                onOpenAppMappings();
                        });
-}
-
-void TransportBar::savePatch()
-{
-    // Snapshot the whole bank, the active slot refreshed WITH live plugin
-    // state so a later load restores knob settings (master plan §4.5 / §4.2.B).
-    auto snapshot = ctx_.bankDocument.snapshotForSave();
-
-    const auto dir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("Pedalboard 3");
-    fileChooser_ =
-        std::make_unique<juce::FileChooser>("Save Pedalboard Patch", dir.getChildFile("Untitled.pdl"), "*.pdl");
-
-    const auto flags = juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles |
-                       juce::FileBrowserComponent::warnAboutOverwriting;
-
-    fileChooser_->launchAsync(
-        flags,
-        [this, snapshot](const juce::FileChooser& fc)
-        {
-            auto file = fc.getResult();
-            if (file == juce::File())
-                return; // cancelled
-
-            if (!file.hasFileExtension("pdl"))
-                file = file.withFileExtension("pdl");
-
-            const auto result = session::pdl::writeBank(snapshot, file);
-            const bool ok = result.wasOk();
-
-            const auto opts =
-                juce::MessageBoxOptions{}
-                    .withIconType(ok ? juce::MessageBoxIconType::InfoIcon : juce::MessageBoxIconType::WarningIcon)
-                    .withTitle(ok ? "Patch saved" : "Couldn't save patch")
-                    .withMessage(ok ? ("Saved to " + file.getFullPathName()) : result.getErrorMessage())
-                    .withButton("OK");
-            juce::AlertWindow::showAsync(opts, nullptr);
-        });
-}
-
-void TransportBar::openPatch()
-{
-    const auto dir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("Pedalboard 3");
-    fileChooser_ = std::make_unique<juce::FileChooser>("Open Pedalboard Patch", dir, "*.pdl");
-
-    const auto flags = juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles;
-
-    fileChooser_->launchAsync(
-        flags,
-        [this](const juce::FileChooser& fc)
-        {
-            const auto file = fc.getResult();
-            if (file == juce::File())
-                return; // cancelled
-
-            // Handles both v3 .pdl and legacy Pedalboard2 (.pdl v2) files.
-            auto loaded = loadOpenedBank(file, ctx_.pluginHost);
-            if (loaded.bank == nullptr)
-            {
-                const auto msg =
-                    loaded.error.isNotEmpty() ? loaded.error : juce::String("Couldn't read the patch file.");
-                const auto opts = juce::MessageBoxOptions{}
-                                      .withIconType(juce::MessageBoxIconType::WarningIcon)
-                                      .withTitle("Couldn't open patch")
-                                      .withMessage(msg)
-                                      .withButton("OK");
-                juce::AlertWindow::showAsync(opts, nullptr);
-                return;
-            }
-
-            // Drop nodes that are unsafe to construct (instruments or blacklisted
-            // crash-on-construct plugins) BEFORE any of these patches can go
-            // live — replacePatch calls createInstance directly (bypassing the
-            // scanner's guards), and every slot is one switch away from live.
-            // Rebuild a linear chain over the survivors so connections stay valid.
-            for (auto& patch : loaded.bank->patches)
-            {
-                const auto countBefore = patch.nodes.size();
-                patch.nodes.erase(std::remove_if(patch.nodes.begin(),
-                                                 patch.nodes.end(),
-                                                 [this](const session::PatchNode& n)
-                                                 { return !session::isNodeSafeForChain(ctx_.pluginHost, n); }),
-                                  patch.nodes.end());
-                if (patch.nodes.size() != countBefore)
-                    patch.connections = session::linearChainConnections(patch.nodes);
-            }
-
-            // If Test Tone is on, drop it: the loaded bank's active patch becomes
-            // the live graph via the bank document. Clear the toggle so the UI
-            // agrees (loadBank re-enables live capture itself).
-            if (toneButton_.getToggleState())
-                toneButton_.setToggleState(false, juce::dontSendNotification);
-
-            // Editors close via BankDocument::beforeSwap before the swap
-            // destroys the live instances.
-            ctx_.bankDocument.loadBank(std::move(*loaded.bank));
-            updateAddPluginEnabled();
-
-            // Surface import notes (Pedalboard2 conversion: dropped state, skipped
-            // plugins, etc.) once the chain is in.
-            if (!loaded.warnings.isEmpty())
-            {
-                const auto body = "Imported with notes:\n\n - " + loaded.warnings.joinIntoString("\n - ");
-                const auto opts = juce::MessageBoxOptions{}
-                                      .withIconType(juce::MessageBoxIconType::InfoIcon)
-                                      .withTitle("Patch imported")
-                                      .withMessage(body)
-                                      .withButton("OK");
-                juce::AlertWindow::showAsync(opts, nullptr);
-            }
-        });
 }
 
 void TransportBar::onTestToneToggled()

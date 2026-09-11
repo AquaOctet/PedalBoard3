@@ -65,7 +65,7 @@ namespace pedalboard3::session
 //
 // Not RT-safe. Public API is message-thread only with the noted
 // exceptions for the polling helpers.
-class Session : public juce::ChangeBroadcaster
+class Session : public juce::ChangeBroadcaster, private juce::AudioProcessorListener
 {
 public:
     enum class State
@@ -228,6 +228,14 @@ public:
     // mapping content (ControlWiring) doesn't re-feed on unrelated churn.
     std::uint64_t getMappingsRevision() const noexcept { return mappingsRevision_.load(std::memory_order_acquire); }
 
+    // Broadcasts (coalesced) when a live plugin parameter was edited by hand:
+    // a change made on the message thread outside a control input
+    // (ControlParameterApplier), or the end of an edit gesture in the
+    // plugin's editor. A mapped MIDI / OSC input and worker-side state loads
+    // don't count (finish pass KD1). Separate from Session's own broadcast so
+    // a knob drag doesn't wake every Session listener.
+    juce::ChangeBroadcaster& parameterEdits() noexcept { return parameterEdits_; }
+
     bool hasNode(NodeId) const noexcept;
     // The live processor for a node, or nullptr. juce::AudioProcessor (not
     // AudioPluginInstance) so it covers internal nodes too; callers wanting
@@ -314,6 +322,17 @@ private:
     // cached Node* that belong only to Session's own committed graph.
     juce::AudioProcessorGraph* currentRuntimeGraph() const noexcept;
 
+    // Hand-edit detection: Session listens to every live node's hosted
+    // processor (see parameterEdits()).
+    void audioProcessorParameterChanged(juce::AudioProcessor*, int parameterIndex, float newValue) override;
+    void audioProcessorChanged(juce::AudioProcessor*, const ChangeDetails&) override {}
+    void audioProcessorParameterChangeGestureEnd(juce::AudioProcessor*, int parameterIndex) override;
+    void listenTo(const PreparedGraph::NodeRefs&);
+    // Stop listening to every node in nodes_, but only while their processors
+    // are known alive: the graph Session committed is still the runtime's
+    // (crash-hunt #7 identity guard). Requires statusMutex_.
+    void stopListeningToLiveNodes();
+
     static int stereoChannel(int ch) noexcept { return ch; }
 
     engine::AudioEngine& engine_;
@@ -349,6 +368,7 @@ private:
     std::atomic<std::uint64_t> patchGeneration_{0};
     std::atomic<std::uint64_t> mappingsRevision_{0};
     juce::WaitableEvent idleEvent_{true /*manual reset*/};
+    juce::ChangeBroadcaster parameterEdits_;
 
     std::unique_ptr<Worker> worker_;
     std::unique_ptr<ResultUpdater> resultUpdater_;
