@@ -682,6 +682,17 @@ std::vector<Session::NodeSnapshot> Session::getNodeSnapshots() const
         s.bypassed = n.bypass;
         s.customName = n.customName;
         s.midiChannel = n.midiChannel;
+        s.builtIn = n.kind == NodeKind::Internal;
+        if (s.builtIn)
+        {
+            s.internalType = n.internalType;
+        }
+        else
+        {
+            s.category = n.desc.category;
+            s.format = n.desc.pluginFormatName;
+            s.vendor = n.desc.manufacturerName;
+        }
         s.x = n.x;
         s.y = n.y;
         snaps.push_back(std::move(s));

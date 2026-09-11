@@ -43,6 +43,7 @@ set(PB3_TEST_SOURCES
     unit/ui/BankRows_test.cpp
     unit/ui/BodyLayout_test.cpp
     unit/ui/BrowserModel_test.cpp
+    unit/ui/CardText_test.cpp
     unit/control/MidiMapping_test.cpp
     unit/control/MidiRouter_test.cpp
     unit/control/MidiControlSurface_test.cpp
