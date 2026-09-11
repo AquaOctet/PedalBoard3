@@ -24,22 +24,31 @@ add_library(pb3_app_core STATIC
     App.cpp
     App.h
     AppContext.h
+    ui/AboutWindow.cpp
+    ui/AboutWindow.h
+    ui/ActivityLights.cpp
+    ui/ActivityLights.h
     ui/AppMappingsWindow.cpp
     ui/AppMappingsWindow.h
     ui/CanvasLayout.h
     ui/ColourScheme.h
+    ui/CpuMeter.cpp
+    ui/CpuMeter.h
     ui/EditorWindow.cpp
     ui/EditorWindow.h
     ui/FileActions.cpp
     ui/FileActions.h
     ui/MappingsDialog.cpp
     ui/MappingsDialog.h
+    ui/MeterMath.h
     ui/MainWindow.cpp
     ui/MainWindow.h
     ui/Pb3LookAndFeel.cpp
     ui/Pb3LookAndFeel.h
     ui/PluginCard.cpp
     ui/PluginCard.h
+    ui/SettingsWindow.cpp
+    ui/SettingsWindow.h
     ui/SignalCanvas.cpp
     ui/SignalCanvas.h
     ui/StatusBar.cpp
@@ -79,13 +88,17 @@ target_link_libraries(pb3_app_core
 
 pb3_apply_strict_warnings(pb3_app_core
     App.cpp
+    ui/AboutWindow.cpp
+    ui/ActivityLights.cpp
     ui/AppMappingsWindow.cpp
+    ui/CpuMeter.cpp
     ui/EditorWindow.cpp
     ui/FileActions.cpp
     ui/MappingsDialog.cpp
     ui/MainWindow.cpp
     ui/Pb3LookAndFeel.cpp
     ui/PluginCard.cpp
+    ui/SettingsWindow.cpp
     ui/SignalCanvas.cpp
     ui/StatusBar.cpp
     ui/TransportBar.cpp

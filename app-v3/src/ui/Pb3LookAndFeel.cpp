@@ -123,6 +123,22 @@ void Pb3LookAndFeel::drawButtonBackground(juce::Graphics& g,
 {
     auto bounds = button.getLocalBounds().toFloat().reduced(0.5f);
 
+    if (static_cast<bool>(button.getProperties()[kOutlineButton]))
+    {
+        // Outline button: no fill until toggled on, then a teal wash and edge.
+        const bool on = button.getToggleState();
+        auto wash = on ? tokens::accentPrimary.withAlpha(0.14f) : juce::Colours::transparentBlack;
+        if (shouldDrawButtonAsDown)
+            wash = wash.overlaidWith(tokens::fgPrimary.withAlpha(0.08f));
+        else if (shouldDrawButtonAsHighlighted)
+            wash = wash.overlaidWith(tokens::fgPrimary.withAlpha(0.05f));
+        g.setColour(wash);
+        g.fillRoundedRectangle(bounds, kButtonCornerRadius);
+        g.setColour(on ? tokens::accentPrimary : tokens::borderDefault);
+        g.drawRoundedRectangle(bounds, kButtonCornerRadius, 1.0f);
+        return;
+    }
+
     auto fill = backgroundColour;
     if (shouldDrawButtonAsDown)
         fill = fill.darker(0.15f);

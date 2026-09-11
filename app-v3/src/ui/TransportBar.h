@@ -1,6 +1,8 @@
 #pragma once
 
+#include "ActivityLights.h"
 #include "AppContext.h"
+#include "CpuMeter.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -26,8 +28,10 @@ class SignalCanvas;
 //           (new, duplicate, rename, remove, go to a patch). Every switch
 //           goes through BankDocument, which closes open editors first via
 //           beforeSwap (D1b / AC-UI-P).
-//   right:  OSC port, Audio Settings... and Test Tone (diagnostic loopback
-//           bypassing the chain).
+//   right:  the MIDI / OSC activity lights and the CPU meter (UI refresh
+//           U3 / U2), then Settings (audio device, MIDI inputs and the OSC
+//           listener; U10) and Test Tone (diagnostic loopback bypassing the
+//           chain) as outline buttons.
 //
 // The audio-device readout lives in the StatusBar.
 //
@@ -55,15 +59,10 @@ private:
     juce::PopupMenu makeAddPluginMenu();
     bool canAddPlugin() const; // Session Idle and Test Tone off
     void openFileMenu();
-    void openAudioSettings();
     void openPluginList();
     void rescanPlugins();
     void onTestToneToggled();
     void updateAddPluginEnabled();
-    // OSC port control (M2 U5): persists the new port and rebinds the live
-    // listener; a bind failure (e.g. port already in use) surfaces inline via
-    // the field's colour/tooltip rather than a blocking dialog.
-    void applyOscPortChange();
     void openPluginsMenu();
 
     // Patch strip (M3 U5).
@@ -78,11 +77,11 @@ private:
 
     juce::TextButton fileButton_{"File"};
     juce::TextButton addPluginButton_{"+"};
-    juce::Label oscPortLabel_;
-    juce::TextEditor oscPortEditor_;
-    juce::TextButton settingsButton_{"Audio Settings..."};
-    juce::ToggleButton toneButton_{"Test Tone"};
+    juce::TextButton settingsButton_{"Settings"};
+    juce::TextButton toneButton_{"Test Tone"}; // toggles
     juce::TextButton pluginsButton_{"Plugins"};
+    ActivityLights activityLights_;
+    CpuMeter cpuMeter_;
 
     juce::TextButton prevPatchButton_{"<"};
     juce::TextButton patchButton_;

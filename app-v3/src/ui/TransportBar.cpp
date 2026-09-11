@@ -1,5 +1,6 @@
 #include "TransportBar.h"
 
+#include "AboutWindow.h"
 #include "ColourScheme.h"
 #include "control/OscServer.h"
 #include "engine/AudioEngine.h"
@@ -7,10 +8,12 @@
 #include "engine/PluginScanner.h"
 #include "engine/processors/TestToneProcessor.h"
 #include "FileActions.h"
+#include "Pb3LookAndFeel.h"
 #include "session/BankDocument.h"
 #include "session/EditHistory.h"
 #include "session/Preferences.h"
 #include "session/Session.h"
+#include "SettingsWindow.h"
 #include "SignalCanvas.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
@@ -30,10 +33,10 @@ constexpr int kBarPadding = 12;
 constexpr int kButtonGap = 6;
 constexpr int kFileButtonWidth = 64;
 constexpr int kAddButtonWidth = 36; // the square [+]
-constexpr int kOscLabelWidth = 34;
-constexpr int kOscEditorWidth = 50;
-constexpr int kSettingsButtonWidth = 140;
-constexpr int kToneButtonWidth = 100;
+constexpr int kActivityWidth = 104; // MIDI and OSC lights
+constexpr int kCpuMeterWidth = 168;
+constexpr int kSettingsButtonWidth = 90;
+constexpr int kToneButtonWidth = 96;
 constexpr int kPluginsButtonWidth = 90;
 // Patch strip (M3 U5): [<] [n/N  Name] [>].
 constexpr int kPatchArrowWidth = 28;
@@ -84,7 +87,8 @@ std::unique_ptr<juce::AudioProcessorGraph> buildTestToneGraph(juce::AudioDeviceM
 } // namespace
 
 TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas, FileActions& files)
-    : ctx_(ctx), canvas_(canvas), files_(files)
+    : ctx_(ctx), canvas_(canvas), files_(files), activityLights_(ctx.controlHub),
+      cpuMeter_(ctx.audioEngine.getDeviceManager())
 {
     setOpaque(true);
 
@@ -95,29 +99,23 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas, FileActions& f
 
     fileButton_.onClick = [this] { openFileMenu(); };
     addPluginButton_.onClick = [this] { openAddPluginMenu(); };
-    settingsButton_.onClick = [this] { openAudioSettings(); };
+    settingsButton_.onClick = [this] { showSettingsWindow(ctx_); };
     pluginsButton_.onClick = [this] { openPluginsMenu(); };
 
     toneButton_.setClickingTogglesState(true);
+    toneButton_.setColour(juce::TextButton::textColourOnId, tokens::accentPrimary);
+    toneButton_.setTooltip("Play a test tone straight to the output, bypassing the chain");
+
+    // Outline buttons (UI refresh U2): quieter than the actions on the left.
+    settingsButton_.getProperties().set(Pb3LookAndFeel::kOutlineButton, true);
+    toneButton_.getProperties().set(Pb3LookAndFeel::kOutlineButton, true);
+    settingsButton_.setTooltip("Audio device, MIDI inputs and the OSC listener");
     toneButton_.onClick = [this] { onTestToneToggled(); };
-
-    oscPortLabel_.setText("OSC:", juce::dontSendNotification);
-    oscPortLabel_.setColour(juce::Label::textColourId, tokens::fgMuted);
-    oscPortLabel_.setFont(juce::Font(juce::FontOptions(12.0f)));
-    oscPortLabel_.setJustificationType(juce::Justification::centredRight);
-    oscPortLabel_.setInterceptsMouseClicks(false, false);
-
-    oscPortEditor_.setInputRestrictions(5, "0123456789");
-    oscPortEditor_.setJustification(juce::Justification::centred);
-    oscPortEditor_.setText(juce::String(ctx_.preferences.getOscPort()), juce::dontSendNotification);
-    oscPortEditor_.setTooltip("OSC listener port (1-65535). Press Enter to apply.");
-    oscPortEditor_.onReturnKey = [this] { applyOscPortChange(); };
-    oscPortEditor_.onFocusLost = [this] { applyOscPortChange(); };
 
     addAndMakeVisible(fileButton_);
     addAndMakeVisible(addPluginButton_);
-    addAndMakeVisible(oscPortLabel_);
-    addAndMakeVisible(oscPortEditor_);
+    addAndMakeVisible(activityLights_);
+    addAndMakeVisible(cpuMeter_);
     addAndMakeVisible(settingsButton_);
     addAndMakeVisible(toneButton_);
     addAndMakeVisible(pluginsButton_);
@@ -192,11 +190,12 @@ void TransportBar::resized()
 {
     auto bounds = getLocalBounds().reduced(kBarPadding, 6);
 
-    // Right cluster: OSC port | Audio Settings | Test Tone.
-    auto right = bounds.removeFromRight(kOscLabelWidth + kOscEditorWidth + kSettingsButtonWidth + kToneButtonWidth +
-                                        2 * kButtonGap);
-    oscPortLabel_.setBounds(right.removeFromLeft(kOscLabelWidth));
-    oscPortEditor_.setBounds(right.removeFromLeft(kOscEditorWidth));
+    // Right cluster: MIDI / OSC lights | CPU | Settings | Test Tone.
+    auto right = bounds.removeFromRight(kActivityWidth + kCpuMeterWidth + kSettingsButtonWidth + kToneButtonWidth +
+                                        3 * kButtonGap);
+    activityLights_.setBounds(right.removeFromLeft(kActivityWidth));
+    right.removeFromLeft(kButtonGap);
+    cpuMeter_.setBounds(right.removeFromLeft(kCpuMeterWidth));
     right.removeFromLeft(kButtonGap);
     settingsButton_.setBounds(right.removeFromLeft(kSettingsButtonWidth));
     right.removeFromLeft(kButtonGap);
@@ -404,60 +403,6 @@ juce::PopupMenu TransportBar::makeAddPluginMenu()
 void TransportBar::openAddPluginMenu()
 {
     makeAddPluginMenu().showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(addPluginButton_));
-}
-
-void TransportBar::openAudioSettings()
-{
-    auto selector = std::make_unique<juce::AudioDeviceSelectorComponent>(*ctx_.audioEngine.getDeviceManager(),
-                                                                         0,
-                                                                         2,
-                                                                         0,
-                                                                         2,
-                                                                         /*showMidiInputOptions*/ true,
-                                                                         /*showMidiOutputSelector*/ false,
-                                                                         /*showChannelsAsStereoPairs*/ true,
-                                                                         /*hideAdvancedOptionsWithButton*/ false);
-    selector->setSize(500, 420);
-
-    juce::DialogWindow::LaunchOptions options;
-    options.content.setOwned(selector.release());
-    options.dialogTitle = "Audio Settings";
-    options.dialogBackgroundColour = tokens::bgPopover;
-    options.escapeKeyTriggersCloseButton = true;
-    options.useNativeTitleBar = true;
-    options.resizable = false;
-    options.launchAsync();
-}
-
-void TransportBar::applyOscPortChange()
-{
-    const int port = oscPortEditor_.getText().getIntValue();
-    if (port <= 0 || port > 65535)
-    {
-        // Reject a nonsense port back to the last-good persisted value rather
-        // than attempting a bind with it.
-        oscPortEditor_.setText(juce::String(ctx_.preferences.getOscPort()), juce::dontSendNotification);
-        return;
-    }
-
-    // rebind() drops the previous (working) binding before attempting the new
-    // one, so a failure leaves OSC dead either way -- but persist only on
-    // success, so a rejected port never overwrites the last-good saved value.
-    const auto error = ctx_.oscServer.rebind(port, ctx_.preferences.getOscMulticastAddress());
-    if (error.isEmpty())
-    {
-        ctx_.preferences.setOscPort(port);
-        ctx_.preferences.flush();
-    }
-
-    // Surface a bind failure (e.g. port already in use) inline via the
-    // field's colour/tooltip rather than a blocking dialog — the control
-    // layer keeps working regardless of OSC availability (App::initialise
-    // treats a bind failure the same way).
-    oscPortEditor_.setColour(juce::TextEditor::textColourId,
-                             error.isNotEmpty() ? tokens::accentDestructive : tokens::fgPrimary);
-    oscPortEditor_.setTooltip(error.isNotEmpty() ? error
-                                                 : juce::String("OSC listener port (1-65535). Press Enter to apply."));
 }
 
 void TransportBar::openPluginList()
@@ -698,6 +643,8 @@ void TransportBar::openFileMenu()
     menu.addItem(6, "Reset Default", files_.hasDefault());
     menu.addSeparator();
     menu.addItem(7, "App Mappings...");
+    menu.addSeparator();
+    menu.addItem(8, "About Pedalboard 3");
     menu.showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(fileButton_),
                        [this](int choice)
                        {
@@ -715,6 +662,8 @@ void TransportBar::openFileMenu()
                                files_.resetDefault();
                            else if (choice == 7 && onOpenAppMappings)
                                onOpenAppMappings();
+                           else if (choice == 8)
+                               showAboutWindow();
                        });
 }
 

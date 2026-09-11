@@ -45,6 +45,10 @@ public:
     Pb3LookAndFeel();
     ~Pb3LookAndFeel() override = default;
 
+    // A component property: set it true on a Button to draw it as an outline
+    // ("ghost") button, transparent until toggled on (UI refresh U2).
+    static constexpr const char* kOutlineButton = "pb3OutlineButton";
+
     // Bespoke shape overrides — rounded button corners + a thin
     // accent border on default buttons. All colour decisions still
     // route through the V4 ColourScheme + per-class setColour calls

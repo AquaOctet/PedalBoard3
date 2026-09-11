@@ -479,3 +479,46 @@ TEST_CASE("ControlHub: the unhandled sink sees each update's press flag", "[sess
     h.hub.handleMidi(cc(1, 20, 0));
     REQUIRE(presses == std::vector<bool>{true, false});
 }
+
+// ---- Activity counters (UI refresh U3) ----------------------------------------
+
+TEST_CASE("ControlHub: MIDI and OSC activity counts every message, mapped or not", "[session][control][activity]")
+{
+    Harness h;
+    REQUIRE(h.hub.midiActivity() == 0);
+    REQUIRE(h.hub.oscActivity() == 0);
+
+    h.hub.handleMidi(juce::MidiMessage::controllerEvent(1, 20, 64)); // nothing mapped
+    h.hub.handleMidi(juce::MidiMessage::noteOn(1, 60, static_cast<juce::uint8>(100)));
+    REQUIRE(h.hub.midiActivity() == 2);
+
+    h.hub.handleOsc(juce::OSCMessage("/nothing/mapped", 0.5f));
+    REQUIRE(h.hub.oscActivity() == 1);
+    REQUIRE(h.hub.midiActivity() == 2);
+}
+
+TEST_CASE("ControlHub: node activity counts parameters actually set, and clears on a re-feed",
+          "[session][control][activity]")
+{
+    Harness h;
+    control::MidiMapping m;
+    m.source.kind = control::MidiSourceKind::ControlChange;
+    m.source.channel = 0; // omni
+    m.source.controller = 7;
+    m.target.kind = control::MidiTargetKind::PluginParameter;
+    m.target.node = 1;
+    m.target.parameterIndex = 0;
+    m.rangeMin = 0.0f;
+    m.rangeMax = 1.0f;
+    h.hub.setMidiMappings({m});
+
+    h.hub.handleMidi(juce::MidiMessage::controllerEvent(1, 7, 100));
+    REQUIRE(h.hub.nodeActivity(1) == 1);
+
+    h.hub.handleMidi(juce::MidiMessage::controllerEvent(1, 8, 100)); // an unmapped CC moves nothing
+    REQUIRE(h.hub.nodeActivity(1) == 1);
+    REQUIRE(h.hub.nodeActivity(2) == 0);
+
+    h.hub.setMidiMappings({m}); // a re-feed (e.g. after a whole-patch swap)
+    REQUIRE(h.hub.nodeActivity(1) == 0);
+}

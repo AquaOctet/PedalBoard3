@@ -39,6 +39,7 @@ set(PB3_TEST_SOURCES
     unit/session/ControlWiring_test.cpp
     unit/session/AppMappings_test.cpp
     unit/ui/CanvasLayout_test.cpp
+    unit/ui/MeterMath_test.cpp
     unit/control/MidiMapping_test.cpp
     unit/control/MidiRouter_test.cpp
     unit/control/MidiControlSurface_test.cpp
