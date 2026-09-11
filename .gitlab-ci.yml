@@ -143,12 +143,13 @@ default:
 .windows-setup: &windows-setup
   # ccache for MSVC (pinned release zip, sha256-verified, no package manager
   # round-trip). CMake picks the launcher up from the CMAKE_*_COMPILER_LAUNCHER
-  # environment variables, and CMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
-  # switches the Debug preset from /Zi (uncacheable PDB side-channel) to /Z7
-  # (debug info inside the .obj) — cmake_minimum_required is 3.25, so policy
-  # CMP0141 is already NEW and the variable is honoured. JUCE's juceaide
-  # sub-build inherits the same environment and is cached too. A failed
-  # download leaves ccache unset and the build proceeds uncached.
+  # environment variables. The debug-info format has NO environment form, so
+  # the configure lines below pass -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
+  # explicitly: that switches Debug from /Zi (PDB side-channel, which ccache
+  # reports as "unsupported compiler option" — 294/294 uncacheable on the
+  # first attempt) to /Z7 (debug info inside the .obj). cmake_minimum_required
+  # is 3.25, so policy CMP0141 is already NEW and the variable is honoured.
+  # A failed download leaves ccache unset and the build proceeds uncached.
   - |
       $ccacheVer  = "4.11.3"
       $ccacheSha  = "bfd031cad091b7db7e68c3303be542b0f7fee7a3e716d76ec6f7e6c7ef4b3526"
@@ -400,14 +401,14 @@ build:windows:
 
       Patch-JuceForDcomp | Out-Null
 
-      cmake --preset $env:PB3_BUILD_PRESET -S app-v3
+      cmake --preset $env:PB3_BUILD_PRESET -S app-v3 -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
       if ($LASTEXITCODE -ne 0) {
           Write-Host "=== first cmake failed; patching JUCE for dcomp delay-load and retrying ==="
           $applied = Patch-JuceForDcomp
           if ($applied) {
               $juceTools = "build\$($env:PB3_BUILD_PRESET)\_deps\juce-build\tools"
               if (Test-Path $juceTools) { Remove-Item -Recurse -Force $juceTools -ErrorAction SilentlyContinue }
-              cmake --preset $env:PB3_BUILD_PRESET -S app-v3
+              cmake --preset $env:PB3_BUILD_PRESET -S app-v3 -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
           }
           if ($LASTEXITCODE -ne 0) {
               Write-Host "=== cmake configure still failing after delay-load patch; full diagnostic ==="
@@ -430,7 +431,7 @@ build:windows:
           }
       }
     - cmake --build --preset $env:PB3_BUILD_PRESET -- -j $env:NUMBER_OF_PROCESSORS
-    - 'if (Get-Command ccache -ErrorAction SilentlyContinue) { ccache --show-stats }'
+    - 'if (Get-Command ccache -ErrorAction SilentlyContinue) { ccache --show-stats -v }'
     # Unit tests in the same job: a separate test job would re-pay the VM boot,
     # cache restore and the whole setup above (~8-10 min) for a ~1 min ctest.
     - ctest --preset $env:PB3_BUILD_PRESET
