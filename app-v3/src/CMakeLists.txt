@@ -29,6 +29,8 @@ add_library(pb3_app_core STATIC
     ui/ColourScheme.h
     ui/EditorWindow.cpp
     ui/EditorWindow.h
+    ui/FileActions.cpp
+    ui/FileActions.h
     ui/MappingsDialog.cpp
     ui/MappingsDialog.h
     ui/MainWindow.cpp
@@ -78,6 +80,7 @@ pb3_apply_strict_warnings(pb3_app_core
     App.cpp
     ui/AppMappingsWindow.cpp
     ui/EditorWindow.cpp
+    ui/FileActions.cpp
     ui/MappingsDialog.cpp
     ui/MainWindow.cpp
     ui/Pb3LookAndFeel.cpp

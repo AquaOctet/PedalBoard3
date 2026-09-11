@@ -45,6 +45,11 @@ public:
     // lifecycle: instances die in the swap).
     std::function<void()> beforeSwap;
 
+    // What the file.save app command runs (Ctrl/Cmd+S, or a mapped MIDI / OSC
+    // trigger). The UI binds it to Save, which asks for a file when the board
+    // is untitled. Unset, file.save does nothing.
+    std::function<void()> onSaveRequested;
+
     const PatchBank& bank() const noexcept { return bank_; }
     int activeIndex() const noexcept { return bank_.activeIndex; }
     int size() const noexcept { return bank_.size(); }

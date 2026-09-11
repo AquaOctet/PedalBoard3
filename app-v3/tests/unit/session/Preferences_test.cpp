@@ -11,6 +11,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "session/DefaultBank.h"
+#include "session/PdlSerializer.h"
 #include "session/Preferences.h"
 
 #include <juce_data_structures/juce_data_structures.h>
@@ -556,4 +558,74 @@ TEST_CASE("Preferences: the active bank's file and unsaved flag round-trip and c
     REQUIRE(prefs.getActiveBankFile() == juce::File());
     REQUIRE_FALSE(prefs.getActiveBankModified());
     prefs.flush();
+}
+
+// ---- Default bank and quit-without-saving (finish pass U4 / U5) --------------
+
+TEST_CASE("DefaultBank: the default lives beside the settings file", "[session][default-bank]")
+{
+    session::Preferences prefs;
+    REQUIRE(prefs.getStore() != nullptr);
+    const auto file = session::defaultBankFile(prefs);
+    REQUIRE(file.getFileName() == "default.pdl");
+    REQUIRE(file.getParentDirectory() == prefs.getStore()->getFile().getParentDirectory());
+}
+
+TEST_CASE("DefaultBank: New starts from the default bank, or one empty patch", "[session][default-bank]")
+{
+    const auto dir = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("pb3-default-bank-test");
+    dir.deleteRecursively();
+    const auto file = dir.getChildFile("default.pdl");
+
+    REQUIRE(session::readDefaultBank(file) == nullptr);
+    const auto empty = session::newBoardBank(file);
+    REQUIRE(empty.size() == 1);
+    REQUIRE(empty.active().nodes.empty());
+
+    session::PatchBank bank;
+    auto second = makeFakeChain();
+    second.name = "Second";
+    bank.patches = {makeFakeChain(), second};
+    REQUIRE(session::pdl::writeBank(bank, file).wasOk());
+
+    const auto fresh = session::newBoardBank(file);
+    REQUIRE(fresh.size() == 2);
+    REQUIRE(fresh.patches[1].name == "Second");
+
+    dir.deleteRecursively();
+}
+
+TEST_CASE("DefaultBank: Don't Save at quit reverts the persisted bank to the saved file, or clears it",
+          "[session][default-bank][preferences]")
+{
+    session::Preferences prefs;
+    const auto dir = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("pb3-revert-test");
+    dir.deleteRecursively();
+    const auto saved = dir.getChildFile("gig.pdl");
+
+    session::PatchBank onDisk;
+    onDisk.patches = {makeFakeChain()};
+    onDisk.patches[0].name = "On disk";
+    REQUIRE(session::pdl::writeBank(onDisk, saved).wasOk());
+
+    session::PatchBank edited;
+    edited.patches = {makeFakeChain()};
+    edited.patches[0].name = "Edited";
+    prefs.setActiveBank(edited);
+    prefs.setActiveBankIdentity(saved, true);
+
+    session::revertPersistedBank(prefs, saved);
+    auto restored = prefs.getActiveBank();
+    REQUIRE(restored != nullptr);
+    REQUIRE(restored->active().name == "On disk");
+    REQUIRE(prefs.getActiveBankFile() == saved);
+    REQUIRE_FALSE(prefs.getActiveBankModified());
+
+    // Untitled: nothing saved to go back to, so the next launch opens the default.
+    prefs.setActiveBank(edited);
+    session::revertPersistedBank(prefs, juce::File());
+    REQUIRE(prefs.getActiveBank() == nullptr);
+
+    prefs.flush();
+    dir.deleteRecursively();
 }

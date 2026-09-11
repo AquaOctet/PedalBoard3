@@ -1,6 +1,6 @@
 #include "App.h"
 
-#include <algorithm>
+#include "session/DefaultBank.h"
 
 namespace pedalboard3
 {
@@ -83,6 +83,13 @@ void App::initialise(const juce::String& /*commandLine*/)
     context.emplace(
         AppContext{*engine, *pluginHost, *preferences, *session, *bankDocument, *controlHub, *appMappings, *oscServer});
     mainWindow = std::make_unique<ui::MainWindow>(getApplicationName(), *context);
+    // Quit goes through the window's save prompt (finish pass KD4); after Don't
+    // Save, shutdown() reverts the persisted session (KD7).
+    mainWindow->onQuitConfirmed = [this](bool discardUnsaved)
+    {
+        discardUnsavedOnShutdown = discardUnsaved;
+        quit();
+    };
 
     // Restore the previously-active patch, gated by the KnownPluginList
     // cross-check + crash-loop guard (see restoreActivePatchIfAny).
@@ -105,6 +112,14 @@ void App::shutdown()
     mainWindow.reset();
     context.reset();
     persister.reset();
+    // Quit with Don't Save (finish pass KD7): the next launch restores the last
+    // saved content, not the discarded edits. Done once the persister is gone,
+    // so nothing writes the live bank back afterwards.
+    if (discardUnsavedOnShutdown && preferences != nullptr && bankDocument != nullptr)
+    {
+        session::revertPersistedBank(*preferences, bankDocument->currentFile());
+        preferences->flush();
+    }
     midiInputManager.reset();
     oscServer.reset();
     patchSwitcher.reset(); // after both input edges, before controlHub/bankDocument
@@ -125,12 +140,25 @@ void App::shutdown()
     lookAndFeel.reset();
 }
 
+void App::systemRequestedQuit()
+{
+    if (mainWindow != nullptr)
+        mainWindow->requestQuit();
+    else
+        quit();
+}
+
 void App::restoreActivePatchIfAny()
 {
     if (preferences == nullptr || pluginHost == nullptr || session == nullptr || bankDocument == nullptr)
         return;
 
     auto saved = preferences->getActiveBank();
+    // Nothing to restore (first run, or the last quit discarded an untitled
+    // board): open the user's default bank, if they saved one (finish pass KD2).
+    const bool fromDefault = saved == nullptr;
+    if (fromDefault)
+        saved = session::readDefaultBank(session::defaultBankFile(*preferences));
     if (saved == nullptr)
         return;
 
@@ -156,22 +184,7 @@ void App::restoreActivePatchIfAny()
     // instrument or blacklisted (known crash-on-construct) so it never reaches
     // createInstance — not only in the active patch: every slot can become
     // live with one Program Change.
-    for (auto& patch : saved->patches)
-    {
-        const auto savedCount = patch.nodes.size();
-        patch.nodes.erase(std::remove_if(patch.nodes.begin(),
-                                         patch.nodes.end(),
-                                         [this](const session::PatchNode& n)
-                                         { return !session::isNodeSafeForChain(*pluginHost, n); }),
-                          patch.nodes.end());
-
-        if (patch.nodes.size() != savedCount)
-        {
-            // Dropping nodes left the saved connections dangling — rebuild a
-            // clean linear chain over the survivors so the graph is valid.
-            patch.connections = session::linearChainConnections(patch.nodes);
-        }
-    }
+    session::dropUnsafeNodes(*saved, *pluginHost);
 
     // Arm the crash-loop marker BEFORE handing the active patch to the worker,
     // and flush so it survives a hard crash. replacePatch is async; on success
@@ -182,7 +195,8 @@ void App::restoreActivePatchIfAny()
     bankDocument->loadBank(std::move(*saved));
     // Finish pass KD7: the restored bank keeps its file (quick save still works)
     // and, after a crash or a quit that kept edits, its unsaved marker.
-    bankDocument->restoreIdentity(preferences->getActiveBankFile(), preferences->getActiveBankModified());
+    if (!fromDefault)
+        bankDocument->restoreIdentity(preferences->getActiveBankFile(), preferences->getActiveBankModified());
 }
 
 } // namespace pedalboard3

@@ -9,12 +9,14 @@
 namespace pedalboard3::ui
 {
 
+class FileActions;
 class SignalCanvas;
 
 // TransportBar — fixed-height (48px) strip across the top of the
 // MainWindow:
 //
-//   left:   [File] (Open / Save As) and [+ Add Plugin] (KnownPluginList
+//   left:   [File] (New, Open, Save, Save As, Save as Default, Reset
+//           Default, App Mappings; the file actions are ui::FileActions) and [+ Add Plugin] (KnownPluginList
 //           effects + built-in nodes; Session::addPlugin — AC-UI-N).
 //   centre: the patch strip (roadmap M3 U5): [<] [n/N  Name] [>]. The
 //           arrows step the bank; the name button opens the bank menu
@@ -31,7 +33,7 @@ class SignalCanvas;
 class TransportBar : public juce::Component, private juce::ChangeListener
 {
 public:
-    TransportBar(AppContext& ctx, SignalCanvas& canvas);
+    TransportBar(AppContext& ctx, SignalCanvas& canvas, FileActions& files);
     ~TransportBar() override;
 
     void paint(juce::Graphics&) override;
@@ -46,8 +48,6 @@ private:
 
     void openAddPluginMenu();
     void openFileMenu();
-    void savePatch();
-    void openPatch();
     void openAudioSettings();
     void openPluginList();
     void rescanPlugins();
@@ -67,6 +67,7 @@ private:
 
     AppContext& ctx_;
     SignalCanvas& canvas_;
+    FileActions& files_;
 
     juce::TextButton fileButton_{"File"};
     juce::TextButton addPluginButton_{"+ Add Plugin"};
@@ -79,9 +80,6 @@ private:
     juce::TextButton prevPatchButton_{"<"};
     juce::TextButton patchButton_;
     juce::TextButton nextPatchButton_{">"};
-
-    // Held as a member so it outlives the async launchAsync callback.
-    std::unique_ptr<juce::FileChooser> fileChooser_;
 
     // The rename / remove-confirmation dialog, owned here (never
     // auto-deleted) so its async callback can read the text field; the

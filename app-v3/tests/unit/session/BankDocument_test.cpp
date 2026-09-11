@@ -7,6 +7,7 @@
 
 #include "engine/AudioEngine.h"
 #include "engine/PluginHost.h"
+#include "session/AppCommands.h"
 #include "session/BankDocument.h"
 #include "session/PreparedGraph.h"
 #include "session/Session.h"
@@ -494,4 +495,42 @@ TEST_CASE("BankDocument: a hand edit to a plugin parameter marks it modified unt
     REQUIRE(f.doc.isModified());
     f.doc.loadBank(threeBank(), tempBankFile("set.pdl"));
     REQUIRE_FALSE(f.doc.isModified());
+}
+
+TEST_CASE("BankDocument: file.save runs the save handler the UI installs", "[session][bank][app-commands]")
+{
+    Fixture f;
+    REQUIRE_FALSE(session::invokeAppCommand(f.doc, session::appcommands::kSave)); // no UI yet
+
+    int saves = 0;
+    f.doc.onSaveRequested = [&saves] { ++saves; };
+    REQUIRE(session::invokeAppCommand(f.doc, session::appcommands::kSave));
+    REQUIRE(saves == 1);
+}
+
+TEST_CASE("dropUnsafeNodes: drops unrecognized built-ins from every patch and rebuilds their chain", "[session][bank]")
+{
+    engine::PluginHost host;
+    const auto internalNode = [](session::NodeId id, const char* type)
+    {
+        session::PatchNode n;
+        n.id = id;
+        n.kind = session::NodeKind::Internal;
+        n.internalType = type;
+        return n;
+    };
+
+    session::PatchBank bank;
+    bank.patches[0].nodes = {internalNode(1, "LevelProcessor"), internalNode(2, "NoSuchNode")};
+    bank.patches[0].connections = session::linearChainConnections(bank.patches[0].nodes);
+    session::Patch clean;
+    clean.nodes = {internalNode(1, "LevelProcessor")};
+    clean.connections = session::linearChainConnections(clean.nodes);
+    bank.patches.push_back(clean);
+
+    REQUIRE(session::dropUnsafeNodes(bank, host) == 1);
+    REQUIRE(bank.patches[0].nodes.size() == 1);
+    REQUIRE(bank.patches[0].nodes[0].internalType == "LevelProcessor");
+    REQUIRE(bank.patches[0].connections == session::linearChainConnections(bank.patches[0].nodes));
+    REQUIRE(bank.patches[1].nodes.size() == 1);
 }

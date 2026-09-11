@@ -44,7 +44,9 @@ public:
     void initialise(const juce::String& commandLine) override;
     void shutdown() override;
 
-    void systemRequestedQuit() override { quit(); }
+    // Asks the main window first, so unsaved changes get the save prompt
+    // (finish pass KD4).
+    void systemRequestedQuit() override;
     void anotherInstanceStarted(const juce::String&) override {}
 
 private:
@@ -91,6 +93,10 @@ private:
     std::unique_ptr<session::PreferencesPersister> persister;
     std::optional<AppContext> context;
     std::unique_ptr<ui::MainWindow> mainWindow;
+
+    // Set when the user quits with Don't Save: shutdown() then reverts the
+    // persisted session to the last saved content (finish pass KD7).
+    bool discardUnsavedOnShutdown{false};
 };
 
 } // namespace pedalboard3

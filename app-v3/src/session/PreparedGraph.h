@@ -2,6 +2,7 @@
 
 #include "NodeId.h"
 #include "Patch.h"
+#include "PatchBank.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_core/juce_core.h>
@@ -82,5 +83,13 @@ PreparedGraph buildPreparedGraph(
 // binary) returns false, so restore/open paths DROP it instead of letting
 // buildPreparedGraph abort the whole patch. Message-thread only.
 bool isNodeSafeForChain(const engine::PluginHost& host, const PatchNode& node);
+
+// Drop every node isNodeSafeForChain rejects from every patch in `bank` (each
+// slot is one switch away from live), rebuilding a linear chain over the
+// survivors of any patch that lost one so its connections stay valid. The
+// restore and open paths run this before any patch can go live: replacePatch
+// calls createInstance directly, bypassing the scanner's guards. Returns the
+// number of nodes dropped. Message-thread only.
+int dropUnsafeNodes(PatchBank& bank, const engine::PluginHost& host);
 
 } // namespace pedalboard3::session
