@@ -5,6 +5,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/AudioEngine.h"
+#include "engine/AudioGraphRuntime.h"
 #include "engine/BypassableInstance.h"
 #include "engine/PluginHost.h"
 #include "session/Patch.h"
@@ -897,4 +898,45 @@ TEST_CASE("Session: setNodeMidiChannel filters the live node and records it in t
 
     s.setNodeMidiChannel(99, 5); // unknown node: ignored
     REQUIRE(s.getNodeCount() == 3);
+}
+
+TEST_CASE("Session: removing the last node keeps audio and MIDI passing straight through (#46)", "[session]")
+{
+    engine::AudioEngine eng;
+    eng.initialise();
+    engine::PluginHost host;
+    session::Session s(eng, host); // production BuildFn: built-in nodes build for real
+
+    s.addInternalNode("LevelProcessor");
+    pumpUntilIdle(s);
+    REQUIRE(s.getNodeCount() == 1);
+
+    s.removeNode(s.getNodeIdsInOrder().front());
+    REQUIRE(s.getNodeCount() == 0);
+
+    auto* graph = eng.getRuntime()->getLiveGraph();
+    REQUIRE(graph != nullptr);
+
+    using IO = juce::AudioProcessorGraph::AudioGraphIOProcessor;
+    const auto ioType = [graph](juce::AudioProcessorGraph::NodeID id)
+    {
+        if (auto* node = graph->getNodeForId(id))
+            if (auto* io = dynamic_cast<IO*>(node->getProcessor()))
+                return static_cast<int>(io->getType());
+        return -1;
+    };
+
+    int audio = 0;
+    int midi = 0;
+    for (const auto& c : graph->getConnections())
+    {
+        const auto from = ioType(c.source.nodeID);
+        const auto to = ioType(c.destination.nodeID);
+        if (from == static_cast<int>(IO::audioInputNode) && to == static_cast<int>(IO::audioOutputNode))
+            ++audio;
+        if (from == static_cast<int>(IO::midiInputNode) && to == static_cast<int>(IO::midiOutputNode))
+            ++midi;
+    }
+    REQUIRE(audio == 2); // left and right
+    REQUIRE(midi == 1);
 }

@@ -999,6 +999,19 @@ void Session::applyConnectionsToLiveGraph()
         liveGraph_->removeConnection(c, UpdateKind::async);
 
     const auto& conns = activePatch_.connections;
+
+    // An empty patch passes audio and MIDI straight through, the way
+    // buildPreparedGraph builds one: removing the last node (or undoing its
+    // add) must not silence the board (#46).
+    if (conns.empty() && activePatch_.nodes.empty())
+    {
+        liveGraph_->addConnection({{audioIn, 0}, {audioOut, 0}}, UpdateKind::async);
+        liveGraph_->addConnection({{audioIn, 1}, {audioOut, 1}}, UpdateKind::async);
+        liveGraph_->addConnection({{midiIn, AudioGraph::midiChannelIndex}, {midiOut, AudioGraph::midiChannelIndex}},
+                                  UpdateKind::sync);
+        return;
+    }
+
     for (size_t i = 0; i < conns.size(); ++i)
     {
         const auto& c = conns[i];
