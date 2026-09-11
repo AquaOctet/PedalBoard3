@@ -2,6 +2,7 @@
 
 #include "AppContext.h"
 #include "EditorWindow.h"
+#include "MappingsDialog.h"
 #include "PluginCard.h"
 #include "session/NodeId.h"
 
@@ -95,11 +96,10 @@ private:
     void onCardRemove(NodeId);
     void onCardMoved(NodeId, juce::Point<int> newPos);
     void onCardDragging(NodeId);
-    // MIDI learn (M2 U4): opens a parameter picker, then arms ControlHub;
-    // clicking again on the already-armed card cancels it.
-    void onCardMidiLearn(NodeId);
-    // Clears midiLearnArmedNode_ and its card's visual, if any is armed.
-    void cancelMidiLearnIfArmed();
+    // Mappings dialog (M4 U4): at most one open; opening another node's
+    // replaces it. closeMappings destroys it, cancelling any learn it armed.
+    void openMappings(NodeId);
+    void closeMappings();
 
     // Map a graphIO sentinel to either the input or output endpoint
     // bounds; map any other NodeId to its card's index in cards_.
@@ -146,9 +146,8 @@ private:
     juce::Point<int> dragCursor_;                           // current cursor in canvas space
     std::optional<session::PatchConnection> selectedCable_; // for click-select + Delete
 
-    // MIDI learn (M2 U4): at most one card armed at a time, mirroring
-    // ControlHub::isLearning()'s single-slot policy.
-    std::optional<NodeId> midiLearnArmedNode_;
+    // The per-plugin mappings dialog (M4 U4); it owns MIDI learn.
+    std::unique_ptr<MappingsWindow> mappingsWindow_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SignalCanvas)
 };
