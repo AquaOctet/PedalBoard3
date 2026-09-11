@@ -37,6 +37,10 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
 
+    // File > App Mappings... (M4 U5). MainWindow owns the window and the key
+    // mappings it edits, so it installs this.
+    std::function<void()> onOpenAppMappings;
+
 private:
     void changeListenerCallback(juce::ChangeBroadcaster*) override;
 
