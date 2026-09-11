@@ -24,6 +24,8 @@ add_library(pb3_session_core STATIC
     BankDocument.h
     DefaultBank.cpp
     DefaultBank.h
+    EditHistory.cpp
+    EditHistory.h
     PatchSwitcher.cpp
     PatchSwitcher.h
     AppCommands.cpp
@@ -82,6 +84,7 @@ pb3_apply_strict_warnings(pb3_session_core
     PatchBank.cpp
     BankDocument.cpp
     DefaultBank.cpp
+    EditHistory.cpp
     PatchSwitcher.cpp
     AppCommands.cpp
     PdlSerializer.cpp

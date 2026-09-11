@@ -147,6 +147,38 @@ public:
     void setNodeBypass(NodeId, bool);
     void setNodeCustomName(NodeId, juce::String);
 
+    // ---- Undo support (finish pass U7, EditHistory) ------------------------
+
+    // Put a removed node back exactly: instantiated through the add worker
+    // (plugin or built-in, with its state blob, bypass and MIDI channel) and
+    // committed under node.id at `index` in the node list, with its name and
+    // position, and the patch's connections replaced by `connections`. Fails
+    // (lastError, patch unchanged) if the id is taken or the connections don't
+    // validate with the node back in.
+    void restoreNode(PatchNode node, int index, std::vector<PatchConnection> connections);
+
+    // Replace the whole connection set (Idle only). Returns false, changing
+    // nothing, if the set doesn't validate.
+    bool setConnections(std::vector<PatchConnection> connections);
+
+    // One node of the active patch with its live plugin state captured (only
+    // that node is quiesced; see getActivePatchWithState), or nullopt.
+    std::optional<PatchNode> getNodeWithState(NodeId) const;
+
+    // Every add that committed (addPlugin / addInternalNode, or restoreNode
+    // landing), numbered from 1, with the connections just before it. Session
+    // keeps the most recent kCommittedAddLog.
+    struct CommittedAdd
+    {
+        std::uint64_t sequence{0};
+        NodeId id{};
+        bool restored{false};
+        std::vector<PatchConnection> connectionsBefore;
+    };
+    static constexpr std::size_t kCommittedAddLog = 32;
+    std::vector<CommittedAdd> getCommittedAddsSince(std::uint64_t sequence) const;
+    std::uint64_t getLastCommittedAddSequence() const;
+
     // Append a MIDI mapping to the active patch (MIDI learn's persist step).
     // Bumps the mappings revision (not just stateVersion_) so ControlWiring
     // re-feeds ControlHub with the new mapping live immediately.
@@ -271,6 +303,11 @@ private:
         juce::PluginDescription desc; // used when kind == Plugin
         NodeKind kind{NodeKind::Plugin};
         juce::String internalType; // used when kind == Internal
+        // restoreNode: the node to put back (kind, desc and internalType above
+        // are copied from it), where it goes and the wiring to restore.
+        std::optional<PatchNode> restore;
+        int restoreIndex{-1};
+        std::vector<PatchConnection> restoreConnections;
     };
 
     struct LoadPatchResult
@@ -288,6 +325,9 @@ private:
         std::unique_ptr<engine::BypassableInstance> wrapped;
         juce::AudioProcessor* hosted{nullptr};
         juce::String errorOut;
+        std::optional<PatchNode> restore; // carried over from the request
+        int restoreIndex{-1};
+        std::vector<PatchConnection> restoreConnections;
     };
 
     using Result = std::variant<std::monostate, LoadPatchResult, AddPluginResult>;
@@ -362,6 +402,8 @@ private:
     std::unordered_map<NodeId, PreparedGraph::NodeRefs> nodes_;
     juce::AudioProcessorGraph* liveGraph_{nullptr}; // non-owning
     juce::String lastError_;
+    std::deque<CommittedAdd> committedAdds_; // the last kCommittedAddLog, oldest first
+    std::uint64_t addSequence_{0};
 
     std::atomic<State> state_{State::Idle};
     std::atomic<std::uint64_t> stateVersion_{0};

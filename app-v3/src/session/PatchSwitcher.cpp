@@ -45,7 +45,7 @@ void PatchSwitcher::onUnhandledTarget(const control::ParameterUpdate& update)
     case control::MidiTargetKind::AppCommand:
         mappingOwnedThisMessage_ = true;
         if (update.press)
-            invokeAppCommand(bank_, update.target.commandId); // unknown ids are ignored
+            invokeAppCommand(bank_, update.target.commandId, history_); // unknown ids are ignored
         break;
     case control::MidiTargetKind::PluginParameter:
         break; // applied by ControlHub; never reaches this sink

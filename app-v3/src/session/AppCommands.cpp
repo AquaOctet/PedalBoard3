@@ -1,6 +1,7 @@
 #include "AppCommands.h"
 
 #include "BankDocument.h"
+#include "EditHistory.h"
 
 namespace pedalboard3::session
 {
@@ -21,7 +22,7 @@ const AppCommandInfo* findAppCommandByJuceId(int juceCommandId) noexcept
     return nullptr;
 }
 
-bool invokeAppCommand(BankDocument& bank, const juce::String& id)
+bool invokeAppCommand(BankDocument& bank, const juce::String& id, EditHistory* history)
 {
     if (id == appcommands::kNextPatch)
     {
@@ -39,6 +40,13 @@ bool invokeAppCommand(BankDocument& bank, const juce::String& id)
             return false;
         bank.onSaveRequested();
         return true;
+    }
+    if (id == appcommands::kUndo || id == appcommands::kRedo)
+    {
+        // Test Tone replaces the chain; the history's nodes aren't live then.
+        if (history == nullptr || !bank.isLiveCaptureEnabled())
+            return false;
+        return id == appcommands::kUndo ? history->undo() : history->redo();
     }
     return false;
 }

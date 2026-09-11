@@ -108,6 +108,9 @@ public:
                 ar.kind = addReq->kind;
                 ar.desc = addReq->desc;
                 ar.internalType = addReq->internalType;
+                ar.restore = std::move(addReq->restore);
+                ar.restoreIndex = addReq->restoreIndex;
+                ar.restoreConnections = std::move(addReq->restoreConnections);
 
                 // Direct host factory — bypasses BuildFn so we get a single
                 // processor back, not a graph. Internal nodes go through the
@@ -121,8 +124,18 @@ public:
 
                 if (proc != nullptr)
                 {
+                    // restoreNode: the node's saved state before prepareToPlay,
+                    // then its bypass and MIDI channel, as buildPreparedGraph does.
+                    if (ar.restore.has_value() && ar.restore->state.getSize() > 0)
+                        proc->setStateInformation(ar.restore->state.getData(),
+                                                  static_cast<int>(ar.restore->state.getSize()));
                     ar.hosted = proc.get();
                     ar.wrapped = std::make_unique<engine::BypassableInstance>(std::move(proc));
+                    if (ar.restore.has_value())
+                    {
+                        ar.wrapped->setBypass(ar.restore->bypass);
+                        ar.wrapped->setMidiChannel(ar.restore->midiChannel);
+                    }
                     // Pre-warm: prepare the wrapper at the runtime's SR/block
                     // so JUCE's AudioProcessorGraph::addNode (called on the
                     // message thread) doesn't need a slow first-block init
@@ -400,6 +413,35 @@ void Session::setNodeCustomName(NodeId id, juce::String name)
     }
 }
 
+void Session::restoreNode(PatchNode node, int index, std::vector<PatchConnection> connections)
+{
+    AddPluginRequest req;
+    req.kind = node.kind;
+    req.desc = node.desc;
+    req.internalType = node.internalType;
+    req.restoreIndex = index;
+    req.restoreConnections = std::move(connections);
+    req.restore = std::move(node);
+    enqueueAddRequest(std::move(req));
+}
+
+bool Session::setConnections(std::vector<PatchConnection> connections)
+{
+    if (getState() != State::Idle)
+        return false;
+
+    std::lock_guard<std::mutex> lk(statusMutex_);
+    Patch trial = activePatch_;
+    trial.connections = connections;
+    if (validatePatch(trial) != PatchValidation::Ok)
+        return false;
+
+    activePatch_.connections = std::move(connections);
+    applyConnectionsToLiveGraph();
+    bumpVersionAndNotify();
+    return true;
+}
+
 void Session::addMidiMapping(control::MidiMapping mapping)
 {
     std::lock_guard<std::mutex> lk(statusMutex_);
@@ -555,6 +597,56 @@ Patch Session::getActivePatchWithState() const
     }
 
     return snapshot;
+}
+
+std::optional<PatchNode> Session::getNodeWithState(NodeId id) const
+{
+    std::lock_guard<std::mutex> lk(statusMutex_);
+    const auto* found = activePatch_.findNode(id);
+    if (found == nullptr)
+        return std::nullopt;
+    PatchNode node = *found;
+
+    // The cached pointers belong to the graph Session committed; after an
+    // out-of-band swap (Test Tone) they dangle, so the node comes back without
+    // live state (crash-hunt #7).
+    auto it = nodes_.find(id);
+    if (it == nodes_.end() || it->second.hosted == nullptr || currentRuntimeGraph() != liveGraph_)
+        return node;
+
+    // The same quiesce as getActivePatchWithState, for this node only.
+    auto* wrapper = it->second.bypass;
+    const bool suspend = wrapper != nullptr && !wrapper->isSuspended();
+    if (suspend)
+    {
+        wrapper->suspendProcessing(true);
+        waitForAudioQuiescence(engine_.getRuntime());
+    }
+    const juce::ScopeGuard resume{[wrapper, suspend]
+                                  {
+                                      if (suspend)
+                                          wrapper->suspendProcessing(false);
+                                  }};
+
+    node.state.setSize(0);
+    it->second.hosted->getStateInformation(node.state);
+    return node;
+}
+
+std::vector<Session::CommittedAdd> Session::getCommittedAddsSince(std::uint64_t sequence) const
+{
+    std::lock_guard<std::mutex> lk(statusMutex_);
+    std::vector<CommittedAdd> out;
+    for (const auto& add : committedAdds_)
+        if (add.sequence > sequence)
+            out.push_back(add);
+    return out;
+}
+
+std::uint64_t Session::getLastCommittedAddSequence() const
+{
+    std::lock_guard<std::mutex> lk(statusMutex_);
+    return addSequence_;
 }
 
 std::vector<NodeId> Session::getNodeIdsInOrder() const
@@ -1029,6 +1121,21 @@ void Session::commitAddPlugin(AddPluginResult&& result)
             return;
         }
 
+        if (result.restore.has_value())
+        {
+            // restoreNode: the id must be free and the wiring must validate with
+            // the node back in, or nothing changes.
+            Patch trial = activePatch_;
+            trial.nodes.push_back(*result.restore);
+            trial.connections = result.restoreConnections;
+            if (activePatch_.findNode(result.restore->id) != nullptr || validatePatch(trial) != PatchValidation::Ok)
+            {
+                lastError_ = "restoreNode: the node's id or connections no longer fit the patch";
+                publishStateChange(State::Idle);
+                return;
+            }
+        }
+
         auto* hostedPtr = result.hosted;
         auto* wrapPtr = result.wrapped.get();
         auto graphNode = liveGraph_->addNode(std::move(result.wrapped), {}, UpdateKind::async);
@@ -1039,20 +1146,40 @@ void Session::commitAddPlugin(AddPluginResult&& result)
             return;
         }
 
-        const auto newId = activePatch_.nextNodeId();
-        PatchNode pn;
-        pn.id = newId;
-        pn.kind = result.kind;
-        if (result.kind == NodeKind::Internal)
-            pn.internalType = std::move(result.internalType);
+        const auto connectionsBefore = activePatch_.connections;
+        const bool restored = result.restore.has_value();
+        NodeId newId{};
+        if (restored)
+        {
+            PatchNode pn = std::move(*result.restore);
+            newId = pn.id;
+            const auto at = juce::jlimit(0, static_cast<int>(activePatch_.nodes.size()), result.restoreIndex);
+            activePatch_.nodes.insert(activePatch_.nodes.begin() + at, std::move(pn));
+        }
         else
-            pn.desc = std::move(result.desc);
-        activePatch_.nodes.push_back(std::move(pn));
+        {
+            newId = activePatch_.nextNodeId();
+            PatchNode pn;
+            pn.id = newId;
+            pn.kind = result.kind;
+            if (result.kind == NodeKind::Internal)
+                pn.internalType = std::move(result.internalType);
+            else
+                pn.desc = std::move(result.desc);
+            activePatch_.nodes.push_back(std::move(pn));
+        }
 
         nodes_[newId] = PreparedGraph::NodeRefs{wrapPtr, hostedPtr, graphNode.get()};
         listenTo(nodes_[newId]);
 
-        autoConnectNewNode(newId);
+        if (restored)
+            activePatch_.connections = std::move(result.restoreConnections);
+        else
+            autoConnectNewNode(newId);
+
+        committedAdds_.push_back({++addSequence_, newId, restored, connectionsBefore});
+        if (committedAdds_.size() > kCommittedAddLog)
+            committedAdds_.pop_front();
     }
 
     applyConnectionsToLiveGraph();

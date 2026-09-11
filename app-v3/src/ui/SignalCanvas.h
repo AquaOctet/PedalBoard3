@@ -94,6 +94,8 @@ private:
     void onCardBypassToggle(NodeId);
     void onCardEdit(NodeId);
     void onCardRemove(NodeId);
+    // Close one node's editor and mappings windows, before it goes away.
+    void closeEditorsFor(NodeId);
     void onCardMoved(NodeId, juce::Point<int> newPos);
     void onCardDragging(NodeId);
     // Mappings dialog (M4 U4): at most one open; opening another node's

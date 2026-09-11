@@ -82,12 +82,20 @@ public:
             result.addDefaultKeypress(juce::KeyPress::pageUpKey, juce::ModifierKeys());
         else if (id == session::appcommands::kSave)
             result.addDefaultKeypress('s', juce::ModifierKeys::commandModifier); // Ctrl+S / Cmd+S
+        else if (id == session::appcommands::kUndo)
+            result.addDefaultKeypress('z', juce::ModifierKeys::commandModifier); // Ctrl+Z / Cmd+Z
+        else if (id == session::appcommands::kRedo)
+        {
+            result.addDefaultKeypress('y', juce::ModifierKeys::commandModifier); // Ctrl+Y
+            result.addDefaultKeypress(
+                'z', juce::ModifierKeys(juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier));
+        }
     }
 
     bool perform(const InvocationInfo& info) override
     {
         const auto* c = session::findAppCommandByJuceId(info.commandID);
-        return c != nullptr && session::invokeAppCommand(ctx_.bankDocument, c->id);
+        return c != nullptr && session::invokeAppCommand(ctx_.bankDocument, c->id, &ctx_.editHistory);
     }
 
     void resized() override

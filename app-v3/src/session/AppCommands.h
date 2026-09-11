@@ -8,6 +8,7 @@ namespace pedalboard3::session
 {
 
 class BankDocument;
+class EditHistory;
 
 // App-level commands a key, MIDI or OSC trigger can run (roadmap M4, plan
 // docs/plans/2026-09-11-002-feat-mappings-ui-plan.md, KD2 / KTD2). One table
@@ -27,13 +28,17 @@ namespace appcommands
 inline constexpr const char* kNextPatch = "patch.next";
 inline constexpr const char* kPreviousPatch = "patch.previous";
 inline constexpr const char* kSave = "file.save";
+inline constexpr const char* kUndo = "edit.undo";
+inline constexpr const char* kRedo = "edit.redo";
 } // namespace appcommands
 
 // Every command, in display order.
-inline constexpr std::array<AppCommandInfo, 3> kAppCommands{{
+inline constexpr std::array<AppCommandInfo, 5> kAppCommands{{
     {appcommands::kNextPatch, "Next Patch", 0x2001},
     {appcommands::kPreviousPatch, "Previous Patch", 0x2002},
     {appcommands::kSave, "Save", 0x2003},
+    {appcommands::kUndo, "Undo", 0x2004},
+    {appcommands::kRedo, "Redo", 0x2005},
 }};
 
 // Lookups; nullptr when unknown.
@@ -44,6 +49,8 @@ const AppCommandInfo* findAppCommandByJuceId(int juceCommandId) noexcept;
 // nothing, for an unknown id. file.save hands off to
 // BankDocument::onSaveRequested and is unhandled (false) until the UI
 // installs one.
-bool invokeAppCommand(BankDocument& bank, const juce::String& id);
+// edit.undo / edit.redo run on `history`; unhandled without one, or while
+// Test Tone has replaced the live graph.
+bool invokeAppCommand(BankDocument& bank, const juce::String& id, EditHistory* history = nullptr);
 
 } // namespace pedalboard3::session

@@ -4,6 +4,7 @@
 #include "control/MidiMapping.h"
 #include "engine/PluginHost.h"
 #include "session/ControlHub.h"
+#include "session/EditHistory.h"
 #include "session/Patch.h"
 #include "session/Session.h"
 
@@ -54,6 +55,10 @@ SignalCanvas::SignalCanvas(AppContext& ctx) : ctx_(ctx)
     setWantsKeyboardFocus(true); // for Delete-to-remove a selected cable (U4)
     ctx_.session.addChangeListener(this);
 
+    // Undo / redo remove nodes outside the canvas (undoing an add, redoing a
+    // remove); their editors must close first, as in onCardRemove.
+    ctx_.editHistory.beforeNodeRemoved = [this](NodeId id) { closeEditorsFor(id); };
+
     // First-paint: pull current snapshot so the canvas isn't empty
     // until the next change message arrives.
     changeListenerCallback(&ctx_.session);
@@ -65,6 +70,7 @@ SignalCanvas::~SignalCanvas()
     // it cancels a pending arm, so a MIDI message arriving after teardown can't
     // invoke a dangling callback.
     mappingsWindow_.reset();
+    ctx_.editHistory.beforeNodeRemoved = nullptr;
     ctx_.session.removeChangeListener(this);
     editors_.clear();
 }
@@ -437,15 +443,21 @@ void SignalCanvas::onCardEdit(NodeId id)
 
 void SignalCanvas::onCardRemove(NodeId id)
 {
+    // Through the edit history, so it can be undone. The history calls
+    // beforeNodeRemoved (closeEditorsFor) before Session::removeNode.
+    ctx_.editHistory.removeNode(id);
+}
+
+void SignalCanvas::closeEditorsFor(NodeId id)
+{
     // CALLER-MANAGED EDITOR LIFECYCLE (D1b / AC-UI-P): close any open
     // EditorWindow synchronously, on the message thread, BEFORE
-    // calling Session::removeNode — Session destroys the underlying
+    // Session::removeNode — Session destroys the underlying
     // BypassableInstance inline before firing the async change
     // message, so a listener-side close would be too late.
     editors_.erase(id);
     if (mappingsWindow_ != nullptr && mappingsWindow_->getNodeId() == id)
         closeMappings(); // its node is about to go away
-    ctx_.session.removeNode(id);
 }
 
 void SignalCanvas::onCardMoved(NodeId id, juce::Point<int> newPos)
@@ -596,7 +608,8 @@ void SignalCanvas::mouseDown(const juce::MouseEvent& e)
         {
             if (const auto existing = connectionInto(port))
             {
-                ctx_.session.removeConnection(existing->src, existing->srcChannel, existing->dst, existing->dstChannel);
+                ctx_.editHistory.removeConnection(
+                    existing->src, existing->srcChannel, existing->dst, existing->dstChannel);
                 dragAnchor_ = PortRef{existing->src, existing->srcChannel, /*isSource*/ true, /*valid*/ true};
                 dragging_ = true;
                 dragCursor_ = p;
@@ -639,7 +652,7 @@ void SignalCanvas::mouseUp(const juce::MouseEvent& e)
     {
         const PortRef& src = dragAnchor_.isSource ? dragAnchor_ : target;
         const PortRef& dst = dragAnchor_.isSource ? target : dragAnchor_;
-        ctx_.session.addConnection(src.node, src.channel, dst.node, dst.channel);
+        ctx_.editHistory.addConnection(src.node, src.channel, dst.node, dst.channel);
         // The Session change message rebuilds cables; just clear the preview.
     }
     repaint();
@@ -651,7 +664,7 @@ bool SignalCanvas::keyPressed(const juce::KeyPress& key)
     {
         const auto c = *selectedCable_;
         selectedCable_.reset();
-        ctx_.session.removeConnection(c.src, c.srcChannel, c.dst, c.dstChannel);
+        ctx_.editHistory.removeConnection(c.src, c.srcChannel, c.dst, c.dstChannel);
         return true;
     }
     return false;

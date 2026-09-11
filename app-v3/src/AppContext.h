@@ -13,6 +13,7 @@ class BankDocument;
 class Preferences;
 class Session;
 class ControlHub;
+class EditHistory;
 } // namespace pedalboard3::session
 
 namespace pedalboard3::control
@@ -50,6 +51,7 @@ struct AppContext
     session::ControlHub& controlHub;
     session::AppMappings& appMappings;
     control::OscServer& oscServer;
+    session::EditHistory& editHistory; // finish pass U8: undoable canvas edits
 };
 
 } // namespace pedalboard3
