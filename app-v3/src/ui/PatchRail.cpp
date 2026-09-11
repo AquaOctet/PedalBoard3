@@ -1,5 +1,6 @@
 #include "PatchRail.h"
 
+#include "Icons.h"
 #include "Pb3LookAndFeel.h"
 #include "session/BankDocument.h"
 
@@ -21,12 +22,8 @@ PatchRail::PatchRail(AppContext& ctx) : ctx_(ctx)
 {
     setOpaque(true);
 
-    juce::Path bars; // the bank icon: three stacked rows
-    bars.addRoundedRectangle(0.0f, 0.0f, 14.0f, 3.0f, 1.0f);
-    bars.addRoundedRectangle(0.0f, 5.5f, 14.0f, 3.0f, 1.0f);
-    bars.addRoundedRectangle(0.0f, 11.0f, 14.0f, 3.0f, 1.0f);
-    panelButton_.setShape(bars, false, true, false);
-    panelButton_.setTooltip("Patch bank");
+    panelButton_.setShape(bankIcon(), false, true, false);
+    panelButton_.setTooltip("Open the patch bank (File > Patch Bank does the same)");
     panelButton_.onClick = [this]
     {
         if (onOpenPanel)

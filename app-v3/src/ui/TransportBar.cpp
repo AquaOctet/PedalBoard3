@@ -642,6 +642,7 @@ void TransportBar::openFileMenu()
     menu.addItem(5, "Save as Default");
     menu.addItem(6, "Reset Default", files_.hasDefault());
     menu.addSeparator();
+    menu.addItem(9, "Patch Bank", true, isPatchBankShown && isPatchBankShown());
     menu.addItem(7, "App Mappings...");
     menu.addSeparator();
     menu.addItem(8, "About Pedalboard 3");
@@ -664,6 +665,8 @@ void TransportBar::openFileMenu()
                                onOpenAppMappings();
                            else if (choice == 8)
                                showAboutWindow();
+                           else if (choice == 9 && onTogglePatchBank)
+                               onTogglePatchBank();
                        });
 }
 

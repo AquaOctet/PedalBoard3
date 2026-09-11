@@ -48,7 +48,7 @@ execution: code
   - The Plugins menu puts the same list first as "Add Plugin ▸", then Plugin List… and Rescan Plugins.
   - The right end is for watching the rig: MIDI/OSC lights, CPU, then Settings and Test Tone as outline buttons. The OSC port field leaves the top bar for the Settings dialog (KD10).
   - The plugin browser sidebar stays on the right.
-- **KD3. Small windows fold, not hide.** Below about 1200 px wide, both sidebars fold to 48 px icon strips. Clicking a strip icon slides its panel open over the canvas. The left strip keeps the previous / current / next patch one click away.
+- **KD3. Small windows fold, not hide.** Below about 1200 px wide, both sidebars fold to 48 px icon strips. Clicking a strip icon slides its panel open over the canvas. The left strip keeps the previous / current / next patch one click away. A three-bar toggle at each panel's top-left (under File, for the bank) collapses it to its strip or opens it again at any window size, and File › Patch Bank does the same; there are no status-bar panel toggles (user decision, 2026-09-11).
 - **KD4. Mappings: both views.**
   - The per-plugin dialog (M4) stays as the close-up: learn, ranges and the plugin's MIDI channel filter.
   - A board-wide panel docks under the canvas and lists every mapping on the board, with the selected card's rows highlighted, not filtered.
@@ -180,14 +180,14 @@ Pure models (layout, rows, zones) live header-only under `app-v3/src/ui/`, as `C
 
 - **Goal:** Lay out the main window body as left panel | canvas | right panel.
   - Below about 1200 px, both panels fold to 48 px icon strips; a strip click slides its panel over the canvas.
-  - The status bar's Patches / Mappings / Browser toggles show and hide the panels, and the choice persists.
+  - A three-bar toggle at each panel's top-left collapses it to its strip and opens it again, at any window size; File › Patch Bank does the same for the bank. The choice persists.
 - **Requirements:** KD3
 - **Dependencies:** U4
 - **Files:**
   - `app-v3/src/ui/BodyLayout.h` (create): pure rectangles for the window width and the panels' open / folded / hidden state
   - `app-v3/src/ui/IconRail.h`, `app-v3/src/ui/IconRail.cpp` (create): the left strip (patches icon, previous / current / next PC) and the right strip (browser, mappings)
   - `app-v3/src/ui/MainWindow.cpp`: RootComponent layout through `BodyLayout`; the viewport takes the centre
-  - `app-v3/src/ui/StatusBar.h`, `app-v3/src/ui/StatusBar.cpp`: panel toggles, with the existing state dot, chain count, device readout and version kept
+  - `app-v3/src/ui/TransportBar.h`, `app-v3/src/ui/TransportBar.cpp`: File › Patch Bank
   - `app-v3/src/session/Preferences.h`, `app-v3/src/session/Preferences.cpp`: a `panels` key
   - `app-v3/tests/unit/ui/BodyLayout_test.cpp` (create), `app-v3/tests/unit/session/Preferences_test.cpp`
 - **Approach:**
@@ -282,7 +282,7 @@ Pure models (layout, rows, zones) live header-only under `app-v3/src/ui/`, as `C
 - **Test scenarios:** port validation, persistence and rebind are covered by the existing OscServer and Preferences tests. The dialog by hand.
 - **Verification:** by hand, change the port in Settings, and an OSC sender on the new port moves a mapped control. An in-use port shows the error inline.
 
-The status-bar refresh is U6's toggles plus what StatusBar already shows (state dot, chain count, error pill, device readout, version). There's no separate unit for it.
+The status bar keeps what it shows today (state dot, chain count, error pill, device readout, version). Panel toggles live on the panels and in the File menu (KD3).
 
 ### U11. About window
 

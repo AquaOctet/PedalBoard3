@@ -10,10 +10,10 @@
 namespace pedalboard3::ui
 {
 
-// The patch bank folded to a 48 px icon strip on a narrow window (UI refresh
-// U6, plan KD3): a bank icon that slides the full panel open over the canvas,
-// and the previous / playing / next patch by Program Change number, one click
-// away.
+// The patch bank collapsed to a 48 px icon strip (UI refresh U6, plan KD3): the
+// three-bar toggle, top-left under File, that opens the bank (docked on a wide
+// window, slid over the canvas on a narrow one), and the previous / playing /
+// next patch by Program Change number, one click away.
 //
 // Threading: message thread only. Listens to BankDocument.
 class PatchRail : public juce::Component, private juce::ChangeListener

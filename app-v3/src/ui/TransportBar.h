@@ -50,6 +50,11 @@ public:
     // mappings it edits, so it installs this.
     std::function<void()> onOpenAppMappings;
 
+    // File > Patch Bank (UI refresh U6): MainWindow's root component installs
+    // both; the item is ticked while the bank panel is showing.
+    std::function<void()> onTogglePatchBank;
+    std::function<bool()> isPatchBankShown;
+
     // Rename / remove the playing patch through the bar's prompts; the bank
     // sidebar (UI refresh U4) uses them too.
     void promptRenamePatch();
