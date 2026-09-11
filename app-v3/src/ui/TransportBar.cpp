@@ -8,6 +8,7 @@
 #include "engine/processors/TestToneProcessor.h"
 #include "FileActions.h"
 #include "session/BankDocument.h"
+#include "session/EditHistory.h"
 #include "session/Preferences.h"
 #include "session/Session.h"
 #include "SignalCanvas.h"
@@ -409,12 +410,12 @@ void TransportBar::openAddPluginMenu()
                            if (chosen < internalIdBase)
                            {
                                if (chosen <= effects.size())
-                                   ctx_.session.addPlugin(effects.getReference(chosen - 1));
+                                   ctx_.editHistory.addPlugin(effects.getReference(chosen - 1));
                                return;
                            }
                            const int internalIdx = chosen - internalIdBase;
                            if (internalIdx >= 0 && internalIdx < internals.size())
-                               ctx_.session.addInternalNode(internals.getReference(internalIdx).typeId);
+                               ctx_.editHistory.addInternalNode(internals.getReference(internalIdx).typeId);
                        });
 }
 

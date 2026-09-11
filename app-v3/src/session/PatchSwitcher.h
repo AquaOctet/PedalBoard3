@@ -9,6 +9,7 @@ namespace pedalboard3::session
 
 class BankDocument;
 class ControlHub;
+class EditHistory;
 
 // Turns patch-switch and app-command intents into bank actions (roadmap M3
 // U4, plan docs/plans/2026-09-11-001-feat-multi-patch-banks-plan.md, KD3 /
@@ -44,12 +45,17 @@ public:
 
     void handleMidi(const juce::MidiMessage& msg);
 
+    // The edit history the edit.undo / edit.redo commands run on (finish pass
+    // U8); unset, those commands do nothing.
+    void setEditHistory(EditHistory* history) noexcept { history_ = history; }
+
 private:
     void onUnhandledTarget(const control::ParameterUpdate& update);
 
     BankDocument& bank_;
     ControlHub& hub_;
     bool mappingOwnedThisMessage_{false};
+    EditHistory* history_{nullptr};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PatchSwitcher)
 };

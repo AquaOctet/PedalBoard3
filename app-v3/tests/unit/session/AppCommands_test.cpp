@@ -46,3 +46,13 @@ TEST_CASE("AppCommands: Save resolves both ways", "[session][app-commands]")
     REQUIRE(save != nullptr);
     REQUIRE(session::findAppCommandByJuceId(save->juceCommandId) == save);
 }
+
+TEST_CASE("AppCommands: Undo and Redo resolve both ways", "[session][app-commands]")
+{
+    for (const auto* id : {session::appcommands::kUndo, session::appcommands::kRedo})
+    {
+        const auto* c = session::findAppCommand(id);
+        REQUIRE(c != nullptr);
+        REQUIRE(session::findAppCommandByJuceId(c->juceCommandId) == c);
+    }
+}

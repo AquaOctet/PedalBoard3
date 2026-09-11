@@ -9,6 +9,7 @@
 #include "session/BankDocument.h"
 #include "session/ControlHub.h"
 #include "session/ControlWiring.h"
+#include "session/EditHistory.h"
 #include "session/PatchSwitcher.h"
 #include "session/Preferences.h"
 #include "session/PreferencesPersister.h"
@@ -71,6 +72,9 @@ private:
     // Constructed right after session; destroyed before it (issues no swap
     // in its dtor, but PreferencesPersister and UI hold a reference).
     std::unique_ptr<session::BankDocument> bankDocument;
+    // Finish pass U8: undo / redo for canvas edits. Listens to session; the
+    // UI and the patch switcher hold it, so it goes after them, before session.
+    std::unique_ptr<session::EditHistory> editHistory;
     // M2: constructed after session (ControlWiring observes it), before
     // AppContext (which hands controlHub out to UI). Destroyed before
     // session in shutdown() — see the reverse-order comment there.
