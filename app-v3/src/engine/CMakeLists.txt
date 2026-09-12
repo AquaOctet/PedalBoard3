@@ -32,7 +32,11 @@ add_library(pb3_engine_core STATIC
     PluginScanner.cpp
     PluginScanner.h
     processors/LevelProcessor.cpp
+    processors/OutputToggleProcessor.cpp
+    processors/ProcessorBase.cpp
     processors/LevelProcessor.h
+    processors/OutputToggleProcessor.h
+    processors/ProcessorBase.h
     processors/OutputSanitiser.cpp
     processors/OutputSanitiser.h
     processors/TestToneProcessor.cpp
@@ -72,6 +76,8 @@ pb3_apply_strict_warnings(pb3_engine_core
     PluginHost.cpp
     PluginScanner.cpp
     processors/LevelProcessor.cpp
+    processors/OutputToggleProcessor.cpp
+    processors/ProcessorBase.cpp
     processors/OutputSanitiser.cpp
     processors/TestToneProcessor.cpp
     processors/VuMeterProcessor.cpp

@@ -103,3 +103,24 @@ TEST_CASE("CanvasLayout: cards without a saved position continue the row to the 
     const auto fresh = canvas::layout(Saved{std::nullopt}, {960, 540}, kM, std::nullopt);
     REQUIRE(fresh.modelPositions[0] == juce::Point<int>{0, 0});
 }
+
+TEST_CASE("CanvasLayout: a taller card keeps the ports on the row, and the group fits it", "[ui][canvas]")
+{
+    // Two cards side by side; the second is a processor card 32 px taller.
+    const Saved saved{juce::Point<int>{0, 0}, juce::Point<int>{kM.cardWidth + kM.gap, 0}};
+    const std::vector<int> heights{kM.cardHeight, kM.cardHeight + 32};
+    const auto l = canvas::layout(saved, {1200, 600}, kM, std::nullopt, heights);
+
+    // Input and Output line up with the cards' tops, as if both were standard.
+    const auto first = cardAt(l, 0);
+    REQUIRE(l.endpoints.input.getY() == first.getY());
+    REQUIRE(l.endpoints.output.getY() == first.getY());
+    // The group, down to the taller card's bottom, is centred.
+    REQUIRE(first.getY() == (600 - (kM.cardHeight + 32)) / 2);
+
+    // An unpositioned tall card continues the row with its top on the others'.
+    const Saved withAuto{juce::Point<int>{0, 0}, std::nullopt};
+    const auto a = canvas::layout(withAuto, {1200, 600}, kM, std::nullopt, heights);
+    REQUIRE(a.modelPositions[1].getY() == a.modelPositions[0].getY());
+    REQUIRE(a.modelPositions[1].getX() == kM.cardWidth + kM.gap);
+}

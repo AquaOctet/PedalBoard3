@@ -329,6 +329,11 @@ void PluginCard::resized()
 
     if (renameEditor_ != nullptr)
         renameEditor_->setBounds(nameArea_.expanded(2, 1));
+
+    // The control row sits below the MIDI port, above the activity strip.
+    if (controls_ != nullptr)
+        controls_->setBounds(
+            kTextLeft - 8, kStandardHeight - 6, getWidth() - (kTextLeft - 8) - kOutPortInset - 6, controlsHeight_ - 2);
 }
 
 bool PluginCard::hitTest(int x, int y)
@@ -426,6 +431,22 @@ void PluginCard::endRename(bool commit)
             callbacks_.onRename(snapshot_.id, custom);
     }
     repaint();
+}
+
+void PluginCard::setControls(std::unique_ptr<juce::Component> controls)
+{
+    if (controls_ != nullptr)
+        removeChildComponent(controls_.get());
+    controls_ = std::move(controls);
+    controlsHeight_ = controls_ != nullptr ? controls_->getHeight() : 0;
+    if (controls_ != nullptr)
+        addAndMakeVisible(*controls_);
+    resized();
+}
+
+int PluginCard::preferredHeight() const noexcept
+{
+    return kStandardHeight + controlsHeight_;
 }
 
 } // namespace pedalboard3::ui
