@@ -17,9 +17,9 @@
 //   - Registers every JUCE-known plugin format (VST3 always, AudioUnit
 //     on macOS, etc — same set the parent host uses).
 //   - For each format that says canScanForPlugins(), tries
-//     findAllTypesForFile(path), with a message loop running
-//     (engine/ScanInMessageLoop.h): an AUv3 is scanned off the message
-//     thread, which JUCE requires, and every other format on it (#3).
+//     findAllTypesForFile(path) (engine/ScanInMessageLoop.h): on the
+//     message thread, except an AUv3, which JUCE only scans off it with a
+//     message loop running (#3).
 //   - Writes the resulting PluginDescriptions to stdout as a concatenated
 //     XML stream wrapped in <PB3_SCAN_RESULT>...</PB3_SCAN_RESULT>.
 //   - Exits 0 on a clean scan (even if no descriptors were found —
@@ -63,10 +63,10 @@ int main(int argc, char** argv)
     }
 
     {
-        // This thread is the message thread, and the scan runs a message
-        // loop on it until it's done (engine/ScanInMessageLoop.h): an AUv3 is
-        // created asynchronously and needs the loop free, or JUCE's AU format
-        // silently finds nothing (#3).
+        // This thread is the message thread. For an AUv3 the scan runs a
+        // message loop on it (engine/ScanInMessageLoop.h): an AUv3 is created
+        // asynchronously and needs the loop free, or JUCE's AU format silently
+        // finds nothing (#3).
         const juce::ScopedJuceInitialiser_GUI scopedJuce;
 #if JUCE_MAC
         // Running the loop starts NSApp; don't give the helper a Dock icon.

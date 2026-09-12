@@ -1,7 +1,7 @@
-// Tests for engine::scanFileInMessageLoop (engine/ScanInMessageLoop.h): the
-// scanner helper scans with a message loop running, so a format that needs
-// the message thread free (AUv3) is scanned off it (#3), and every other
-// format still scans on it.
+// Tests for engine::scanFileInMessageLoop (engine/ScanInMessageLoop.h): a
+// format that needs the message thread free (AUv3) is scanned off it with the
+// message loop running (#3); every other format still scans on the message
+// thread, without starting the loop.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -76,55 +76,69 @@ private:
     bool readsFile_;
 };
 
-// Scan on this thread as the message thread, as the helper does, then drop the
-// MessageManager: the scan stops its dispatch loop for good, and a later test
-// in the same process needs a fresh one.
-juce::OwnedArray<juce::PluginDescription> scan(const juce::Array<juce::AudioPluginFormat*>& formats)
+struct Scan
 {
-    juce::MessageManager::getInstance();
     juce::OwnedArray<juce::PluginDescription> results;
-    pedalboard3::engine::scanFileInMessageLoop(formats, "/Library/Audio/Plug-Ins/Components/Fake.component", results);
-    juce::MessageManager::deleteInstance();
-    return results;
+    bool loopRan{false};
+};
+
+// Scan as the helper does: JUCE initialised for GUI on this thread (on macOS
+// that starts NSApp, which the message loop needs). The initialiser's teardown
+// then drops the MessageManager, whose dispatch loop can't run again once
+// stopped, so a later test in the same process gets a fresh one.
+Scan scan(const juce::Array<juce::AudioPluginFormat*>& formats)
+{
+    const juce::ScopedJuceInitialiser_GUI initialiser;
+    Scan out;
+    pedalboard3::engine::scanFileInMessageLoop(
+        formats, "/Library/Audio/Plug-Ins/Components/Fake.component", out.results);
+    out.loopRan = juce::MessageManager::getInstance()->hasStopMessageBeenSent();
+    return out;
 }
 
 } // namespace
 
-TEST_CASE("ScanInMessageLoop: an AUv3-style format is scanned off the message thread, with the loop free",
+TEST_CASE("ScanInMessageLoop: an AUv3-style format is scanned off the message thread, with the loop running",
           "[engine][plugin-scanner]")
 {
     FakeFormat auv3("AUv3", /*needsFreeMessageThread*/ true);
-    const auto results = scan({&auv3});
-    REQUIRE(results.size() == 1);
-    REQUIRE(results[0]->name == "AUv3 plugin");
+    const auto result = scan({&auv3});
+    REQUIRE(result.results.size() == 1);
+    REQUIRE(result.results[0]->name == "AUv3 plugin");
     REQUIRE_FALSE(auv3.scannedOnMessageThread.load());
+    REQUIRE(result.loopRan);
 }
 
-TEST_CASE("ScanInMessageLoop: every other format still scans on the message thread", "[engine][plugin-scanner]")
-{
-    FakeFormat vst3("VST3", /*needsFreeMessageThread*/ false);
-    const auto results = scan({&vst3});
-    REQUIRE(results.size() == 1);
-    REQUIRE(results[0]->name == "VST3 plugin");
-    REQUIRE(vst3.scannedOnMessageThread.load());
-}
-
-TEST_CASE("ScanInMessageLoop: formats scan in order, and one that can't read the file is skipped",
+TEST_CASE("ScanInMessageLoop: every other format scans on the message thread, without starting the loop",
           "[engine][plugin-scanner]")
 {
-    FakeFormat vst3("VST3", false);
-    FakeFormat other("Other", false, /*readsFile*/ false);
+    FakeFormat vst3("VST3", /*needsFreeMessageThread*/ false);
+    const auto result = scan({&vst3});
+    REQUIRE(result.results.size() == 1);
+    REQUIRE(result.results[0]->name == "VST3 plugin");
+    REQUIRE(vst3.scannedOnMessageThread.load());
+    REQUIRE_FALSE(result.loopRan);
+}
+
+TEST_CASE("ScanInMessageLoop: message-thread formats scan first; one that can't read the file is skipped",
+          "[engine][plugin-scanner]")
+{
     FakeFormat auv3("AUv3", true);
-    const auto results = scan({&vst3, &other, &auv3});
-    REQUIRE(results.size() == 2);
-    REQUIRE(results[0]->name == "VST3 plugin");
-    REQUIRE(results[1]->name == "AUv3 plugin");
+    FakeFormat other("Other", false, /*readsFile*/ false);
+    FakeFormat vst3("VST3", false);
+    const auto result = scan({&auv3, &other, &vst3});
+    REQUIRE(result.results.size() == 2);
+    REQUIRE(result.results[0]->name == "VST3 plugin");
+    REQUIRE(result.results[1]->name == "AUv3 plugin");
     REQUIRE(other.scans.load() == 0);
 }
 
-TEST_CASE("ScanInMessageLoop: with no format that reads the file, the loop still ends", "[engine][plugin-scanner]")
+TEST_CASE("ScanInMessageLoop: with no format that reads the file, nothing runs", "[engine][plugin-scanner]")
 {
     FakeFormat other("Other", false, /*readsFile*/ false);
-    REQUIRE(scan({&other}).isEmpty());
-    REQUIRE(scan({}).isEmpty());
+    FakeFormat auv3("AUv3", true, /*readsFile*/ false);
+    const auto result = scan({&other, &auv3});
+    REQUIRE(result.results.isEmpty());
+    REQUIRE_FALSE(result.loopRan);
+    REQUIRE(scan({}).results.isEmpty());
 }
