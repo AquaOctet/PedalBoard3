@@ -27,6 +27,7 @@ public:
 
     std::atomic<int> scans{0};
     std::atomic<bool> scannedOnMessageThread{false};
+    std::atomic<bool> loopUnavailable{false}; // the callback never ran: no message loop
 
     juce::String getName() const override { return name_; }
 
@@ -42,7 +43,10 @@ public:
             juce::WaitableEvent created;
             juce::MessageManager::callAsync([&created] { created.signal(); });
             if (!created.wait(5000))
-                return; // the message loop wasn't running
+            {
+                loopUnavailable = true;
+                return;
+            }
         }
         auto description = std::make_unique<juce::PluginDescription>();
         description->name = name_ + " plugin";
@@ -76,6 +80,14 @@ private:
     bool readsFile_;
 };
 
+// A headless macOS CI runner can't run an NSApp message loop (the real-helper
+// integration tests skip there for the same reason), so a test that needs the
+// loop skips rather than fails when it didn't dispatch. Windows, Linux and a
+// desktop Mac run it.
+#define SKIP_IF_LOOP_UNAVAILABLE(format)                                                                               \
+    if ((format).loopUnavailable.load())                                                                               \
+    SKIP("the message loop didn't run on this runner (likely headless macOS CI)")
+
 struct Scan
 {
     juce::OwnedArray<juce::PluginDescription> results;
@@ -103,6 +115,7 @@ TEST_CASE("ScanInMessageLoop: an AUv3-style format is scanned off the message th
 {
     FakeFormat auv3("AUv3", /*needsFreeMessageThread*/ true);
     const auto result = scan({&auv3});
+    SKIP_IF_LOOP_UNAVAILABLE(auv3);
     REQUIRE(result.results.size() == 1);
     REQUIRE(result.results[0]->name == "AUv3 plugin");
     REQUIRE_FALSE(auv3.scannedOnMessageThread.load());
@@ -127,6 +140,7 @@ TEST_CASE("ScanInMessageLoop: message-thread formats scan first; one that can't 
     FakeFormat other("Other", false, /*readsFile*/ false);
     FakeFormat vst3("VST3", false);
     const auto result = scan({&auv3, &other, &vst3});
+    SKIP_IF_LOOP_UNAVAILABLE(auv3);
     REQUIRE(result.results.size() == 2);
     REQUIRE(result.results[0]->name == "VST3 plugin");
     REQUIRE(result.results[1]->name == "AUv3 plugin");
