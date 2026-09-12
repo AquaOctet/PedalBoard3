@@ -50,6 +50,7 @@ constexpr int kPatchNameMaxWidth = 320;
 constexpr int kTransportFoldBelow = 1120;
 // Patch-menu item ids at or above this select patch (id - base).
 constexpr int kGoToPatchBase = 1000;
+constexpr int kBoardFeatureBase = 500; // the board's feature switches, below kGoToPatchBase
 
 // Build a minimal graph that routes a TestToneProcessor straight to
 // the master output. Lifted from the previous MainWindow.cpp (the
@@ -125,7 +126,8 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas, FileActions& f
 
     prevPatchButton_.setTooltip("Previous patch");
     nextPatchButton_.setTooltip("Next patch");
-    patchButton_.setTooltip("Patch bank: new, duplicate, rename, remove, or go to a patch");
+    patchButton_.setTooltip(
+        "Patch bank: new, duplicate, rename, remove, go to a patch, and the features this board uses");
     prevPatchButton_.onClick = [this] { ctx_.bankDocument.previous(); };
     nextPatchButton_.onClick = [this] { ctx_.bankDocument.next(); };
     patchButton_.onClick = [this] { openPatchMenu(); };
@@ -258,6 +260,22 @@ void TransportBar::openPatchMenu()
                      true,
                      i == bank.activeIndex);
 
+    // The board's feature switches (optional-features U3, KD4): each feature
+    // that's on in Settings, ticked while it's on for this board.
+    menu.addSectionHeader("This board uses");
+    bool anyEnabled = false;
+    for (const auto feature : session::kAllFeatures)
+        if (ctx_.features.isEnabled(feature))
+        {
+            anyEnabled = true;
+            menu.addItem(kBoardFeatureBase + static_cast<int>(session::indexOf(feature)),
+                         session::featureName(feature),
+                         true,
+                         ctx_.features.isOnForBoard(feature));
+        }
+    if (!anyEnabled)
+        menu.addItem(juce::PopupMenu::Item("Features you turn on in Settings appear here").setEnabled(false));
+
     menu.showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(patchButton_),
                        [this](int choice)
                        {
@@ -281,6 +299,13 @@ void TransportBar::openPatchMenu()
                            else if (choice == 4)
                            {
                                confirmRemovePatch();
+                           }
+                           else if (choice >= kBoardFeatureBase &&
+                                    choice < kBoardFeatureBase + static_cast<int>(session::kFeatureCount))
+                           {
+                               const auto feature =
+                                   session::kAllFeatures[static_cast<std::size_t>(choice - kBoardFeatureBase)];
+                               ctx_.features.setOnForBoard(feature, !ctx_.features.isOnForBoard(feature));
                            }
                            else if (choice >= kGoToPatchBase)
                            {

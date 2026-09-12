@@ -7,6 +7,7 @@
 #include "BoardMappingsPanel.h"
 #include "BodyLayout.h"
 #include "ColourScheme.h"
+#include "FeaturePrompt.h"
 #include "FileActions.h"
 #include "PatchRail.h"
 #include "PluginBrowser.h"
@@ -43,7 +44,7 @@ class MainWindow::RootComponent : public juce::Component,
 public:
     explicit RootComponent(AppContext& ctxRef)
         : ctx_(ctxRef), files_(ctx_), canvas_(ctx_), transportBar_(ctx_, canvas_, files_), statusBar_(ctx_),
-          bankSidebar_(ctx_), patchRail_(ctx_), pluginBrowser_(ctx_), mappingsPanel_(ctx_)
+          bankSidebar_(ctx_), patchRail_(ctx_), pluginBrowser_(ctx_), mappingsPanel_(ctx_), featurePrompt_(ctx_)
     {
         addAndMakeVisible(transportBar_);
         addAndMakeVisible(viewport_);
@@ -321,6 +322,7 @@ private:
     bool browserOpen_{true};
     bool browserOverlay_{false};
     BoardMappingsPanel mappingsPanel_;
+    FeaturePrompt featurePrompt_; // asks when a board uses a feature that's off in Settings
     bool mappingsOpen_{true};
     bool dropHighlight_{false}; // a .pdl is being dragged over the window
 

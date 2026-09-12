@@ -96,4 +96,30 @@ bool boardUses(const PatchBank& bank, Feature feature)
     return false;
 }
 
+juce::String featureShortName(Feature feature)
+{
+    return feature == Feature::Tempo ? juce::String("Tempo") : featureName(feature);
+}
+
+std::vector<Feature> featuresToAsk(const PatchBank& bank, const std::function<bool(Feature)>& enabledInSettings)
+{
+    std::vector<Feature> ask;
+    for (const auto feature : kAllFeatures)
+        if (boardUses(bank, feature) && bank.featureOn(feature) && !enabledInSettings(feature))
+            ask.push_back(feature);
+    return ask;
+}
+
+juce::String featureListText(const std::vector<Feature>& features)
+{
+    juce::String text;
+    for (std::size_t i = 0; i < features.size(); ++i)
+    {
+        if (i > 0)
+            text << (i + 1 == features.size() ? " and " : ", ");
+        text << featureName(features[i]);
+    }
+    return text;
+}
+
 } // namespace pedalboard3::session

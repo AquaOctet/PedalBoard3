@@ -141,3 +141,32 @@ TEST_CASE("PatchBank: the board's switches round-trip through <BANK>, and a file
     for (const auto feature : session::kAllFeatures)
         REQUIRE(older->featureOn(feature));
 }
+
+TEST_CASE("Features: opening a board asks about what it uses that's off in Settings, and nothing else",
+          "[session][features]")
+{
+    session::PatchBank bank;
+    bank.patches.push_back(patchWithNode("LooperProcessor"));
+    session::Patch mapped;
+    mapped.oscMappings.push_back(control::OscMapping{});
+    bank.patches.push_back(mapped);
+
+    const auto allOff = [](Feature) { return false; };
+    REQUIRE(session::featuresToAsk(bank, allOff) == std::vector<Feature>{Feature::Looper, Feature::Osc});
+
+    const auto looperOn = [](Feature f) { return f == Feature::Looper; };
+    REQUIRE(session::featuresToAsk(bank, looperOn) == std::vector<Feature>{Feature::Osc});
+
+    bank.setFeature(Feature::Osc, false); // the board keeps OSC off itself: nothing to ask
+    REQUIRE(session::featuresToAsk(bank, looperOn).empty());
+
+    REQUIRE(session::featuresToAsk(session::PatchBank{}, allOff).empty()); // a new board asks nothing
+}
+
+TEST_CASE("Features: the question lists features the way a sentence does", "[session][features]")
+{
+    REQUIRE(session::featureListText({Feature::Looper}) == "Looper");
+    REQUIRE(session::featureListText({Feature::Looper, Feature::Osc}) == "Looper and OSC");
+    REQUIRE(session::featureListText({Feature::Tempo, Feature::Looper, Feature::Osc}) == "Tempo / BPM, Looper and OSC");
+    REQUIRE(session::featureShortName(Feature::Tempo) == "Tempo");
+}

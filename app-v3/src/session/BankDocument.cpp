@@ -49,6 +49,7 @@ void BankDocument::loadBank(PatchBank bank, juce::File file)
     if (!bank.isValidIndex(bank.activeIndex))
         bank.activeIndex = 0;
 
+    ++loadCount_;
     bank_ = std::move(bank);
     currentFile_ = std::move(file);
     savedSignature_ = signatureOf(bank_);
