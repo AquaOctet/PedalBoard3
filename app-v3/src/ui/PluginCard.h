@@ -68,6 +68,12 @@ public:
     void setMeterLevels(float left, float right); // linear peaks; VU Meter cards only
     bool isVuMeter() const noexcept;
 
+    // A built-in processor's control row (M6 U5, ui/ProcessorControls.h). The
+    // card grows by its height; the ports stay where they are.
+    static constexpr int kStandardHeight = 92;
+    void setControls(std::unique_ptr<juce::Component> controls);
+    int preferredHeight() const noexcept;
+
     // Port centre in card-local coordinates; SignalCanvas adds getPosition().
     // `channel`: 0 = L, 1 = R, juce::AudioProcessorGraph::midiChannelIndex = MIDI.
     juce::Point<int> getPortCentre(bool isInput, int channel) const noexcept;
@@ -132,6 +138,8 @@ private:
     // The last rename editor, kept alive until its own key or focus callback
     // has returned; freed on the next rename or with the card.
     std::unique_ptr<juce::TextEditor> retiredEditor_;
+    std::unique_ptr<juce::Component> controls_;
+    int controlsHeight_{0};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginCard)
 };

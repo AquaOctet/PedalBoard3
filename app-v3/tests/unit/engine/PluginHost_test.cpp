@@ -376,6 +376,12 @@ TEST_CASE("PluginHost: createInternalInstance builds known types, rejects unknow
     REQUIRE(err.isEmpty());
 
     err.clear();
+    auto toggle = host.createInternalInstance("OutputToggleProcessor", 48000.0, 256, err);
+    REQUIRE(toggle != nullptr);
+    REQUIRE(toggle->getName() == "Output Toggle");
+    REQUIRE(err.isEmpty());
+
+    err.clear();
     auto nope = host.createInternalInstance("Nonexistent", 48000.0, 256, err);
     REQUIRE(nope == nullptr);
     REQUIRE(err.isNotEmpty());
@@ -385,17 +391,21 @@ TEST_CASE("PluginHost: getInternalNodeTypes lists the built-in nodes", "[engine]
 {
     engine::PluginHost host;
     const auto types = host.getInternalNodeTypes();
-    REQUIRE(types.size() == 2);
+    REQUIRE(types.size() == 3);
 
     bool hasLevel = false;
     bool hasVu = false;
+    bool hasOutputToggle = false;
     for (const auto& t : types)
     {
         if (t.typeId == "LevelProcessor" && t.displayName == "Level")
             hasLevel = true;
         if (t.typeId == "VuMeterProcessor" && t.displayName == "VU Meter")
             hasVu = true;
+        if (t.typeId == "OutputToggleProcessor" && t.displayName == "Output Toggle")
+            hasOutputToggle = true;
     }
     REQUIRE(hasLevel);
     REQUIRE(hasVu);
+    REQUIRE(hasOutputToggle);
 }

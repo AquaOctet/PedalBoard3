@@ -6,6 +6,7 @@
 #include "engine/PluginHost.h"
 #include "engine/processors/VuMeterProcessor.h"
 #include "PluginBrowser.h"
+#include "ProcessorControls.h"
 #include "session/ControlHub.h"
 #include "session/EditHistory.h"
 #include "session/Patch.h"
@@ -22,7 +23,7 @@ namespace pedalboard3::ui
 namespace
 {
 constexpr int kCardWidth = 170;
-constexpr int kCardHeight = 92; // the mockup's compact card (UI refresh U7)
+constexpr int kCardHeight = PluginCard::kStandardHeight; // the mockup's compact card (UI refresh U7)
 constexpr int kCardSpacingX = 80;
 constexpr int kEndpointWidth = 86;
 constexpr int kCanvasMargin = 24;
@@ -211,7 +212,16 @@ std::unique_ptr<PluginCard> SignalCanvas::makeCard(const PluginCard::NodeSnapsho
         // In-place rename goes through the edit history, so it can be undone (U8).
         [this](NodeId id, juce::String name) { ctx_.editHistory.setNodeCustomName(id, std::move(name)); },
     };
-    return std::make_unique<PluginCard>(s, std::move(cb));
+    auto card = std::make_unique<PluginCard>(s, std::move(cb));
+    // A built-in processor's control row (M6 U5): Output Toggle's switch, and
+    // later the players' and recorders' buttons.
+    if (s.builtIn)
+        if (auto controls = makeProcessorControls(ctx_, s.internalType, s.id))
+        {
+            controls->setSize(kCardWidth, ProcessorControls::kHeight);
+            card->setControls(std::move(controls));
+        }
+    return card;
 }
 
 void SignalCanvas::layoutCards()
@@ -227,11 +237,14 @@ void SignalCanvas::layoutCards()
 
     std::vector<NodeId> ids;
     std::vector<std::optional<juce::Point<int>>> saved;
+    std::vector<int> heights; // a processor card is taller (M6 U5)
     ids.reserve(cards_.size());
     saved.reserve(cards_.size());
+    heights.reserve(cards_.size());
     for (const auto& card : cards_)
     {
         ids.push_back(card->getNodeId());
+        heights.push_back(card->preferredHeight());
         saved.push_back(card->hasStoredPosition() ? std::optional<juce::Point<int>>(card->storedPosition())
                                                   : std::nullopt);
     }
@@ -239,7 +252,7 @@ void SignalCanvas::layoutCards()
     // Re-centre when the window size or the set of cards changes. A moved card
     // keeps the offset, so nothing jumps away from where it was dropped.
     const bool keepOffset = viewOffset_.has_value() && viewport == lastViewport_ && ids == lastCardIds_;
-    const auto result = canvas::layout(saved, viewport, kMetrics, keepOffset ? viewOffset_ : std::nullopt);
+    const auto result = canvas::layout(saved, viewport, kMetrics, keepOffset ? viewOffset_ : std::nullopt, heights);
     viewOffset_ = result.offset;
     lastViewport_ = viewport;
     lastCardIds_ = std::move(ids);
@@ -248,8 +261,8 @@ void SignalCanvas::layoutCards()
     idToIndex_.reserve(cards_.size());
     for (std::size_t i = 0; i < cards_.size(); ++i)
     {
-        cards_[i]->setBounds(
-            juce::Rectangle<int>(kCardWidth, kCardHeight).withPosition(result.modelPositions[i] + result.offset));
+        cards_[i]->setBounds(juce::Rectangle<int>(kCardWidth, cards_[i]->preferredHeight())
+                                 .withPosition(result.modelPositions[i] + result.offset));
         idToIndex_[cards_[i]->getNodeId()] = i;
     }
 
@@ -534,7 +547,7 @@ void SignalCanvas::onCardDragging(NodeId)
     std::vector<juce::Rectangle<int>> live;
     live.reserve(cards_.size());
     for (const auto& card : cards_)
-        live.push_back(card->getBounds());
+        live.push_back(card->getBounds().withHeight(kCardHeight)); // ports line up at the standard height
     const auto ends = canvas::endpointsAround(live, kMetrics);
     inputCardBounds_ = ends.input;
     outputCardBounds_ = ends.output;

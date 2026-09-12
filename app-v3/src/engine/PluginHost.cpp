@@ -2,6 +2,7 @@
 
 #include "KnownProblemPlugins.h"
 #include "processors/LevelProcessor.h"
+#include "processors/OutputToggleProcessor.h"
 #include "processors/VuMeterProcessor.h"
 
 namespace pedalboard3::engine
@@ -209,6 +210,7 @@ juce::Array<InternalNodeType> PluginHost::getInternalNodeTypes() const
     juce::Array<InternalNodeType> types;
     types.add({"LevelProcessor", "Level"});
     types.add({"VuMeterProcessor", "VU Meter"});
+    types.add({"OutputToggleProcessor", "Output Toggle"});
     return types;
 }
 
@@ -222,6 +224,8 @@ std::unique_ptr<juce::AudioProcessor> PluginHost::createInternalInstance(const j
         proc = std::make_unique<processors::LevelProcessor>();
     else if (type == "VuMeterProcessor")
         proc = std::make_unique<processors::VuMeterProcessor>();
+    else if (type == "OutputToggleProcessor")
+        proc = std::make_unique<processors::OutputToggleProcessor>();
 
     if (proc == nullptr)
     {
