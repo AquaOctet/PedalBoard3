@@ -75,6 +75,13 @@ public:
 
     int droppedCount() const noexcept { return fifo_.droppedCount(); }
 
+    // MIDI on or off (optional-features plan KD6; session::InputGates drives
+    // it). Off unregisters every device callback, ignores device changes and
+    // drops whatever is queued, so no MIDI reaches anything. On registers the
+    // enabled devices again. On by default.
+    void setEnabled(bool enabled);
+    bool isEnabled() const noexcept { return enabled_; }
+
 private:
     void handleIncomingMidiMessage(juce::MidiInput* source, const juce::MidiMessage& message) override;
     void changeListenerCallback(juce::ChangeBroadcaster*) override;
@@ -91,6 +98,7 @@ private:
     Sink sink_;
     MidiMessageFifo fifo_;
     juce::StringArray registeredDeviceIds_;
+    bool enabled_{true};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MidiInputManager)
 };

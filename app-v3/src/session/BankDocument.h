@@ -84,6 +84,9 @@ public:
     // switch was already that way.
     bool setBoardFeature(Feature feature, bool on);
 
+    // How many boards loadBank has loaded; FeaturePrompt (U3) asks once per load.
+    std::uint64_t loadCount() const noexcept { return loadCount_; }
+
     // Capture Session's active patch with plugin state into the active slot
     // (no-op while live capture is disabled).
     void storeActive();
@@ -150,6 +153,7 @@ private:
     bool modified_{false};
     bool restoredModified_{false};
     bool stateEdited_{false};
+    std::uint64_t loadCount_{0};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BankDocument)
 };

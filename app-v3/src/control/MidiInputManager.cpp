@@ -74,12 +74,32 @@ void MidiInputManager::changeListenerCallback(juce::ChangeBroadcaster*)
 
 void MidiInputManager::timerCallback()
 {
-    fifo_.drain(sink_); // message thread
+    if (enabled_)
+        fifo_.drain(sink_); // message thread
+    else
+        fifo_.drain([](const juce::MidiMessage&) {}); // switched off: drop what's queued
+}
+
+void MidiInputManager::setEnabled(bool enabled)
+{
+    if (enabled == enabled_)
+        return;
+    enabled_ = enabled;
+    if (enabled_)
+    {
+        syncEnabledInputs();
+        return;
+    }
+    if (deviceManager_ != nullptr)
+        for (const auto& id : registeredDeviceIds_)
+            deviceManager_->removeMidiInputDeviceCallback(id, this);
+    registeredDeviceIds_.clear();
+    fifo_.drain([](const juce::MidiMessage&) {});
 }
 
 void MidiInputManager::syncEnabledInputs()
 {
-    if (deviceManager_ == nullptr)
+    if (deviceManager_ == nullptr || !enabled_)
         return;
 
     juce::StringArray currentlyEnabled;

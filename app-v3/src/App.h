@@ -11,6 +11,7 @@
 #include "session/ControlWiring.h"
 #include "session/EditHistory.h"
 #include "session/FeatureGate.h"
+#include "session/InputGates.h"
 #include "session/PatchSwitcher.h"
 #include "session/Preferences.h"
 #include "session/PreferencesPersister.h"
@@ -101,6 +102,9 @@ private:
     // M2: feeds ControlHub::handleOsc from a live OSC listener. Same
     // capture-by-reference lifetime constraint as midiInputManager.
     std::unique_ptr<control::OscServer> oscServer;
+    // Optional features U2: MIDI input and the OSC listener run only while
+    // their feature is available. Listens to featureGate.
+    std::unique_ptr<session::InputGates> inputGates;
     std::unique_ptr<session::PreferencesPersister> persister;
     std::optional<AppContext> context;
     std::unique_ptr<ui::MainWindow> mainWindow;

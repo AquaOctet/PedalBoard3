@@ -1,4 +1,5 @@
 #include "Preferences.h"
+#include "engine/TransportMath.h"
 
 namespace pedalboard3::session
 {
@@ -314,6 +315,94 @@ void Preferences::setFeatureEnabled(Feature feature, bool enabled)
 {
     if (auto* store = props_.getUserSettings())
         store->setValue(juce::String("feature.") + featureKey(feature), enabled);
+}
+
+double Preferences::getNewPatchTempo()
+{
+    if (auto* store = props_.getUserSettings())
+        return engine::transport::clampTempo(
+            store->getDoubleValue("tempo.newPatchTempo", engine::transport::kDefaultTempo));
+    return engine::transport::kDefaultTempo;
+}
+
+void Preferences::setNewPatchTempo(double bpm)
+{
+    if (auto* store = props_.getUserSettings())
+        store->setValue("tempo.newPatchTempo", engine::transport::clampTempo(bpm));
+}
+
+std::pair<int, int> Preferences::getNewPatchTimeSignature()
+{
+    int numerator = 4;
+    int denominator = 4;
+    if (auto* store = props_.getUserSettings())
+    {
+        numerator = store->getIntValue("tempo.newPatchNumerator", 4);
+        denominator = store->getIntValue("tempo.newPatchDenominator", 4);
+    }
+    if (!engine::transport::isValidTimeSignature(numerator, denominator))
+        return {4, 4};
+    return {numerator, denominator};
+}
+
+void Preferences::setNewPatchTimeSignature(int numerator, int denominator)
+{
+    if (!engine::transport::isValidTimeSignature(numerator, denominator))
+        return;
+    if (auto* store = props_.getUserSettings())
+    {
+        store->setValue("tempo.newPatchNumerator", numerator);
+        store->setValue("tempo.newPatchDenominator", denominator);
+    }
+}
+
+void Preferences::applyNewPatchDefaults(Patch& patch)
+{
+    patch.tempo = getNewPatchTempo();
+    const auto [numerator, denominator] = getNewPatchTimeSignature();
+    patch.timeSigNumerator = numerator;
+    patch.timeSigDenominator = denominator;
+}
+
+bool Preferences::getMetronomeClickButton()
+{
+    if (auto* store = props_.getUserSettings())
+        return store->getBoolValue("metronome.clickButton", true);
+    return true;
+}
+
+void Preferences::setMetronomeClickButton(bool shown)
+{
+    if (auto* store = props_.getUserSettings())
+        store->setValue("metronome.clickButton", shown);
+}
+
+float Preferences::getNewMetronomeLevel()
+{
+    double db = -6.0;
+    if (auto* store = props_.getUserSettings())
+        db = store->getDoubleValue("metronome.newLevel", -6.0);
+    return static_cast<float>(juce::jlimit(-40.0, 6.0, db));
+}
+
+void Preferences::setNewMetronomeLevel(float db)
+{
+    if (auto* store = props_.getUserSettings())
+        store->setValue("metronome.newLevel", static_cast<double>(juce::jlimit(-40.0f, 6.0f, db)));
+}
+
+juce::File Preferences::getLooperFolder()
+{
+    if (auto* store = props_.getUserSettings())
+        if (const auto path = store->getValue("looper.folder"); juce::File::isAbsolutePath(path))
+            return juce::File(path);
+    return {};
+}
+
+void Preferences::setLooperFolder(const juce::File& folder)
+{
+    if (auto* store = props_.getUserSettings())
+        store->setValue("looper.folder", folder == juce::File() ? juce::String() : folder.getFullPathName());
 }
 
 juce::StringArray Preferences::getRecentPlugins()

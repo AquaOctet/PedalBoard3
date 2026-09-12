@@ -85,6 +85,10 @@ public:
     juce::File getFolder() const { return takes_.getFolder(); }
     void setTakePrefix(const juce::String& prefix) { takes_.setPrefix(prefix); }
 
+    // A new Looper's state, saving loops in `folder` (Settings > Looper,
+    // optional-features U2).
+    static juce::MemoryBlock stateForFolder(const juce::File& folder);
+
 private:
     using PreRoll = std::array<std::array<float, kFadeFrames>, LoopBuffer::kChannels>;
 

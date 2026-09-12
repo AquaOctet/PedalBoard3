@@ -1,4 +1,7 @@
 #include "TransportBar.h"
+#include "FeatureSettingsWindows.h"
+#include "PluginBrowser.h"
+#include "session/FeatureGate.h"
 
 #include "session/AppCommands.h"
 #include "session/BoardFiles.h"
@@ -47,6 +50,7 @@ constexpr int kPatchNameMaxWidth = 320;
 constexpr int kTransportFoldBelow = 1120;
 // Patch-menu item ids at or above this select patch (id - base).
 constexpr int kGoToPatchBase = 1000;
+constexpr int kBoardFeatureBase = 500; // the board's feature switches, below kGoToPatchBase
 
 // Build a minimal graph that routes a TestToneProcessor straight to
 // the master output. Lifted from the previous MainWindow.cpp (the
@@ -106,7 +110,8 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas, FileActions& f
     { makeSettingsMenu().showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(settingsButton_)); };
     pluginsButton_.onClick = [this] { openPluginsMenu(); };
 
-    settingsButton_.setTooltip("Audio devices, MIDI inputs, OSC and the test tone");
+    settingsButton_.setTooltip(
+        "Audio devices, MIDI, OSC, Tempo / BPM, Metronome and Looper settings, and the test tone");
     testTone_.addListener(this);
 
     addAndMakeVisible(fileButton_);
@@ -121,7 +126,8 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas, FileActions& f
 
     prevPatchButton_.setTooltip("Previous patch");
     nextPatchButton_.setTooltip("Next patch");
-    patchButton_.setTooltip("Patch bank: new, duplicate, rename, remove, or go to a patch");
+    patchButton_.setTooltip(
+        "Patch bank: new, duplicate, rename, remove, go to a patch, and the features this board uses");
     prevPatchButton_.onClick = [this] { ctx_.bankDocument.previous(); };
     nextPatchButton_.onClick = [this] { ctx_.bankDocument.next(); };
     patchButton_.onClick = [this] { openPatchMenu(); };
@@ -254,6 +260,22 @@ void TransportBar::openPatchMenu()
                      true,
                      i == bank.activeIndex);
 
+    // The board's feature switches (optional-features U3, KD4): each feature
+    // that's on in Settings, ticked while it's on for this board.
+    menu.addSectionHeader("This board uses");
+    bool anyEnabled = false;
+    for (const auto feature : session::kAllFeatures)
+        if (ctx_.features.isEnabled(feature))
+        {
+            anyEnabled = true;
+            menu.addItem(kBoardFeatureBase + static_cast<int>(session::indexOf(feature)),
+                         session::featureName(feature),
+                         true,
+                         ctx_.features.isOnForBoard(feature));
+        }
+    if (!anyEnabled)
+        menu.addItem(juce::PopupMenu::Item("Features you turn on in Settings appear here").setEnabled(false));
+
     menu.showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(patchButton_),
                        [this](int choice)
                        {
@@ -262,6 +284,8 @@ void TransportBar::openPatchMenu()
                            {
                                session::Patch fresh;
                                fresh.name = "Patch " + juce::String(doc.size() + 1);
+                               if (ctx_.features.isAvailable(session::Feature::Tempo))
+                                   ctx_.preferences.applyNewPatchDefaults(fresh);
                                doc.select(doc.addPatch(std::move(fresh)));
                            }
                            else if (choice == 2)
@@ -275,6 +299,13 @@ void TransportBar::openPatchMenu()
                            else if (choice == 4)
                            {
                                confirmRemovePatch();
+                           }
+                           else if (choice >= kBoardFeatureBase &&
+                                    choice < kBoardFeatureBase + static_cast<int>(session::kFeatureCount))
+                           {
+                               const auto feature =
+                                   session::kAllFeatures[static_cast<std::size_t>(choice - kBoardFeatureBase)];
+                               ctx_.features.setOnForBoard(feature, !ctx_.features.isOnForBoard(feature));
                            }
                            else if (choice >= kGoToPatchBase)
                            {
@@ -422,7 +453,8 @@ juce::PopupMenu TransportBar::makeAddPluginMenu()
     juce::PopupMenu internalMenu;
     for (const auto& type : internals)
         internalMenu.addItem(type.displayName,
-                             [this, typeId = type.typeId] { ctx_.editHistory.addInternalNode(typeId); });
+                             [this, typeId = type.typeId]
+                             { addBrowserEntry(ctx_, "internal:" + typeId, std::nullopt); });
     menu.addSubMenu("Built-in", internalMenu);
     return menu;
 }
@@ -723,6 +755,9 @@ juce::PopupMenu TransportBar::makeSettingsMenu()
     menu.addItem("Audio Devices...", [this] { showAudioDevicesWindow(ctx_, testTone_); });
     menu.addItem("MIDI Settings...", [this] { showMidiSettingsWindow(ctx_); });
     menu.addItem("OSC Settings...", [this] { showOscSettingsWindow(ctx_); });
+    menu.addItem("Tempo / BPM Settings...", [this] { showTempoSettingsWindow(ctx_); });
+    menu.addItem("Metronome Settings...", [this] { showMetronomeSettingsWindow(ctx_); });
+    menu.addItem("Looper Settings...", [this] { showLooperSettingsWindow(ctx_); });
     menu.addSeparator();
     menu.addItem("Test Tone", true, toneActive_, [this] { testTone_ = !toneActive_; });
     return menu;

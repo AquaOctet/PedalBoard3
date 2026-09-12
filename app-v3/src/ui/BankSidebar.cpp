@@ -1,4 +1,6 @@
 #include "BankSidebar.h"
+#include "session/FeatureGate.h"
+#include "session/Preferences.h"
 
 #include "ColourScheme.h"
 #include "FileActions.h" // boardDisplayName
@@ -42,6 +44,8 @@ BankSidebar::BankSidebar(AppContext& ctx) : ctx_(ctx)
         auto& doc = ctx_.bankDocument;
         session::Patch fresh;
         fresh.name = "Patch " + juce::String(doc.size() + 1);
+        if (ctx_.features.isAvailable(session::Feature::Tempo))
+            ctx_.preferences.applyNewPatchDefaults(fresh);
         doc.select(doc.addPatch(std::move(fresh)));
     };
     duplicateButton_.setTooltip("Copy the playing patch and switch to the copy");

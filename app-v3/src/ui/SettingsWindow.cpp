@@ -5,6 +5,7 @@
 #include "control/OscMapping.h" // control::isOscMulticastAddress
 #include "control/OscServer.h"
 #include "engine/AudioEngine.h"
+#include "session/FeatureGate.h"
 #include "session/Preferences.h"
 #include "session/TransportCommands.h"
 
@@ -98,28 +99,25 @@ private:
 
 // ---- MIDI Settings --------------------------------------------------------------
 
+// "Enable MIDI" sits on top (optional-features U2, KD6 / KD7): off stops all
+// MIDI input. The devices below are what's read while it's on. MMC moved to
+// Tempo / BPM Settings.
 class MidiSettingsPanel : public juce::Component, private juce::ChangeListener
 {
 public:
     explicit MidiSettingsPanel(AppContext& ctx) : devices_(*ctx.audioEngine.getDeviceManager()), ctx_(ctx)
     {
-        styleCaption(header_, "MIDI INPUTS");
-        styleHint(hint_, "Enabled inputs drive mapped controls and Program Change patch switching.");
-        styleHint(empty_, "No MIDI inputs found. Connect a controller; it appears here.");
-        for (auto* c : std::initializer_list<juce::Component*>{&header_, &hint_, &empty_})
-            addAndMakeVisible(c);
-
-        // MIDI Machine Control (M6 U3, plan KD5): off by default, remembered.
-        styleCaption(mmcHeader_, "TRANSPORT");
-        mmc_.setToggleState(ctx_.transportCommands.isMmcEnabled(), juce::dontSendNotification);
-        mmc_.setTooltip("Play, Stop, Pause and Rewind from a controller or another app run the transport");
-        mmc_.onClick = [this]
+        enable_.setToggleState(ctx_.features.isEnabled(session::Feature::Midi), juce::dontSendNotification);
+        enable_.setTooltip("Off stops all MIDI input: mappings, Program Change patch switching, MMC and MIDI learn");
+        enable_.onClick = [this]
         {
-            ctx_.transportCommands.setMmcEnabled(mmc_.getToggleState());
-            ctx_.preferences.setMmcTransport(mmc_.getToggleState());
+            ctx_.features.setEnabled(session::Feature::Midi, enable_.getToggleState());
+            refreshEnabled();
         };
-        addAndMakeVisible(mmcHeader_);
-        addAndMakeVisible(mmc_);
+        styleCaption(header_, "MIDI INPUTS");
+        styleHint(empty_, "No MIDI inputs found. Connect a controller; it appears here.");
+        for (auto* c : std::initializer_list<juce::Component*>{&enable_, &header_, &hint_, &empty_})
+            addAndMakeVisible(c);
 
         devices_.addChangeListener(this); // inputs come and go
         rebuild();
@@ -130,15 +128,14 @@ public:
     void resized() override
     {
         auto area = getLocalBounds().reduced(kPad, 12);
+        enable_.setBounds(area.removeFromTop(kRowHeight).removeFromLeft(220));
+        area.removeFromTop(10);
         header_.setBounds(area.removeFromTop(22));
         hint_.setBounds(area.removeFromTop(24));
         area.removeFromTop(6);
         empty_.setBounds(area.removeFromTop(kRowHeight));
         for (auto& toggle : toggles_)
             toggle->setBounds(area.removeFromTop(kRowHeight));
-        area.removeFromTop(12);
-        mmcHeader_.setBounds(area.removeFromTop(22));
-        mmc_.setBounds(area.removeFromTop(kRowHeight));
     }
 
 private:
@@ -160,29 +157,51 @@ private:
             toggles_.push_back(std::move(toggle));
         }
         empty_.setVisible(toggles_.empty());
-        setSize(440, juce::jmax(230, 162 + kRowHeight * static_cast<int>(toggles_.size())));
+        setSize(440, 142 + kRowHeight * juce::jmax(1, static_cast<int>(toggles_.size())));
+        refreshEnabled();
         resized();
+    }
+
+    void refreshEnabled()
+    {
+        const bool on = enable_.getToggleState();
+        styleHint(hint_,
+                  on ? "Enabled inputs drive mapped controls and Program Change patch switching."
+                     : "MIDI is off: no MIDI input is read.");
+        for (auto& toggle : toggles_)
+            toggle->setEnabled(on);
     }
 
     juce::AudioDeviceManager& devices_;
     AppContext& ctx_;
+    juce::ToggleButton enable_{"Enable MIDI"};
     juce::Label header_;
     juce::Label hint_;
     juce::Label empty_;
     std::vector<std::unique_ptr<juce::ToggleButton>> toggles_;
-    juce::Label mmcHeader_;
-    juce::ToggleButton mmc_{"MIDI Machine Control (MMC) runs the transport"};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MidiSettingsPanel)
 };
 
 // ---- OSC Settings -----------------------------------------------------------------
 
-class OscSettingsPanel : public juce::Component
+// "Enable OSC" sits on top (optional-features U2, KD6 / KD7). Off, which is the
+// default, no port is open. The port and group apply straight away while OSC
+// is on for the board; otherwise they're saved for when it is.
+class OscSettingsPanel : public juce::Component, private juce::Timer
 {
 public:
     explicit OscSettingsPanel(AppContext& ctx) : ctx_(ctx)
     {
+        enable_.setToggleState(ctx_.features.isEnabled(session::Feature::Osc), juce::dontSendNotification);
+        enable_.setTooltip("Listen for OSC on the port below. Off, no network port is open.");
+        enable_.onClick = [this]
+        {
+            ctx_.features.setEnabled(session::Feature::Osc, enable_.getToggleState());
+            error_.clear();
+            refreshEnabled();
+        };
+
         styleCaption(header_, "OSC LISTENER");
         portLabel_.setText("Port", juce::dontSendNotification);
         groupLabel_.setText("Multicast group", juce::dontSendNotification);
@@ -204,17 +223,18 @@ public:
             editor->onFocusLost = [this] { apply(/*force*/ false); };
         }
 
-        showStatus("Press Enter, or leave a field, to apply.", false);
-
         for (auto* c : std::initializer_list<juce::Component*>{
-                 &header_, &portLabel_, &portEditor_, &groupLabel_, &groupEditor_, &statusLabel_})
+                 &enable_, &header_, &portLabel_, &portEditor_, &groupLabel_, &groupEditor_, &statusLabel_})
             addAndMakeVisible(c);
 
-        setSize(440, 200);
+        setSize(440, 238);
+        refreshEnabled();
+        startTimerHz(4); // the listener binds asynchronously, after the switch
     }
 
     ~OscSettingsPanel() override
     {
+        stopTimer();
         // A focused editor loses focus while the panel is torn down; don't let
         // that run apply() on a half-destroyed panel.
         portEditor_.onFocusLost = nullptr;
@@ -224,6 +244,8 @@ public:
     void resized() override
     {
         auto area = getLocalBounds().reduced(kPad, 12);
+        enable_.setBounds(area.removeFromTop(kRowHeight).removeFromLeft(220));
+        area.removeFromTop(10);
         header_.setBounds(area.removeFromTop(22));
         area.removeFromTop(6);
         auto port = area.removeFromTop(kRowHeight);
@@ -248,38 +270,88 @@ private:
         {
             // Back to the last-good saved value rather than binding with nonsense.
             portEditor_.setText(juce::String(prefs.getOscPort()), juce::dontSendNotification);
-            showStatus("The port must be between 1 and 65535.", true);
+            error_ = "The port must be between 1 and 65535.";
+            timerCallback();
             return;
         }
         if (group.isNotEmpty() && !control::isOscMulticastAddress(group))
         {
-            showStatus("A multicast group is an IPv4 address from 224.0.0.0 to 239.255.255.255, or empty.", true);
+            error_ = "A multicast group is an IPv4 address from 224.0.0.0 to 239.255.255.255, or empty.";
+            timerCallback();
             return;
         }
         if (!force && port == prefs.getOscPort() && group == prefs.getOscMulticastAddress())
             return;
 
+        if (!ctx_.features.isAvailable(session::Feature::Osc))
+        {
+            // Nothing is listening: just keep the values for when OSC is on.
+            prefs.setOscPort(port);
+            prefs.setOscMulticastAddress(group);
+            prefs.flush();
+            error_.clear();
+            timerCallback();
+            return;
+        }
+
         // rebind() drops the previous (working) binding before trying the new
         // one, so a failure leaves OSC off either way; save only on success, so
         // a rejected value never overwrites the last-good one. A failure is
         // shown here, not in a blocking dialog: the rest of the control layer
-        // keeps working without OSC (App::initialise treats it the same way).
-        const auto error = ctx_.oscServer.rebind(port, group);
-        if (error.isNotEmpty())
+        // keeps working without OSC.
+        if (const auto error = ctx_.oscServer.rebind(port, group); error.isNotEmpty())
         {
-            showStatus(error, true);
+            error_ = error;
+            timerCallback();
             return;
         }
         prefs.setOscPort(port);
         prefs.setOscMulticastAddress(group);
         prefs.flush();
-        showStatus("Listening on port " + juce::String(port) +
-                       (group.isNotEmpty() ? ", group " + group : juce::String()) + ".",
-                   false);
+        error_.clear();
+        timerCallback();
+    }
+
+    void refreshEnabled()
+    {
+        const bool on = enable_.getToggleState();
+        portEditor_.setEnabled(on);
+        groupEditor_.setEnabled(on);
+        timerCallback();
+    }
+
+    void timerCallback() override
+    {
+        auto& features = ctx_.features;
+        if (enable_.getToggleState() != features.isEnabled(session::Feature::Osc))
+        {
+            enable_.setToggleState(features.isEnabled(session::Feature::Osc), juce::dontSendNotification);
+            refreshEnabled();
+            return;
+        }
+        juce::String text;
+        if (error_.isNotEmpty())
+            text = error_;
+        else if (!features.isEnabled(session::Feature::Osc))
+            text = "OSC is off: no network port is open.";
+        else if (!features.isAvailable(session::Feature::Osc))
+            text = "On in Settings, but off for this board.";
+        else if (ctx_.oscServer.isConnected())
+            text = "Listening on port " + juce::String(ctx_.preferences.getOscPort()) +
+                   (ctx_.preferences.getOscMulticastAddress().isNotEmpty()
+                        ? ", group " + ctx_.preferences.getOscMulticastAddress()
+                        : juce::String()) +
+                   ".";
+        else
+            text = "Not listening. Press Enter in a field to try again.";
+        showStatus(text, error_.isNotEmpty());
     }
 
     void showStatus(const juce::String& text, bool isError)
     {
+        if (statusLabel_.getText() == text && shownError_ == isError)
+            return;
+        shownError_ = isError;
         statusLabel_.setText(text, juce::dontSendNotification);
         statusLabel_.setColour(juce::Label::textColourId, isError ? tokens::accentDestructive : tokens::fgMuted);
         const auto textColour = isError ? tokens::accentDestructive : tokens::fgPrimary;
@@ -288,12 +360,15 @@ private:
     }
 
     AppContext& ctx_;
+    juce::ToggleButton enable_{"Enable OSC"};
     juce::Label header_;
     juce::Label portLabel_;
     juce::TextEditor portEditor_;
     juce::Label groupLabel_;
     juce::TextEditor groupEditor_;
     juce::Label statusLabel_;
+    juce::String error_;
+    bool shownError_{false};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OscSettingsPanel)
 };

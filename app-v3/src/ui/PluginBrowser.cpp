@@ -1,4 +1,6 @@
 #include "PluginBrowser.h"
+#include "engine/processors/LooperProcessor.h"
+#include "engine/processors/MetronomeProcessor.h"
 
 #include "engine/PluginHost.h"
 #include "Icons.h"
@@ -25,6 +27,21 @@ const juce::String kInternalPrefix{"internal:"};
 const juce::String kDragPrefix{"pb3browser:"};
 } // namespace
 
+namespace
+{
+// A new Metronome or Looper starts from its Settings section (optional-features
+// U2, KD7); other types start from their defaults.
+juce::MemoryBlock settingsStateFor(AppContext& ctx, const juce::String& internalType)
+{
+    if (internalType == "MetronomeProcessor")
+        return engine::processors::MetronomeProcessor::stateWithLevel(ctx.preferences.getNewMetronomeLevel());
+    if (internalType == "LooperProcessor")
+        if (const auto folder = ctx.preferences.getLooperFolder(); folder != juce::File())
+            return engine::processors::LooperProcessor::stateForFolder(folder);
+    return {};
+}
+} // namespace
+
 bool addBrowserEntry(AppContext& ctx,
                      const juce::String& id,
                      std::optional<juce::Point<float>> position,
@@ -37,7 +54,8 @@ bool addBrowserEntry(AppContext& ctx,
 
     if (id.startsWith(kInternalPrefix))
     {
-        ctx.editHistory.addInternalNode(id.fromFirstOccurrenceOf(kInternalPrefix, false, false), position, state);
+        const auto type = id.fromFirstOccurrenceOf(kInternalPrefix, false, false);
+        ctx.editHistory.addInternalNode(type, position, state.getSize() > 0 ? state : settingsStateFor(ctx, type));
     }
     else if (id.startsWith(kPluginPrefix))
     {
