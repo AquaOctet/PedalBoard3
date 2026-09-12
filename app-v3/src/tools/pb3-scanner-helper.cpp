@@ -17,7 +17,9 @@
 //   - Registers every JUCE-known plugin format (VST3 always, AudioUnit
 //     on macOS, etc — same set the parent host uses).
 //   - For each format that says canScanForPlugins(), tries
-//     findAllTypesForFile(path).
+//     findAllTypesForFile(path) (engine/ScanInMessageLoop.h): on the
+//     message thread, except an AUv3, which JUCE only scans off it with a
+//     message loop running (#3).
 //   - Writes the resulting PluginDescriptions to stdout as a concatenated
 //     XML stream wrapped in <PB3_SCAN_RESULT>...</PB3_SCAN_RESULT>.
 //   - Exits 0 on a clean scan (even if no descriptors were found —
@@ -30,7 +32,8 @@
 // pull in any GUI dependency. Helper builds as a console binary that
 // ships alongside the main app.
 
-#include "engine/ScanProtocol.h" // kScanOkSentinel — shared with engine::PluginScanner
+#include "engine/ScanInMessageLoop.h" // the scan, with a message loop running (#3)
+#include "engine/ScanProtocol.h"      // kScanOkSentinel — shared with engine::PluginScanner
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_core/juce_core.h>
@@ -60,32 +63,25 @@ int main(int argc, char** argv)
     }
 
     {
-        // Helper runs without a MessageManager — JUCE plugin loading is
-        // fine without one for the format-scan code path. If a plugin's
-        // ctor demands a MessageManager (rare), the scan will fail fast
-        // and we'll exit non-zero, which the parent treats as "crashed".
+        // This thread is the message thread. For an AUv3 the scan runs a
+        // message loop on it (engine/ScanInMessageLoop.h): an AUv3 is created
+        // asynchronously and needs the loop free, or JUCE's AU format silently
+        // finds nothing (#3).
         const juce::ScopedJuceInitialiser_GUI scopedJuce;
+#if JUCE_MAC
+        // Running the loop starts NSApp; don't give the helper a Dock icon.
+        juce::Process::setDockIconVisible(false);
+#endif
 
         juce::AudioPluginFormatManager formats;
         formats.addDefaultFormats();
 
+        // findAllTypesForFile is the call that may crash inside the plugin's
+        // own constructor (Current.vst3's MKURequestManager pure-virtual call,
+        // etc). If it crashes, the OS kills this process with a signal, and
+        // the parent sees it in the exit code.
         juce::OwnedArray<juce::PluginDescription> descriptions;
-
-        for (int f = 0; f < formats.getNumFormats(); ++f)
-        {
-            auto* format = formats.getFormat(f);
-            if (format == nullptr || !format->canScanForPlugins())
-                continue;
-
-            if (!format->fileMightContainThisPluginType(pluginPath))
-                continue;
-
-            // findAllTypesForFile is the call that may crash inside the
-            // plugin's own constructor (Current.vst3's MKURequestManager
-            // pure-virtual call, etc). If it crashes, the OS kills this
-            // process with a signal — parent detects via exit code.
-            format->findAllTypesForFile(descriptions, pluginPath);
-        }
+        pedalboard3::engine::scanFileInMessageLoop(formats.getFormats(), pluginPath, descriptions);
 
         juce::XmlElement root("PB3_SCAN_RESULT");
         for (const auto* desc : descriptions)
