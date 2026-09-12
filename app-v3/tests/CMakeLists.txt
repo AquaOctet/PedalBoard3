@@ -29,6 +29,7 @@ set(PB3_TEST_SOURCES
     unit/engine/Recordings_test.cpp
     unit/engine/Transport_test.cpp
     unit/engine/TransportMath_test.cpp
+    unit/engine/ScanInMessageLoop_test.cpp
     unit/session/Preferences_test.cpp
     unit/session/PreferencesPersister_test.cpp
     unit/session/PreparedGraph_test.cpp
