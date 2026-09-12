@@ -1,5 +1,9 @@
 #include "Session.h"
 
+#include "engine/TransportMath.h"
+
+#include <cmath>
+
 #include "ControlParameterApplier.h"
 #include "engine/AudioEngine.h"
 #include "engine/AudioGraphRuntime.h"
@@ -501,6 +505,36 @@ bool Session::setNodeMappings(NodeId id, std::vector<control::MidiMapping> midi,
     mappingsRevision_.fetch_add(1, std::memory_order_release);
     bumpVersionAndNotify();
     return true;
+}
+
+void Session::setTempo(double bpm)
+{
+    if (!std::isfinite(bpm))
+        return;
+    const double tempo = engine::transport::clampTempo(bpm);
+    {
+        std::lock_guard<std::mutex> lk(statusMutex_);
+        if (juce::exactlyEqual(activePatch_.tempo, tempo))
+            return;
+        activePatch_.tempo = tempo;
+    }
+    engine_.getTransport().setTempo(tempo);
+    bumpVersionAndNotify();
+}
+
+void Session::setTimeSignature(int numerator, int denominator)
+{
+    if (!engine::transport::isValidTimeSignature(numerator, denominator))
+        return;
+    {
+        std::lock_guard<std::mutex> lk(statusMutex_);
+        if (activePatch_.timeSigNumerator == numerator && activePatch_.timeSigDenominator == denominator)
+            return;
+        activePatch_.timeSigNumerator = numerator;
+        activePatch_.timeSigDenominator = denominator;
+    }
+    engine_.getTransport().setTimeSignature(numerator, denominator);
+    bumpVersionAndNotify();
 }
 
 void Session::setNodeMidiChannel(NodeId id, int channel1To16Or0)
@@ -1096,6 +1130,14 @@ void Session::commitLoadPatch(LoadPatchResult&& result)
         for (const auto& entry : nodes_)
             listenTo(entry.second);
         lastError_.clear();
+    }
+
+    // The patch's tempo and time signature go live with it (M6 U2).
+    {
+        auto& transport = engine_.getTransport();
+        std::lock_guard<std::mutex> lk(statusMutex_);
+        transport.setTempo(activePatch_.tempo);
+        transport.setTimeSignature(activePatch_.timeSigNumerator, activePatch_.timeSigDenominator);
     }
 
     patchGeneration_.fetch_add(1, std::memory_order_release);

@@ -21,6 +21,9 @@ add_library(pb3_engine_core STATIC
     AudioEngine.h
     AudioGraphRuntime.cpp
     AudioGraphRuntime.h
+    Transport.cpp
+    Transport.h
+    TransportMath.h
     BypassableInstance.cpp
     BypassableInstance.h
     KnownProblemPlugins.h
@@ -65,6 +68,7 @@ pb3_apply_strict_warnings(pb3_engine_core
     AudioEngine.cpp
     AudioGraphRuntime.cpp
     BypassableInstance.cpp
+    Transport.cpp
     PluginHost.cpp
     PluginScanner.cpp
     processors/LevelProcessor.cpp

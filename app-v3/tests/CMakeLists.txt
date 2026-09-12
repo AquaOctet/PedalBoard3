@@ -22,6 +22,9 @@ set(PB3_TEST_SOURCES
     unit/engine/AudioEngine_test.cpp
     unit/engine/PluginHost_test.cpp
     unit/engine/PluginScanner_test.cpp
+    unit/engine/PlayHead_test.cpp
+    unit/engine/Transport_test.cpp
+    unit/engine/TransportMath_test.cpp
     unit/session/Preferences_test.cpp
     unit/session/PreferencesPersister_test.cpp
     unit/session/PreparedGraph_test.cpp

@@ -1,5 +1,9 @@
 #include "Patch.h"
 
+#include "engine/TransportMath.h"
+
+#include <cmath>
+
 #include <algorithm>
 #include <unordered_set>
 
@@ -245,6 +249,9 @@ std::unique_ptr<juce::XmlElement> patchToXml(const Patch& p)
 {
     auto root = std::make_unique<juce::XmlElement>("PATCH");
     root->setAttribute("name", p.name);
+    root->setAttribute("tempo", p.tempo);
+    root->setAttribute("timeSigNumerator", p.timeSigNumerator);
+    root->setAttribute("timeSigDenominator", p.timeSigDenominator);
 
     auto* nodesEl = root->createNewChildElement("NODES");
     for (const auto& n : p.nodes)
@@ -346,6 +353,18 @@ std::unique_ptr<Patch> patchFromXml(const juce::XmlElement& root)
 
     auto patch = std::make_unique<Patch>();
     patch->name = root.getStringAttribute("name", "Untitled");
+
+    // Tempo and time signature (schemaMinor 6): absent or unusable values fall
+    // back to 120 BPM in 4/4.
+    const double tempo = root.getDoubleAttribute("tempo", engine::transport::kDefaultTempo);
+    patch->tempo = std::isfinite(tempo) ? engine::transport::clampTempo(tempo) : engine::transport::kDefaultTempo;
+    const int numerator = root.getIntAttribute("timeSigNumerator", 4);
+    const int denominator = root.getIntAttribute("timeSigDenominator", 4);
+    if (engine::transport::isValidTimeSignature(numerator, denominator))
+    {
+        patch->timeSigNumerator = numerator;
+        patch->timeSigDenominator = denominator;
+    }
 
     if (auto* nodesEl = root.getChildByName("NODES"))
     {

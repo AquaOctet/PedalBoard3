@@ -458,3 +458,20 @@ TEST_CASE("v2 import: importPedalboard2Bank rejects a non-v2 root and a file wit
     REQUIRE(res.bank == nullptr);
     REQUIRE(res.error.isNotEmpty());
 }
+
+#include <catch2/catch_approx.hpp>
+
+TEST_CASE("v2 import: each patch's tempo comes across; a patch without one is 120", "[session][v2import][transport]")
+{
+    const auto xml = juce::parseXML(R"(<Pedalboard2PatchFile>
+  <Patch tempo="96" name="Fast"><FILTERGRAPH/></Patch>
+  <Patch name="Plain"><FILTERGRAPH/></Patch>
+</Pedalboard2PatchFile>)");
+    REQUIRE(xml != nullptr);
+    const auto result = pedalboard3::session::v2::importPedalboard2Bank(*xml);
+    REQUIRE(result.bank != nullptr);
+    REQUIRE(result.bank->patches.size() == 2);
+    REQUIRE(result.bank->patches[0].tempo == Catch::Approx(96.0));
+    REQUIRE(result.bank->patches[1].tempo == Catch::Approx(120.0));
+    REQUIRE(result.bank->patches[0].timeSigNumerator == 4);
+}

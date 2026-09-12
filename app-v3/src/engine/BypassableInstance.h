@@ -41,6 +41,14 @@ public:
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
     void releaseResources() override { inner_->releaseResources(); }
 
+    // The graph hands each node its play head every block. Pass it on, or the
+    // hosted plugin never sees the transport (M6 U1).
+    void setPlayHead(juce::AudioPlayHead* newPlayHead) override
+    {
+        juce::AudioProcessor::setPlayHead(newPlayHead);
+        inner_->setPlayHead(newPlayHead);
+    }
+
     bool isBusesLayoutSupported(const BusesLayout& layouts) const override;
 
     void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) override;

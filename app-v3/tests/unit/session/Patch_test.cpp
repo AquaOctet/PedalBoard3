@@ -587,3 +587,40 @@ TEST_CASE("Patch: a node's MIDI channel filter round-trips; omni writes nothing;
     nodes->getChildElement(0)->setAttribute("midiChannel", 99);
     REQUIRE(session::patchFromXml(*xml)->nodes[0].midiChannel == 16);
 }
+
+#include <catch2/catch_approx.hpp>
+
+TEST_CASE("Patch: tempo and time signature round-trip", "[session][patch][xml][transport]")
+{
+    session::Patch p;
+    p.tempo = 96.5;
+    p.timeSigNumerator = 7;
+    p.timeSigDenominator = 8;
+    auto rt = session::patchFromXml(*session::patchToXml(p));
+    REQUIRE(rt != nullptr);
+    REQUIRE(rt->tempo == Catch::Approx(96.5));
+    REQUIRE(rt->timeSigNumerator == 7);
+    REQUIRE(rt->timeSigDenominator == 8);
+}
+
+TEST_CASE("Patch: without a tempo a patch is 120 BPM in 4/4, and bad values fall back",
+          "[session][patch][xml][transport]")
+{
+    juce::XmlElement plain("PATCH");
+    plain.setAttribute("name", "Old");
+    auto old = session::patchFromXml(plain);
+    REQUIRE(old != nullptr);
+    REQUIRE(old->tempo == Catch::Approx(120.0));
+    REQUIRE(old->timeSigNumerator == 4);
+    REQUIRE(old->timeSigDenominator == 4);
+
+    juce::XmlElement odd("PATCH");
+    odd.setAttribute("tempo", 5000.0);
+    odd.setAttribute("timeSigNumerator", 5);
+    odd.setAttribute("timeSigDenominator", 3); // not a note value
+    auto fixed = session::patchFromXml(odd);
+    REQUIRE(fixed != nullptr);
+    REQUIRE(fixed->tempo == Catch::Approx(300.0));
+    REQUIRE(fixed->timeSigNumerator == 4);
+    REQUIRE(fixed->timeSigDenominator == 4);
+}

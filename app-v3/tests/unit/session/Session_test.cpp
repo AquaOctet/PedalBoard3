@@ -940,3 +940,55 @@ TEST_CASE("Session: removing the last node keeps audio and MIDI passing straight
     REQUIRE(audio == 2); // left and right
     REQUIRE(midi == 1);
 }
+
+#include <catch2/catch_approx.hpp>
+
+TEST_CASE("Session: a patch's tempo and time signature reach the transport when it loads", "[session][transport]")
+{
+    engine::AudioEngine eng;
+    eng.initialise();
+    engine::PluginHost host;
+    FakeBuilder builder;
+    session::Session s(eng, host, builder.fn());
+
+    auto patch = makeOneNodePatch("Delay");
+    patch.tempo = 87.0;
+    patch.timeSigNumerator = 6;
+    patch.timeSigDenominator = 8;
+    s.replacePatch(patch);
+    pumpUntilIdle(s);
+
+    REQUIRE(eng.getTransport().getTempo() == Catch::Approx(87.0));
+    REQUIRE(eng.getTransport().getNumerator() == 6);
+    REQUIRE(eng.getTransport().getDenominator() == 8);
+    REQUIRE(s.getActivePatch().tempo == Catch::Approx(87.0));
+}
+
+TEST_CASE("Session: setTempo and setTimeSignature change the patch and the transport", "[session][transport]")
+{
+    engine::AudioEngine eng;
+    eng.initialise();
+    engine::PluginHost host;
+    FakeBuilder builder;
+    session::Session s(eng, host, builder.fn());
+
+    const auto before = s.getStateVersion();
+    s.setTempo(140.0);
+    REQUIRE(eng.getTransport().getTempo() == Catch::Approx(140.0));
+    REQUIRE(s.getActivePatch().tempo == Catch::Approx(140.0));
+    REQUIRE(s.getStateVersion() > before); // listeners, such as the unsaved marker, hear about it
+
+    s.setTempo(1000.0);
+    REQUIRE(s.getActivePatch().tempo == Catch::Approx(300.0));
+
+    s.setTimeSignature(3, 4);
+    REQUIRE(s.getActivePatch().timeSigNumerator == 3);
+    REQUIRE(s.getActivePatch().timeSigDenominator == 4);
+    REQUIRE(eng.getTransport().getNumerator() == 3);
+
+    const auto settled = s.getStateVersion();
+    s.setTimeSignature(5, 3); // not a note value: ignored
+    s.setTempo(300.0);        // unchanged: no notification
+    REQUIRE(s.getStateVersion() == settled);
+    REQUIRE(s.getActivePatch().timeSigNumerator == 3);
+}
