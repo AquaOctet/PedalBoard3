@@ -55,6 +55,8 @@ add_library(pb3_app_core STATIC
     ui/MappingsDialog.cpp
     ui/MappingsDialog.h
     ui/MeterMath.h
+    ui/MetronomeWindow.cpp
+    ui/MetronomeWindow.h
     ui/MainWindow.cpp
     ui/MainWindow.h
     ui/Pb3LookAndFeel.cpp
@@ -123,6 +125,7 @@ pb3_apply_strict_warnings(pb3_app_core
     ui/FilePlayerWindow.cpp
     ui/MappingRowEditors.cpp
     ui/MappingsDialog.cpp
+    ui/MetronomeWindow.cpp
     ui/MainWindow.cpp
     ui/Pb3LookAndFeel.cpp
     ui/PatchRail.cpp

@@ -37,11 +37,13 @@ add_library(pb3_engine_core STATIC
     processors/OutputToggleProcessor.cpp
     processors/FilePlayerProcessor.cpp
     processors/AudioRecorderProcessor.cpp
+    processors/MetronomeProcessor.cpp
     processors/ProcessorBase.cpp
     processors/LevelProcessor.h
     processors/OutputToggleProcessor.h
     processors/FilePlayerProcessor.h
     processors/AudioRecorderProcessor.h
+    processors/MetronomeProcessor.h
     processors/ProcessorBase.h
     processors/OutputSanitiser.cpp
     processors/OutputSanitiser.h
@@ -85,6 +87,7 @@ pb3_apply_strict_warnings(pb3_engine_core
     processors/OutputToggleProcessor.cpp
     processors/FilePlayerProcessor.cpp
     processors/AudioRecorderProcessor.cpp
+    processors/MetronomeProcessor.cpp
     processors/ProcessorBase.cpp
     processors/OutputSanitiser.cpp
     processors/TestToneProcessor.cpp

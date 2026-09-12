@@ -4,6 +4,7 @@
 #include "processors/AudioRecorderProcessor.h"
 #include "processors/FilePlayerProcessor.h"
 #include "processors/LevelProcessor.h"
+#include "processors/MetronomeProcessor.h"
 #include "processors/OutputToggleProcessor.h"
 #include "processors/VuMeterProcessor.h"
 
@@ -215,6 +216,7 @@ juce::Array<InternalNodeType> PluginHost::getInternalNodeTypes() const
     types.add({"OutputToggleProcessor", "Output Toggle"});
     types.add({"FilePlayerProcessor", "File Player"});
     types.add({"AudioRecorderProcessor", "Audio Recorder"});
+    types.add({"MetronomeProcessor", "Metronome"});
     return types;
 }
 
@@ -234,6 +236,8 @@ std::unique_ptr<juce::AudioProcessor> PluginHost::createInternalInstance(const j
         proc = std::make_unique<processors::FilePlayerProcessor>(diskThread_);
     else if (type == "AudioRecorderProcessor")
         proc = std::make_unique<processors::AudioRecorderProcessor>(diskThread_);
+    else if (type == "MetronomeProcessor")
+        proc = std::make_unique<processors::MetronomeProcessor>(diskThread_);
 
     if (proc == nullptr)
     {

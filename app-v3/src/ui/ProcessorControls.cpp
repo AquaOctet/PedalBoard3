@@ -3,11 +3,14 @@
 #include "ColourScheme.h"
 #include "engine/processors/AudioRecorderProcessor.h"
 #include "engine/processors/FilePlayerProcessor.h"
+#include "engine/processors/MetronomeProcessor.h"
 #include "FilePlayerWindow.h"
 #include "Icons.h"
+#include "MetronomeWindow.h"
 #include "RecorderWindow.h"
 #include "session/BankDocument.h"
 #include "session/Session.h"
+#include "session/TransportCommands.h"
 
 #include <array>
 #include <cmath>
@@ -355,6 +358,94 @@ private:
     bool shownRecording_{false};
 };
 
+// ---- Metronome (M6 U9): Play and the beats of the bar --------------------------
+
+class MetronomeControls final : public ProcessorControls
+{
+public:
+    MetronomeControls(AppContext& ctx, session::NodeId node) : ProcessorControls(ctx, node, 30)
+    {
+        playButton_.setShape(playIcon(), false, true, false);
+        playButton_.setTooltip("Start or stop the metronome; synced, this plays or pauses the transport. ED sets "
+                               "the beats, the level and Sync.");
+        playButton_.onClick = [this]
+        {
+            if (auto* m = metronome())
+            {
+                if (m->isSynced())
+                    ctx_.transportCommands.playPause();
+                else
+                    m->togglePlay();
+            }
+            refresh();
+        };
+        addAndMakeVisible(playButton_);
+        refresh();
+    }
+
+    void resized() override
+    {
+        auto area = getLocalBounds();
+        playButton_.setBounds(area.removeFromLeft(22).withSizeKeepingCentre(20, 18));
+        area.removeFromLeft(6);
+        dots_ = area;
+    }
+
+    void paint(juce::Graphics& g) override
+    {
+        // One dot per beat of the bar; the current beat is lit, beat 1 in amber.
+        if (dots_.isEmpty())
+            return;
+        const int beats = juce::jlimit(1, 16, beats_);
+        const float size = juce::jlimit(2.0f, 10.0f, static_cast<float>(dots_.getWidth()) / beats - 3.0f);
+        const float step = static_cast<float>(dots_.getWidth()) / beats;
+        for (int i = 0; i < beats; ++i)
+        {
+            const auto dot = juce::Rectangle<float>(size, size)
+                                 .withCentre({static_cast<float>(dots_.getX()) + step * (static_cast<float>(i) + 0.5f),
+                                              static_cast<float>(dots_.getCentreY())});
+            const bool lit = i == beat_;
+            g.setColour(lit ? (i == 0 ? tokens::accentWarning : tokens::accentPrimary) : tokens::bgMuted);
+            g.fillEllipse(dot);
+        }
+    }
+
+private:
+    engine::processors::MetronomeProcessor* metronome() const
+    {
+        return dynamic_cast<engine::processors::MetronomeProcessor*>(processor());
+    }
+
+    void refresh() override
+    {
+        auto* m = metronome();
+        if (m == nullptr)
+            return;
+        const bool running = m->isRunning();
+        if (running != shownRunning_)
+        {
+            shownRunning_ = running;
+            playButton_.setShape(running ? pauseIcon() : playIcon(), false, true, false);
+            playButton_.setColours(
+                running ? tokens::accentPrimary : tokens::fgPrimary, tokens::accentPrimary, tokens::accentPrimary);
+        }
+        const int beat = m->getBeatInBar();
+        const int beats = m->getBeatsPerBar();
+        if (beat != beat_ || beats != beats_)
+        {
+            beat_ = beat;
+            beats_ = beats;
+            repaint(dots_);
+        }
+    }
+
+    juce::ShapeButton playButton_{"Play", tokens::fgPrimary, tokens::accentPrimary, tokens::accentPrimary};
+    juce::Rectangle<int> dots_;
+    int beat_{-1};
+    int beats_{4};
+    bool shownRunning_{false};
+};
+
 } // namespace
 
 std::unique_ptr<ProcessorControls> makeProcessorControls(AppContext& ctx,
@@ -367,12 +458,15 @@ std::unique_ptr<ProcessorControls> makeProcessorControls(AppContext& ctx,
         return std::make_unique<FilePlayerControls>(ctx, node);
     if (internalType == "AudioRecorderProcessor")
         return std::make_unique<RecorderControls>(ctx, node);
+    if (internalType == "MetronomeProcessor")
+        return std::make_unique<MetronomeControls>(ctx, node);
     return nullptr;
 }
 
 bool hasProcessorEditor(const juce::String& internalType)
 {
-    return internalType == "FilePlayerProcessor" || internalType == "AudioRecorderProcessor";
+    return internalType == "FilePlayerProcessor" || internalType == "AudioRecorderProcessor" ||
+           internalType == "MetronomeProcessor";
 }
 
 juce::AudioProcessorEditor* makeProcessorEditor(AppContext& ctx,
@@ -385,6 +479,9 @@ juce::AudioProcessorEditor* makeProcessorEditor(AppContext& ctx,
     if (internalType == "AudioRecorderProcessor")
         if (auto* recorder = dynamic_cast<engine::processors::AudioRecorderProcessor*>(&processor))
             return new RecorderEditor(ctx, *recorder);
+    if (internalType == "MetronomeProcessor")
+        if (auto* metronome = dynamic_cast<engine::processors::MetronomeProcessor*>(&processor))
+            return new MetronomeEditor(ctx, *metronome);
     return nullptr;
 }
 
