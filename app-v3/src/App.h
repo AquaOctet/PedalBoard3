@@ -10,6 +10,7 @@
 #include "session/ControlHub.h"
 #include "session/ControlWiring.h"
 #include "session/EditHistory.h"
+#include "session/FeatureGate.h"
 #include "session/PatchSwitcher.h"
 #include "session/Preferences.h"
 #include "session/PreferencesPersister.h"
@@ -78,6 +79,9 @@ private:
     std::unique_ptr<session::EditHistory> editHistory;
     // M6 U3: the transport's commands (one tap tempo for every trigger) and the MMC switch.
     std::unique_ptr<session::TransportCommands> transportCommands;
+    // Optional features (plan 2026-09-12-002 U1): Settings switches in
+    // Preferences, board switches in the open bank. Listens to bankDocument.
+    std::unique_ptr<session::FeatureGate> featureGate;
     // M2: constructed after session (ControlWiring observes it), before
     // AppContext (which hands controlHub out to UI). Destroyed before
     // session in shutdown() — see the reverse-order comment there.

@@ -123,6 +123,12 @@ public:
     bool getMmcTransport();
     void setMmcTransport(bool enabled);
 
+    // The Settings switch for each optional feature (plan
+    // docs/plans/2026-09-12-002-feat-optional-features-plan.md, KD2 / KD3):
+    // "feature.<key>", session::enabledByDefault until the user sets it.
+    bool getFeatureEnabled(Feature feature);
+    void setFeatureEnabled(Feature feature, bool enabled);
+
     // The plugin browser's recently used entries, newest first (UI refresh U5):
     // browser ids, "plugin:<identifier>" or "internal:<typeId>".
     juce::StringArray getRecentPlugins();

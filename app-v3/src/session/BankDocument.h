@@ -78,6 +78,12 @@ public:
     bool rename(int index, juce::String name);
     bool remove(int index);
 
+    // A board switch for an optional feature (plan
+    // docs/plans/2026-09-12-002-feat-optional-features-plan.md, KD3 / KD4): a
+    // board edit, like rename, that marks the board unsaved. False when the
+    // switch was already that way.
+    bool setBoardFeature(Feature feature, bool on);
+
     // Capture Session's active patch with plugin state into the active slot
     // (no-op while live capture is disabled).
     void storeActive();

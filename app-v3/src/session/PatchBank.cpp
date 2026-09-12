@@ -77,6 +77,9 @@ std::unique_ptr<juce::XmlElement> bankToXml(const PatchBank& bank)
 {
     auto el = std::make_unique<juce::XmlElement>("BANK");
     el->setAttribute("activeIndex", bank.isValidIndex(bank.activeIndex) ? bank.activeIndex : 0);
+    for (const auto feature : kAllFeatures)
+        if (!bank.featureOn(feature))
+            el->setAttribute(featureKey(feature), "0");
     for (const auto& patch : bank.patches)
     {
         auto patchXml = patchToXml(patch);
@@ -106,6 +109,8 @@ std::unique_ptr<PatchBank> bankFromXml(const juce::XmlElement& el)
 
     const int active = el.getIntAttribute("activeIndex", 0);
     bank->activeIndex = bank->isValidIndex(active) ? active : 0;
+    for (const auto feature : kAllFeatures)
+        bank->setFeature(feature, el.getBoolAttribute(featureKey(feature), true));
     return bank;
 }
 

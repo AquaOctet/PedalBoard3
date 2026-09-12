@@ -64,6 +64,8 @@ bool sameBank(const PatchBank& a, const PatchBank& b) noexcept
 {
     if (a.activeIndex != b.activeIndex || a.patches.size() != b.patches.size())
         return false;
+    if (a.features != b.features) // a board switch must persist too
+        return false;
     for (size_t i = 0; i < a.patches.size(); ++i)
     {
         if (a.patches[i].name != b.patches[i].name)
