@@ -11,6 +11,7 @@
 #include "PluginBrowser.h"
 #include "session/AppCommands.h"
 #include "session/BankDocument.h"
+#include "session/BoardFiles.h"
 #include "session/Preferences.h"
 #include "SignalCanvas.h"
 #include "StatusBar.h"
@@ -35,7 +36,8 @@ constexpr int kInitialHeight = 540;
 // browser can land on the canvas (UI refresh U5).
 class MainWindow::RootComponent : public juce::Component,
                                   public juce::ApplicationCommandTarget,
-                                  public juce::DragAndDropContainer
+                                  public juce::DragAndDropContainer,
+                                  public juce::FileDragAndDropTarget
 {
 public:
     explicit RootComponent(AppContext& ctxRef)
@@ -107,6 +109,32 @@ public:
     void mouseDown(const juce::MouseEvent&) override { closeOverlays(); }
 
     void paint(juce::Graphics& g) override { g.fillAll(tokens::bgWindow); }
+
+    // ---- juce::FileDragAndDropTarget (#31): a .pdl dropped anywhere on the
+    // window opens as File > Open does, after the unsaved-changes prompt.
+    // Other files are ignored. The window is ringed in teal while one hovers.
+    bool isInterestedInFileDrag(const juce::StringArray& paths) override
+    {
+        return session::boardfiles::firstBoardFile(paths) != juce::File();
+    }
+    void fileDragEnter(const juce::StringArray&, int, int) override { setDropHighlight(true); }
+    void fileDragExit(const juce::StringArray&) override { setDropHighlight(false); }
+    void filesDropped(const juce::StringArray& paths, int, int) override
+    {
+        setDropHighlight(false);
+        if (const auto file = session::boardfiles::firstBoardFile(paths); file != juce::File())
+            files_.openDropped(file);
+    }
+
+    void paintOverChildren(juce::Graphics& g) override
+    {
+        if (!dropHighlight_)
+            return;
+        g.setColour(tokens::accentPrimary.withAlpha(0.08f));
+        g.fillRect(getLocalBounds());
+        g.setColour(tokens::accentPrimary);
+        g.drawRect(getLocalBounds(), 3);
+    }
 
     TransportBar& transportBar() noexcept { return transportBar_; }
     FileActions& files() noexcept { return files_; }
@@ -288,6 +316,15 @@ private:
     bool browserOverlay_{false};
     BoardMappingsPanel mappingsPanel_;
     bool mappingsOpen_{true};
+    bool dropHighlight_{false}; // a .pdl is being dragged over the window
+
+    void setDropHighlight(bool on)
+    {
+        if (on == dropHighlight_)
+            return;
+        dropHighlight_ = on;
+        repaint();
+    }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RootComponent)
 };

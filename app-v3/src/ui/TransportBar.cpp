@@ -1,5 +1,7 @@
 #include "TransportBar.h"
 
+#include "session/BoardFiles.h"
+
 #include "AboutWindow.h"
 #include "ColourScheme.h"
 #include "control/OscServer.h"
@@ -644,6 +646,15 @@ void TransportBar::openFileMenu()
     juce::PopupMenu menu;
     menu.addItem(1, "New");
     menu.addItem(2, "Open...");
+    juce::PopupMenu recent;
+    for (const auto& file : files_.recentFiles())
+        recent.addItem(session::boardfiles::menuLabel(file), [this, file] { files_.openRecent(file); });
+    if (recent.getNumItems() > 0)
+    {
+        recent.addSeparator();
+        recent.addItem("Clear Recent Files", [this] { files_.clearRecentFiles(); });
+    }
+    menu.addSubMenu("Open Recent", recent, recent.getNumItems() > 0);
     menu.addItem(3, "Save");
     menu.addItem(4, "Save As...");
     menu.addSeparator();

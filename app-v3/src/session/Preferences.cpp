@@ -17,6 +17,7 @@ constexpr auto kAppMappingsKey = "appMappings";
 constexpr auto kKeyMappingsKey = "keyMappings";
 constexpr auto kWindowStateKey = "windowState";
 constexpr auto kRecentPluginsKey = "recentPlugins";
+constexpr auto kRecentFilesKey = "recentFiles";
 constexpr auto kOscPortKey = "oscPort";
 constexpr auto kOscMulticastAddressKey = "oscMulticastAddress";
 
@@ -302,6 +303,21 @@ void Preferences::setRecentPlugins(const juce::StringArray& ids)
 {
     if (auto* store = props_.getUserSettings())
         store->setValue(kRecentPluginsKey, ids.joinIntoString("\n"));
+}
+
+juce::StringArray Preferences::getRecentFiles()
+{
+    juce::StringArray paths;
+    if (auto* store = props_.getUserSettings())
+        paths = juce::StringArray::fromLines(store->getValue(kRecentFilesKey));
+    paths.removeEmptyStrings();
+    return paths;
+}
+
+void Preferences::setRecentFiles(const juce::StringArray& paths)
+{
+    if (auto* store = props_.getUserSettings())
+        store->setValue(kRecentFilesKey, paths.joinIntoString("\n"));
 }
 
 int Preferences::getOscPort()

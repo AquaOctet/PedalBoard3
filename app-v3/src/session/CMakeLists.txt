@@ -20,6 +20,7 @@ add_library(pb3_session_core STATIC
     Patch.h
     PatchBank.cpp
     PatchBank.h
+    BoardFiles.h
     BankDocument.cpp
     BankDocument.h
     DefaultBank.cpp

@@ -46,6 +46,17 @@ public:
     void resetDefault();
     bool hasDefault() const;
 
+    // File > Open Recent (#30): the banks last opened or saved, newest first.
+    // Opening one prompts if unsaved (KD4); one that has gone is dropped from
+    // the list, with a message.
+    juce::Array<juce::File> recentFiles() const;
+    void openRecent(const juce::File& file);
+    void clearRecentFiles();
+
+    // A .pdl dropped on the window (#31): prompt if unsaved, then open it as
+    // File > Open does (a v3 bank, or a Pedalboard2 file to import).
+    void openDropped(const juce::File& file);
+
     // KD4. With unsaved changes, ask Save / Don't Save / Cancel before
     // `beforeWhat` (e.g. "quitting"). `proceed` runs unless the user cancels
     // or the save doesn't happen; `discarded` is true after Don't Save.
@@ -57,6 +68,8 @@ private:
     void openFile(const juce::File& file);
     void loadIntoDocument(session::PatchBank bank, const juce::File& file);
     void writeTo(const juce::File& file, const std::function<void(bool)>& done);
+    void promptThenOpen(const juce::File& file, const juce::String& beforeWhat);
+    void rememberRecent(const juce::File& file);
 
     AppContext& ctx_;
     // Held as members so they outlive their async callbacks.
