@@ -24,6 +24,8 @@ set(PB3_TEST_SOURCES
     unit/engine/PluginScanner_test.cpp
     unit/engine/AudioRecorderProcessor_test.cpp
     unit/engine/FilePlayerProcessor_test.cpp
+    unit/engine/LoopBuffer_test.cpp
+    unit/engine/LooperProcessor_test.cpp
     unit/engine/MetronomeProcessor_test.cpp
     unit/engine/OutputToggleProcessor_test.cpp
     unit/engine/PlayHead_test.cpp
