@@ -17,4 +17,29 @@ inline juce::Path panelToggleIcon()
     return bars;
 }
 
+// The transport's buttons (M6 U4): play, pause, and return to zero (a bar
+// with a triangle pointing back at it).
+inline juce::Path playIcon()
+{
+    juce::Path triangle;
+    triangle.addTriangle(0.0f, 0.0f, 0.0f, 14.0f, 12.0f, 7.0f);
+    return triangle;
+}
+
+inline juce::Path pauseIcon()
+{
+    juce::Path bars;
+    bars.addRoundedRectangle(0.0f, 0.0f, 4.0f, 14.0f, 1.0f);
+    bars.addRoundedRectangle(8.0f, 0.0f, 4.0f, 14.0f, 1.0f);
+    return bars;
+}
+
+inline juce::Path returnToZeroIcon()
+{
+    juce::Path icon;
+    icon.addRoundedRectangle(0.0f, 0.0f, 2.5f, 14.0f, 1.0f);
+    icon.addTriangle(14.0f, 0.0f, 14.0f, 14.0f, 3.5f, 7.0f);
+    return icon;
+}
+
 } // namespace pedalboard3::ui

@@ -14,6 +14,7 @@
 #include "session/Preferences.h"
 #include "session/PreferencesPersister.h"
 #include "session/Session.h"
+#include "session/TransportCommands.h"
 #include "ui/MainWindow.h"
 #include "ui/Pb3LookAndFeel.h"
 
@@ -75,6 +76,8 @@ private:
     // Finish pass U8: undo / redo for canvas edits. Listens to session; the
     // UI and the patch switcher hold it, so it goes after them, before session.
     std::unique_ptr<session::EditHistory> editHistory;
+    // M6 U3: the transport's commands (one tap tempo for every trigger) and the MMC switch.
+    std::unique_ptr<session::TransportCommands> transportCommands;
     // M2: constructed after session (ControlWiring observes it), before
     // AppContext (which hands controlHub out to UI). Destroyed before
     // session in shutdown() — see the reverse-order comment there.

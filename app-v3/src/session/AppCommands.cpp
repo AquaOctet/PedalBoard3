@@ -2,6 +2,7 @@
 
 #include "BankDocument.h"
 #include "EditHistory.h"
+#include "TransportCommands.h"
 
 namespace pedalboard3::session
 {
@@ -22,7 +23,7 @@ const AppCommandInfo* findAppCommandByJuceId(int juceCommandId) noexcept
     return nullptr;
 }
 
-bool invokeAppCommand(BankDocument& bank, const juce::String& id, EditHistory* history)
+bool invokeAppCommand(BankDocument& bank, const juce::String& id, EditHistory* history, TransportCommands* transport)
 {
     if (id == appcommands::kNextPatch)
     {
@@ -47,6 +48,22 @@ bool invokeAppCommand(BankDocument& bank, const juce::String& id, EditHistory* h
         if (history == nullptr || !bank.isLiveCaptureEnabled())
             return false;
         return id == appcommands::kUndo ? history->undo() : history->redo();
+    }
+    if (id.startsWith("transport."))
+    {
+        if (transport == nullptr)
+            return false;
+        if (id == appcommands::kPlayPause)
+            transport->playPause();
+        else if (id == appcommands::kStop)
+            transport->stop();
+        else if (id == appcommands::kReturnToZero)
+            transport->returnToZero();
+        else if (id == appcommands::kTapTempo)
+            transport->tap();
+        else
+            return false;
+        return true;
     }
     return false;
 }

@@ -49,6 +49,10 @@ void App::initialise(const juce::String& /*commandLine*/)
     session = std::make_unique<session::Session>(*engine, *pluginHost);
     bankDocument = std::make_unique<session::BankDocument>(*session);
     editHistory = std::make_unique<session::EditHistory>(*session);
+    // M6 U3: transport commands for keys, MIDI and OSC, with the MMC switch
+    // restored from Preferences.
+    transportCommands = std::make_unique<session::TransportCommands>(*session, engine->getTransport());
+    transportCommands->setMmcEnabled(preferences->getMmcTransport());
 
     // M2: ControlHub is the message-thread entry point live MIDI/OSC devices
     // feed (device edges land in App::initialise too, once built); ControlWiring
@@ -65,6 +69,7 @@ void App::initialise(const juce::String& /*commandLine*/)
     // patch rule (see session/PatchSwitcher.h).
     patchSwitcher = std::make_unique<session::PatchSwitcher>(*bankDocument, *controlHub);
     patchSwitcher->setEditHistory(editHistory.get());
+    patchSwitcher->setTransportCommands(transportCommands.get());
     midiInputManager = std::make_unique<control::MidiInputManager>(
         engine->getDeviceManager(), [this](const juce::MidiMessage& msg) { patchSwitcher->handleMidi(msg); });
 
@@ -90,7 +95,8 @@ void App::initialise(const juce::String& /*commandLine*/)
                                *controlHub,
                                *appMappings,
                                *oscServer,
-                               *editHistory});
+                               *editHistory,
+                               *transportCommands});
     mainWindow = std::make_unique<ui::MainWindow>(getApplicationName(), *context);
     // Quit goes through the window's save prompt (finish pass KD4); after Don't
     // Save, shutdown() reverts the persisted session (KD7).
@@ -135,7 +141,8 @@ void App::shutdown()
     controlWiring.reset();
     appMappings.reset(); // after controlWiring and persister, which listen to it
     controlHub.reset();
-    editHistory.reset(); // listens to session; the UI and patch switcher are gone
+    editHistory.reset();       // listens to session; the UI and patch switcher are gone
+    transportCommands.reset(); // the UI and patch switcher that call it are gone
     bankDocument.reset();
     session.reset();
     pluginHost.reset();

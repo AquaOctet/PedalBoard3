@@ -373,3 +373,27 @@ TEST_CASE("PatchSwitcher: an unknown app command does nothing and still owns its
     REQUIRE(f.doc.activeIndex() == 0);
     REQUIRE(f.s.getPatchGeneration() == gen);
 }
+
+#include "engine/Transport.h"
+#include "session/TransportCommands.h"
+
+TEST_CASE("PatchSwitcher: MMC reaches the transport first, only while MMC is switched on",
+          "[session][patch-switcher][mmc]")
+{
+    Fixture f;
+    session::TransportCommands commands(f.s, f.eng.getTransport());
+    f.sw->setTransportCommands(&commands);
+    const auto play = juce::MidiMessage::midiMachineControlCommand(juce::MidiMessage::mmc_play);
+
+    f.sw->handleMidi(play);
+    REQUIRE_FALSE(f.eng.getTransport().isPlaying());
+
+    commands.setMmcEnabled(true);
+    f.sw->handleMidi(play);
+    REQUIRE(f.eng.getTransport().isPlaying());
+    f.sw->handleMidi(juce::MidiMessage::midiMachineControlCommand(juce::MidiMessage::mmc_stop));
+    REQUIRE_FALSE(f.eng.getTransport().isPlaying());
+    REQUIRE(f.doc.activeIndex() == 0); // MMC never switches patches
+
+    f.sw->setTransportCommands(nullptr); // before `commands` goes
+}

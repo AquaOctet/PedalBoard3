@@ -290,6 +290,19 @@ void Preferences::setPanelShown(const juce::String& panel, bool shown)
         store->setValue("panel." + panel, shown);
 }
 
+bool Preferences::getMmcTransport()
+{
+    if (auto* store = props_.getUserSettings())
+        return store->getBoolValue("mmcTransport", false);
+    return false;
+}
+
+void Preferences::setMmcTransport(bool enabled)
+{
+    if (auto* store = props_.getUserSettings())
+        store->setValue("mmcTransport", enabled);
+}
+
 juce::StringArray Preferences::getRecentPlugins()
 {
     juce::StringArray ids;

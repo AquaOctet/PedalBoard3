@@ -687,3 +687,17 @@ TEST_CASE("Preferences: Open Recent's files round-trip in order", "[session][pre
     prefs.setRecentFiles(previous);
     prefs.flush();
 }
+
+TEST_CASE("Preferences: the MMC switch round-trips", "[session][preferences][mmc]")
+{
+    session::Preferences prefs;
+    const bool previous = prefs.getMmcTransport(); // the developer's real setting; put it back
+
+    prefs.setMmcTransport(true);
+    REQUIRE(prefs.getMmcTransport());
+    prefs.setMmcTransport(false);
+    REQUIRE_FALSE(prefs.getMmcTransport());
+
+    prefs.setMmcTransport(previous);
+    prefs.flush();
+}

@@ -31,6 +31,10 @@ add_library(pb3_session_core STATIC
     PatchSwitcher.h
     AppCommands.cpp
     AppCommands.h
+    Mmc.h
+    TapTempo.h
+    TransportCommands.cpp
+    TransportCommands.h
     PdlSerializer.cpp
     PdlSerializer.h
     v2_import/PdlV2Importer.cpp
@@ -88,6 +92,7 @@ pb3_apply_strict_warnings(pb3_session_core
     EditHistory.cpp
     PatchSwitcher.cpp
     AppCommands.cpp
+    TransportCommands.cpp
     PdlSerializer.cpp
     v2_import/PdlV2Importer.cpp
     ControlParameterApplier.cpp

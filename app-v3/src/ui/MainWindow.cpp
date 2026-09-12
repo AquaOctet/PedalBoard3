@@ -172,6 +172,10 @@ public:
             result.addDefaultKeypress(juce::KeyPress::pageUpKey, juce::ModifierKeys());
         else if (id == session::appcommands::kSave)
             result.addDefaultKeypress('s', juce::ModifierKeys::commandModifier); // Ctrl+S / Cmd+S
+        else if (id == session::appcommands::kPlayPause)
+            result.addDefaultKeypress(juce::KeyPress::spaceKey, juce::ModifierKeys()); // M6 KD4
+        else if (id == session::appcommands::kReturnToZero)
+            result.addDefaultKeypress(juce::KeyPress::homeKey, juce::ModifierKeys());
         else if (id == session::appcommands::kUndo)
             result.addDefaultKeypress('z', juce::ModifierKeys::commandModifier); // Ctrl+Z / Cmd+Z
         else if (id == session::appcommands::kRedo)
@@ -185,7 +189,8 @@ public:
     bool perform(const InvocationInfo& info) override
     {
         const auto* c = session::findAppCommandByJuceId(info.commandID);
-        return c != nullptr && session::invokeAppCommand(ctx_.bankDocument, c->id, &ctx_.editHistory);
+        return c != nullptr &&
+               session::invokeAppCommand(ctx_.bankDocument, c->id, &ctx_.editHistory, &ctx_.transportCommands);
     }
 
     void resized() override

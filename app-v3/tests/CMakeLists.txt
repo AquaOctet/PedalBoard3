@@ -33,6 +33,9 @@ set(PB3_TEST_SOURCES
     unit/session/Patch_test.cpp
     unit/session/PatchBank_test.cpp
     unit/session/BoardFiles_test.cpp
+    unit/session/Mmc_test.cpp
+    unit/session/TapTempo_test.cpp
+    unit/session/TransportCommands_test.cpp
     unit/session/BankDocument_test.cpp
     unit/session/EditHistory_test.cpp
     unit/session/PatchSwitcher_test.cpp

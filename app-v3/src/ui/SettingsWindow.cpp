@@ -6,6 +6,7 @@
 #include "control/OscServer.h"
 #include "engine/AudioEngine.h"
 #include "session/Preferences.h"
+#include "session/TransportCommands.h"
 
 #include <juce_audio_utils/juce_audio_utils.h>
 
@@ -100,13 +101,25 @@ private:
 class MidiSettingsPanel : public juce::Component, private juce::ChangeListener
 {
 public:
-    explicit MidiSettingsPanel(AppContext& ctx) : devices_(*ctx.audioEngine.getDeviceManager())
+    explicit MidiSettingsPanel(AppContext& ctx) : devices_(*ctx.audioEngine.getDeviceManager()), ctx_(ctx)
     {
         styleCaption(header_, "MIDI INPUTS");
         styleHint(hint_, "Enabled inputs drive mapped controls and Program Change patch switching.");
         styleHint(empty_, "No MIDI inputs found. Connect a controller; it appears here.");
         for (auto* c : std::initializer_list<juce::Component*>{&header_, &hint_, &empty_})
             addAndMakeVisible(c);
+
+        // MIDI Machine Control (M6 U3, plan KD5): off by default, remembered.
+        styleCaption(mmcHeader_, "TRANSPORT");
+        mmc_.setToggleState(ctx_.transportCommands.isMmcEnabled(), juce::dontSendNotification);
+        mmc_.setTooltip("Play, Stop, Pause and Rewind from a controller or another app run the transport");
+        mmc_.onClick = [this]
+        {
+            ctx_.transportCommands.setMmcEnabled(mmc_.getToggleState());
+            ctx_.preferences.setMmcTransport(mmc_.getToggleState());
+        };
+        addAndMakeVisible(mmcHeader_);
+        addAndMakeVisible(mmc_);
 
         devices_.addChangeListener(this); // inputs come and go
         rebuild();
@@ -123,6 +136,9 @@ public:
         empty_.setBounds(area.removeFromTop(kRowHeight));
         for (auto& toggle : toggles_)
             toggle->setBounds(area.removeFromTop(kRowHeight));
+        area.removeFromTop(12);
+        mmcHeader_.setBounds(area.removeFromTop(22));
+        mmc_.setBounds(area.removeFromTop(kRowHeight));
     }
 
 private:
@@ -144,15 +160,18 @@ private:
             toggles_.push_back(std::move(toggle));
         }
         empty_.setVisible(toggles_.empty());
-        setSize(440, juce::jmax(170, 100 + kRowHeight * static_cast<int>(toggles_.size())));
+        setSize(440, juce::jmax(230, 162 + kRowHeight * static_cast<int>(toggles_.size())));
         resized();
     }
 
     juce::AudioDeviceManager& devices_;
+    AppContext& ctx_;
     juce::Label header_;
     juce::Label hint_;
     juce::Label empty_;
     std::vector<std::unique_ptr<juce::ToggleButton>> toggles_;
+    juce::Label mmcHeader_;
+    juce::ToggleButton mmc_{"MIDI Machine Control (MMC) runs the transport"};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MidiSettingsPanel)
 };

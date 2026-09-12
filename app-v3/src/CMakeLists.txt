@@ -71,6 +71,8 @@ add_library(pb3_app_core STATIC
     ui/StatusBar.h
     ui/TransportBar.cpp
     ui/TransportBar.h
+    ui/TransportControls.cpp
+    ui/TransportControls.h
 )
 
 target_include_directories(pb3_app_core PUBLIC
@@ -123,6 +125,7 @@ pb3_apply_strict_warnings(pb3_app_core
     ui/SignalCanvas.cpp
     ui/StatusBar.cpp
     ui/TransportBar.cpp
+    ui/TransportControls.cpp
 )
 
 # -----------------------------------------------------------------------------

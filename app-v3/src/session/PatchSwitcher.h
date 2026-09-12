@@ -10,6 +10,7 @@ namespace pedalboard3::session
 class BankDocument;
 class ControlHub;
 class EditHistory;
+class TransportCommands;
 
 // Turns patch-switch and app-command intents into bank actions (roadmap M3
 // U4, plan docs/plans/2026-09-11-001-feat-multi-patch-banks-plan.md, KD3 /
@@ -34,6 +35,10 @@ class EditHistory;
 // (capture, then swap); selecting the active or an out-of-range index is a
 // no-op, which makes a PatchSelect button's press/release pair harmless.
 //
+// With a TransportCommands set (M6 U3), MIDI Machine Control reaches the
+// transport before anything else while MMC is switched on, and the transport.*
+// app commands run through it.
+//
 // Message-thread only. Destroy it after every input edge that can call it
 // (MidiInputManager, OscServer) and before the ControlHub and BankDocument it
 // references; the destructor uninstalls the hub sink.
@@ -49,6 +54,10 @@ public:
     // U8); unset, those commands do nothing.
     void setEditHistory(EditHistory* history) noexcept { history_ = history; }
 
+    // The transport the transport.* commands and MMC drive (M6 U3); unset,
+    // they do nothing.
+    void setTransportCommands(TransportCommands* transport) noexcept { transport_ = transport; }
+
 private:
     void onUnhandledTarget(const control::ParameterUpdate& update);
 
@@ -56,6 +65,7 @@ private:
     ControlHub& hub_;
     bool mappingOwnedThisMessage_{false};
     EditHistory* history_{nullptr};
+    TransportCommands* transport_{nullptr};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PatchSwitcher)
 };
