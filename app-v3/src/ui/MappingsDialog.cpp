@@ -4,8 +4,6 @@
 #include "session/ControlHub.h"
 #include "session/Session.h"
 
-#include <initializer_list>
-
 namespace pedalboard3::ui
 {
 
@@ -15,39 +13,7 @@ namespace
 constexpr int kRowHeight = 26;
 constexpr int kRowGap = 4;
 constexpr int kSectionGap = 14;
-constexpr int kCellGap = 4;
 constexpr int kMinContentWidth = 720;
-
-void configureRangeSlider(juce::Slider& s, float value, const juce::String& tooltip)
-{
-    s.setSliderStyle(juce::Slider::LinearBar);
-    s.setRange(0.0, 1.0, 0.01);
-    s.setNumDecimalPlacesToDisplay(2);
-    s.setValue(value, juce::dontSendNotification);
-    s.setTooltip(tooltip);
-}
-
-void configureIntSlider(juce::Slider& s, int minValue, int maxValue, int value, const juce::String& tooltip)
-{
-    s.setSliderStyle(juce::Slider::LinearBar);
-    s.setRange(minValue, maxValue, 1.0);
-    s.setNumDecimalPlacesToDisplay(0);
-    s.setValue(value, juce::dontSendNotification);
-    s.setTooltip(tooltip);
-}
-
-// Item id = parameter index + 1. A mapping whose index is past the plugin's
-// parameter list (a different build of the plugin) keeps a placeholder item so
-// the row still shows, and saves, what it targets.
-void fillParameterBox(juce::ComboBox& box, const juce::StringArray& names, int selectedIndex)
-{
-    for (int i = 0; i < names.size(); ++i)
-        box.addItem(names[i], i + 1);
-    if (selectedIndex >= names.size())
-        box.addItem("Parameter " + juce::String(selectedIndex + 1) + " (not in this plugin)", selectedIndex + 1);
-    box.setSelectedId(selectedIndex + 1, juce::dontSendNotification);
-    box.setTooltip("Target parameter");
-}
 
 void styleSectionHeader(juce::Label& label, const juce::String& text)
 {
@@ -58,232 +24,11 @@ void styleSectionHeader(juce::Label& label, const juce::String& text)
 
 } // namespace
 
-// ---------------------------------------------------------------- MIDI row
-
-class MappingsPanel::MidiRow : public juce::Component
-{
-public:
-    std::function<void(const control::MidiMapping&)> onChange;
-    std::function<void()> onLearn;
-    std::function<void()> onDelete;
-
-    MidiRow(const control::MidiMapping& mapping, const juce::StringArray& parameterNames) : mapping_(mapping)
-    {
-        // Item ids follow control::MidiSourceKind's declaration order + 1.
-        kind_.addItem("CC", 1);
-        kind_.addItem("Note", 2);
-        kind_.addItem("Program", 3);
-        kind_.addItem("Pitch Bend", 4);
-        kind_.setSelectedId(static_cast<int>(mapping_.source.kind) + 1, juce::dontSendNotification);
-        kind_.setTooltip("Source: Control Change, Note, Program Change or Pitch Bend");
-
-        channel_.addItem("Omni", 1);
-        for (int ch = 1; ch <= 16; ++ch)
-            channel_.addItem("Ch " + juce::String(ch), ch + 1);
-        channel_.setSelectedId(mapping_.source.channel + 1, juce::dontSendNotification);
-        channel_.setTooltip("MIDI channel this mapping listens on");
-
-        configureIntSlider(number_, 0, 127, mapping_.source.controller, "CC or note number");
-        fillParameterBox(param_, parameterNames, mapping_.target.parameterIndex);
-        configureRangeSlider(min_, mapping_.rangeMin, "Range min: parameter value at the bottom of the control");
-        configureRangeSlider(max_, mapping_.rangeMax, "Range max: parameter value at the top of the control");
-        invert_.setToggleState(mapping_.inverted, juce::dontSendNotification);
-        invert_.setTooltip("Invert the control");
-        latch_.setToggleState(mapping_.latch, juce::dontSendNotification);
-        latch_.setTooltip("Latch: each press toggles between min and max");
-        learn_.setTooltip("Learn: move a control on your MIDI device");
-        delete_.setTooltip("Delete this mapping");
-        delete_.setColour(juce::TextButton::textColourOffId, tokens::accentDestructive);
-
-        for (auto* c : std::initializer_list<juce::Component*>{
-                 &kind_, &channel_, &number_, &param_, &min_, &max_, &invert_, &latch_, &learn_, &delete_})
-            addAndMakeVisible(*c);
-
-        kind_.onChange = [this] { pushChange(); };
-        channel_.onChange = [this] { pushChange(); };
-        param_.onChange = [this] { pushChange(); };
-        number_.onValueChange = [this] { pushChange(); };
-        min_.onValueChange = [this] { pushChange(); };
-        max_.onValueChange = [this] { pushChange(); };
-        invert_.onClick = [this] { pushChange(); };
-        latch_.onClick = [this] { pushChange(); };
-        learn_.onClick = [this]
-        {
-            if (onLearn)
-                onLearn();
-        };
-        delete_.onClick = [this]
-        {
-            if (onDelete)
-                onDelete();
-        };
-
-        updateNumberEnablement();
-    }
-
-    void setLearning(bool learning)
-    {
-        learn_.setButtonText(learning ? "..." : "Learn");
-        learn_.setColour(juce::TextButton::textColourOffId, learning ? tokens::accentWarning : tokens::fgPrimary);
-    }
-
-    void resized() override
-    {
-        auto r = getLocalBounds();
-        auto take = [&r](juce::Component& c, int width)
-        {
-            c.setBounds(r.removeFromLeft(width));
-            r.removeFromLeft(kCellGap);
-        };
-        take(kind_, 96);
-        take(channel_, 70);
-        take(number_, 56);
-        delete_.setBounds(r.removeFromRight(28));
-        r.removeFromRight(kCellGap);
-        learn_.setBounds(r.removeFromRight(58));
-        r.removeFromRight(kCellGap);
-        latch_.setBounds(r.removeFromRight(62));
-        r.removeFromRight(kCellGap);
-        invert_.setBounds(r.removeFromRight(52));
-        r.removeFromRight(kCellGap);
-        max_.setBounds(r.removeFromRight(64));
-        r.removeFromRight(kCellGap);
-        min_.setBounds(r.removeFromRight(64));
-        r.removeFromRight(kCellGap);
-        param_.setBounds(r);
-    }
-
-private:
-    void pushChange()
-    {
-        mapping_.source.kind = static_cast<control::MidiSourceKind>(juce::jmax(0, kind_.getSelectedId() - 1));
-        mapping_.source.channel = juce::jmax(0, channel_.getSelectedId() - 1);
-        mapping_.source.controller = static_cast<int>(number_.getValue());
-        if (param_.getSelectedId() > 0)
-            mapping_.target.parameterIndex = param_.getSelectedId() - 1;
-        mapping_.rangeMin = static_cast<float>(min_.getValue());
-        mapping_.rangeMax = static_cast<float>(max_.getValue());
-        mapping_.inverted = invert_.getToggleState();
-        mapping_.latch = latch_.getToggleState();
-        updateNumberEnablement();
-        if (onChange)
-            onChange(mapping_);
-    }
-
-    // Program Change and Pitch Bend have no sub-address.
-    void updateNumberEnablement()
-    {
-        const auto kind = mapping_.source.kind;
-        number_.setEnabled(kind == control::MidiSourceKind::ControlChange || kind == control::MidiSourceKind::Note);
-    }
-
-    control::MidiMapping mapping_;
-    juce::ComboBox kind_;
-    juce::ComboBox channel_;
-    juce::Slider number_;
-    juce::ComboBox param_;
-    juce::Slider min_;
-    juce::Slider max_;
-    juce::ToggleButton invert_{"Inv"};
-    juce::ToggleButton latch_{"Latch"};
-    juce::TextButton learn_{"Learn"};
-    juce::TextButton delete_{"X"};
-};
-
-// ---------------------------------------------------------------- OSC row
-
-class MappingsPanel::OscRow : public juce::Component
-{
-public:
-    std::function<void(const control::OscMapping&)> onChange;
-    std::function<void()> onDelete;
-
-    OscRow(const control::OscMapping& mapping, const juce::StringArray& parameterNames) : mapping_(mapping)
-    {
-        address_.setText(mapping_.address, juce::dontSendNotification);
-        address_.setTooltip("OSC address, e.g. /pb3/gain (press Enter to apply)");
-        configureIntSlider(argument_, 0, 15, mapping_.argumentIndex, "Which argument of the message carries the value");
-        fillParameterBox(param_, parameterNames, mapping_.target.parameterIndex);
-        configureRangeSlider(min_, mapping_.rangeMin, "Range min");
-        configureRangeSlider(max_, mapping_.rangeMax, "Range max");
-        invert_.setToggleState(mapping_.inverted, juce::dontSendNotification);
-        invert_.setTooltip("Invert the control");
-        delete_.setTooltip("Delete this mapping");
-        delete_.setColour(juce::TextButton::textColourOffId, tokens::accentDestructive);
-
-        for (auto* c :
-             std::initializer_list<juce::Component*>{&address_, &argument_, &param_, &min_, &max_, &invert_, &delete_})
-            addAndMakeVisible(*c);
-
-        address_.onReturnKey = [this] { pushChange(); };
-        address_.onFocusLost = [this] { pushChange(); };
-        argument_.onValueChange = [this] { pushChange(); };
-        param_.onChange = [this] { pushChange(); };
-        min_.onValueChange = [this] { pushChange(); };
-        max_.onValueChange = [this] { pushChange(); };
-        invert_.onClick = [this] { pushChange(); };
-        delete_.onClick = [this]
-        {
-            if (onDelete)
-                onDelete();
-        };
-    }
-
-    void resized() override
-    {
-        auto r = getLocalBounds();
-        address_.setBounds(r.removeFromLeft(210));
-        r.removeFromLeft(kCellGap);
-        argument_.setBounds(r.removeFromLeft(56));
-        r.removeFromLeft(kCellGap);
-        delete_.setBounds(r.removeFromRight(28));
-        r.removeFromRight(kCellGap);
-        invert_.setBounds(r.removeFromRight(52));
-        r.removeFromRight(kCellGap);
-        max_.setBounds(r.removeFromRight(64));
-        r.removeFromRight(kCellGap);
-        min_.setBounds(r.removeFromRight(64));
-        r.removeFromRight(kCellGap);
-        param_.setBounds(r);
-    }
-
-private:
-    void pushChange()
-    {
-        const auto address = address_.getText().trim();
-        if (address == mapping_.address && static_cast<int>(argument_.getValue()) == mapping_.argumentIndex &&
-            param_.getSelectedId() - 1 == mapping_.target.parameterIndex &&
-            static_cast<float>(min_.getValue()) == mapping_.rangeMin &&
-            static_cast<float>(max_.getValue()) == mapping_.rangeMax && invert_.getToggleState() == mapping_.inverted)
-            return; // focus loss with nothing edited
-        mapping_.address = address;
-        mapping_.argumentIndex = static_cast<int>(argument_.getValue());
-        if (param_.getSelectedId() > 0)
-            mapping_.target.parameterIndex = param_.getSelectedId() - 1;
-        mapping_.rangeMin = static_cast<float>(min_.getValue());
-        mapping_.rangeMax = static_cast<float>(max_.getValue());
-        mapping_.inverted = invert_.getToggleState();
-        if (onChange)
-            onChange(mapping_);
-    }
-
-    control::OscMapping mapping_;
-    juce::TextEditor address_;
-    juce::Slider argument_;
-    juce::ComboBox param_;
-    juce::Slider min_;
-    juce::Slider max_;
-    juce::ToggleButton invert_{"Inv"};
-    juce::TextButton delete_{"X"};
-};
-
 // ---------------------------------------------------------------- panel
 
 MappingsPanel::MappingsPanel(AppContext& ctx, session::NodeId node) : ctx_(ctx), node_(node)
 {
-    if (auto* proc = ctx_.session.getHostedPlugin(node_))
-        for (auto* p : proc->getParameters())
-            parameterNames_.add(p->getName(48));
+    parameterNames_ = parameterNamesOf(ctx_.session, node_);
 
     const auto mappings = ctx_.session.getNodeMappings(node_);
     midi_ = mappings.midi;
@@ -325,13 +70,13 @@ MappingsPanel::MappingsPanel(AppContext& ctx, session::NodeId node) : ctx_(ctx),
     rowsContent_.addAndMakeVisible(addOscButton_);
     addMidiButton_.onClick = [this]
     {
-        midi_.push_back(defaultMidiMapping());
+        midi_.push_back(defaultMidiMapping(node_));
         apply();
         rebuildRows();
     };
     addOscButton_.onClick = [this]
     {
-        osc_.push_back(defaultOscMapping());
+        osc_.push_back(defaultOscMapping(node_, static_cast<int>(osc_.size()) + 1));
         apply();
         rebuildRows();
     };
@@ -340,13 +85,30 @@ MappingsPanel::MappingsPanel(AppContext& ctx, session::NodeId node) : ctx_(ctx),
     viewport_.setScrollBarsShown(true, false);
     addAndMakeVisible(viewport_);
 
+    ctx_.session.addChangeListener(this);
     setSize(900, 460);
     rebuildRows();
 }
 
 MappingsPanel::~MappingsPanel()
 {
+    ctx_.session.removeChangeListener(this);
     cancelLearn();
+}
+
+// The board mappings panel edits the same mappings. When this node's mappings
+// changed from there, show them; an edit made here comes back equal and
+// changes nothing. An armed learn is left alone, since its row index must hold.
+void MappingsPanel::changeListenerCallback(juce::ChangeBroadcaster*)
+{
+    if (learningRow_ >= 0 || ctx_.session.getState() != session::Session::State::Idle || !ctx_.session.hasNode(node_))
+        return;
+    auto mappings = ctx_.session.getNodeMappings(node_);
+    if (mappings.midi == midi_ && mappings.osc == osc_)
+        return;
+    midi_ = std::move(mappings.midi);
+    osc_ = std::move(mappings.osc);
+    rebuildRows();
 }
 
 void MappingsPanel::paint(juce::Graphics& g)
@@ -403,7 +165,7 @@ void MappingsPanel::rebuildRows()
     for (size_t i = 0; i < midi_.size(); ++i)
     {
         const int index = static_cast<int>(i);
-        auto row = std::make_unique<MidiRow>(midi_[i], parameterNames_);
+        auto row = std::make_unique<MidiMappingRow>(midi_[i], parameterNames_);
         row->onChange = [this, index](const control::MidiMapping& m)
         {
             midi_[static_cast<size_t>(index)] = m;
@@ -419,7 +181,7 @@ void MappingsPanel::rebuildRows()
     for (size_t i = 0; i < osc_.size(); ++i)
     {
         const int index = static_cast<int>(i);
-        auto row = std::make_unique<OscRow>(osc_[i], parameterNames_);
+        auto row = std::make_unique<OscMappingRow>(osc_[i], parameterNames_);
         row->onChange = [this, index](const control::OscMapping& m)
         {
             osc_[static_cast<size_t>(index)] = m;
@@ -509,28 +271,6 @@ void MappingsPanel::deleteOscLater(int index)
             self->apply();
             self->rebuildRows();
         });
-}
-
-control::MidiMapping MappingsPanel::defaultMidiMapping() const
-{
-    control::MidiMapping m;
-    m.source.kind = control::MidiSourceKind::ControlChange;
-    m.source.channel = 0;
-    m.source.controller = 1;
-    m.target.kind = control::MidiTargetKind::PluginParameter;
-    m.target.node = node_;
-    m.target.parameterIndex = 0;
-    return m;
-}
-
-control::OscMapping MappingsPanel::defaultOscMapping() const
-{
-    control::OscMapping m;
-    m.address = "/pb3/" + juce::String(node_) + "/" + juce::String(osc_.size() + 1);
-    m.target.kind = control::MidiTargetKind::PluginParameter;
-    m.target.node = node_;
-    m.target.parameterIndex = 0;
-    return m;
 }
 
 // ---------------------------------------------------------------- window

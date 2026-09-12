@@ -11,6 +11,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <unordered_map>
@@ -101,6 +102,16 @@ public:
     // click on empty canvas. The board mappings panel (U9) highlights its rows.
     std::optional<NodeId> selectedNode() const noexcept { return selectedNode_; }
 
+    // Select a card from outside the canvas (a row in the board mappings panel)
+    // or clear the selection. onSelectionChanged fires on every change, from
+    // either side.
+    void selectNode(std::optional<NodeId> id) { setSelectedNode(id); }
+    std::function<void(std::optional<NodeId>)> onSelectionChanged;
+
+    // The per-plugin mappings dialog (M4 U4): at most one open; opening another
+    // node's replaces it. The board mappings panel's Learn... opens it too.
+    void openMappings(NodeId);
+
 private:
     void changeListenerCallback(juce::ChangeBroadcaster*) override;
     void timerCallback() override; // the cards' activity strips and VU meters
@@ -122,9 +133,7 @@ private:
     void closeEditorsFor(NodeId);
     void onCardMoved(NodeId, juce::Point<int> newPos);
     void onCardDragging(NodeId);
-    // Mappings dialog (M4 U4): at most one open; opening another node's
-    // replaces it. closeMappings destroys it, cancelling any learn it armed.
-    void openMappings(NodeId);
+    // Destroys the mappings dialog, cancelling any learn it armed.
     void closeMappings();
 
     // Map a graphIO sentinel to either the input or output endpoint

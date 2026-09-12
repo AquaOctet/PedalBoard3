@@ -56,3 +56,22 @@ TEST_CASE("BodyLayout: a hidden panel takes no room, and the canvas never goes n
     REQUIRE(tiny.canvas.getWidth() >= 0);
     REQUIRE(tiny.left.getWidth() + tiny.right.getWidth() + tiny.canvas.getWidth() == 30);
 }
+
+TEST_CASE("BodyLayout: the mappings panel docks under the canvas, at most half of it", "[ui][body]")
+{
+    using pedalboard3::ui::body::splitBottom;
+    const juce::Rectangle<int> area(0, 0, 800, 600);
+
+    const auto open = splitBottom(area, true, 196, 32);
+    REQUIRE(open.bottom == juce::Rectangle<int>(0, 404, 800, 196));
+    REQUIRE(open.canvas == juce::Rectangle<int>(0, 0, 800, 404));
+
+    const auto collapsed = splitBottom(area, false, 196, 32);
+    REQUIRE(collapsed.bottom.getHeight() == 32);
+    REQUIRE(collapsed.canvas.getHeight() == 568);
+
+    REQUIRE(splitBottom({0, 0, 800, 300}, true, 196, 32).bottom.getHeight() == 150); // half a short window
+    const auto tiny = splitBottom({0, 0, 800, 40}, true, 196, 32);
+    REQUIRE(tiny.bottom.getHeight() == 32); // never less than the header
+    REQUIRE(tiny.canvas.getHeight() == 8);
+}

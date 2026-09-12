@@ -33,6 +33,8 @@ add_library(pb3_app_core STATIC
     ui/BankRows.h
     ui/BankSidebar.cpp
     ui/BankSidebar.h
+    ui/BoardMappingsPanel.cpp
+    ui/BoardMappingsPanel.h
     ui/BodyLayout.h
     ui/BrowserModel.h
     ui/CanvasLayout.h
@@ -45,6 +47,9 @@ add_library(pb3_app_core STATIC
     ui/FileActions.cpp
     ui/FileActions.h
     ui/Icons.h
+    ui/MappingRowEditors.cpp
+    ui/MappingRowEditors.h
+    ui/MappingRows.h
     ui/MappingsDialog.cpp
     ui/MappingsDialog.h
     ui/MeterMath.h
@@ -103,9 +108,11 @@ pb3_apply_strict_warnings(pb3_app_core
     ui/ActivityLights.cpp
     ui/AppMappingsWindow.cpp
     ui/BankSidebar.cpp
+    ui/BoardMappingsPanel.cpp
     ui/CpuMeter.cpp
     ui/EditorWindow.cpp
     ui/FileActions.cpp
+    ui/MappingRowEditors.cpp
     ui/MappingsDialog.cpp
     ui/MainWindow.cpp
     ui/Pb3LookAndFeel.cpp
