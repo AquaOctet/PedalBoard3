@@ -1,5 +1,6 @@
 #include "TransportBar.h"
 
+#include "session/AppCommands.h"
 #include "session/BoardFiles.h"
 
 #include "AboutWindow.h"
@@ -335,6 +336,11 @@ void TransportBar::confirmRemovePatch()
 
 void TransportBar::openPluginsMenu()
 {
+    makePluginsMenu().showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(pluginsButton_));
+}
+
+juce::PopupMenu TransportBar::makePluginsMenu()
+{
     juce::PopupMenu menu;
     menu.addSubMenu("Add Plugin", makeAddPluginMenu(), canAddPlugin());
     menu.addItem("Plugin Browser",
@@ -356,7 +362,7 @@ void TransportBar::openPluginsMenu()
     menu.addSeparator();
     menu.addItem("Plugin List...", [this] { openPluginList(); });
     menu.addItem("Rescan Plugins", [this] { rescanPlugins(); });
-    menu.showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(pluginsButton_));
+    return menu;
 }
 
 void TransportBar::updateAddPluginEnabled()
@@ -643,9 +649,15 @@ void TransportBar::rescanPlugins()
 
 void TransportBar::openFileMenu()
 {
+    makeFileMenu().showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(fileButton_));
+}
+
+juce::PopupMenu TransportBar::makeFileMenu(juce::ApplicationCommandManager* menuBarCommands)
+{
     juce::PopupMenu menu;
-    menu.addItem(1, "New");
-    menu.addItem(2, "Open...");
+    menu.addItem("New", [this] { files_.newBank(); });
+    menu.addItem("Open...", [this] { files_.open(); });
+
     juce::PopupMenu recent;
     for (const auto& file : files_.recentFiles())
         recent.addItem(session::boardfiles::menuLabel(file), [this, file] { files_.openRecent(file); });
@@ -655,39 +667,43 @@ void TransportBar::openFileMenu()
         recent.addItem("Clear Recent Files", [this] { files_.clearRecentFiles(); });
     }
     menu.addSubMenu("Open Recent", recent, recent.getNumItems() > 0);
-    menu.addItem(3, "Save");
-    menu.addItem(4, "Save As...");
+
+    const auto* saveCommand = session::findAppCommand(session::appcommands::kSave);
+    if (menuBarCommands != nullptr && saveCommand != nullptr)
+        menu.addCommandItem(menuBarCommands, saveCommand->juceCommandId, "Save");
+    else
+        menu.addItem("Save", [this] { files_.save(); });
+    menu.addItem("Save As...", [this] { files_.saveAs(); });
     menu.addSeparator();
-    menu.addItem(5, "Save as Default");
-    menu.addItem(6, "Reset Default", files_.hasDefault());
+    menu.addItem("Save as Default", [this] { files_.saveAsDefault(); });
+    menu.addItem("Reset Default", files_.hasDefault(), false, [this] { files_.resetDefault(); });
     menu.addSeparator();
-    menu.addSubMenu("Settings", makeSettingsMenu());
-    menu.addItem(9, "Patch Bank", true, isPatchBankShown && isPatchBankShown());
-    menu.addItem(7, "App Mappings...");
-    menu.addSeparator();
-    menu.addItem(8, "About Pedalboard 3");
-    menu.showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(fileButton_),
-                       [this](int choice)
-                       {
-                           if (choice == 1)
-                               files_.newBank();
-                           else if (choice == 2)
-                               files_.open();
-                           else if (choice == 3)
-                               files_.save();
-                           else if (choice == 4)
-                               files_.saveAs();
-                           else if (choice == 5)
-                               files_.saveAsDefault();
-                           else if (choice == 6)
-                               files_.resetDefault();
-                           else if (choice == 7 && onOpenAppMappings)
-                               onOpenAppMappings();
-                           else if (choice == 8)
-                               showAboutWindow();
-                           else if (choice == 9 && onTogglePatchBank)
-                               onTogglePatchBank();
-                       });
+    if (menuBarCommands == nullptr)
+    {
+        // On macOS the menu bar has these in Settings and Window.
+        menu.addSubMenu("Settings", makeSettingsMenu());
+        menu.addItem("Patch Bank",
+                     true,
+                     isPatchBankShown && isPatchBankShown(),
+                     [this]
+                     {
+                         if (onTogglePatchBank)
+                             onTogglePatchBank();
+                     });
+    }
+    menu.addItem("App Mappings...",
+                 [this]
+                 {
+                     if (onOpenAppMappings)
+                         onOpenAppMappings();
+                 });
+    if (menuBarCommands == nullptr)
+    {
+        // On macOS About is in the app menu.
+        menu.addSeparator();
+        menu.addItem("About Pedalboard 3", [] { showAboutWindow(); });
+    }
+    return menu;
 }
 
 juce::PopupMenu TransportBar::makeSettingsMenu()
