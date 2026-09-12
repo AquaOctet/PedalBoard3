@@ -11,6 +11,7 @@
 #include "session/ControlWiring.h"
 #include "session/EditHistory.h"
 #include "session/FeatureGate.h"
+#include "session/FeatureNodeGate.h"
 #include "session/InputGates.h"
 #include "session/PatchSwitcher.h"
 #include "session/Preferences.h"
@@ -83,6 +84,9 @@ private:
     // Optional features (plan 2026-09-12-002 U1): Settings switches in
     // Preferences, board switches in the open bank. Listens to bankDocument.
     std::unique_ptr<session::FeatureGate> featureGate;
+    // Optional features U4: switches the Metronome and Looper nodes to
+    // pass-through while their feature is off. Listens to featureGate and session.
+    std::unique_ptr<session::FeatureNodeGate> featureNodeGate;
     // M2: constructed after session (ControlWiring observes it), before
     // AppContext (which hands controlHub out to UI). Destroyed before
     // session in shutdown() — see the reverse-order comment there.

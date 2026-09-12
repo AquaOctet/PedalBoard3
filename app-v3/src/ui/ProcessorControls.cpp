@@ -1,4 +1,6 @@
 #include "ProcessorControls.h"
+#include "CardText.h"
+#include "session/FeatureGate.h"
 
 #include "ColourScheme.h"
 #include "engine/processors/AudioRecorderProcessor.h"
@@ -147,6 +149,16 @@ public:
         repaint();
     }
 
+    // A small tag in the top-left corner (the Looper's REC / PLAY); empty for none.
+    void setBadge(const juce::String& text, juce::Colour colour)
+    {
+        if (text == badge_ && colour == badgeColour_)
+            return;
+        badge_ = text;
+        badgeColour_ = colour;
+        repaint();
+    }
+
     void paint(juce::Graphics& g) override
     {
         const auto area = getLocalBounds().toFloat();
@@ -171,12 +183,25 @@ public:
             g.drawVerticalLine(juce::roundToInt(playedTo), area.getY(), area.getBottom());
         }
 
+        const juce::Font mono(juce::FontOptions(juce::Font::getDefaultMonospacedFontName(), 10.0f, juce::Font::plain));
         g.setColour(peaks_.empty() ? tokens::fgMuted : tokens::fgPrimary);
-        g.setFont(juce::Font(juce::FontOptions(juce::Font::getDefaultMonospacedFontName(), 10.0f, juce::Font::plain)));
+        g.setFont(mono);
         g.drawText(text_,
                    getLocalBounds().reduced(4, 1),
                    peaks_.empty() ? juce::Justification::centred : juce::Justification::topRight,
                    true);
+
+        if (badge_.isNotEmpty())
+        {
+            const juce::Font tagFont(juce::FontOptions(9.0f).withStyle("Bold"));
+            const auto tag = juce::Rectangle<float>(
+                3.0f, 2.0f, static_cast<float>(juce::GlyphArrangement::getStringWidthInt(tagFont, badge_) + 8), 12.0f);
+            g.setColour(badgeColour_.withAlpha(0.25f));
+            g.fillRoundedRectangle(tag, 2.0f);
+            g.setColour(badgeColour_);
+            g.setFont(tagFont);
+            g.drawText(badge_, tag, juce::Justification::centred, false);
+        }
     }
 
     void mouseDown(const juce::MouseEvent& e) override
@@ -189,6 +214,8 @@ private:
     std::vector<float> peaks_;
     double fraction_{-1.0};
     juce::String text_;
+    juce::String badge_;
+    juce::Colour badgeColour_;
 };
 
 class FilePlayerControls final : public ProcessorControls
@@ -360,7 +387,13 @@ private:
     bool shownRecording_{false};
 };
 
-// ---- Metronome (M6 U9): Play and the beats of the bar --------------------------
+// What a built-in's card says while its feature has it off (optional-features KD6).
+juce::String offText(AppContext& ctx, session::Feature feature)
+{
+    return ctx.features.isEnabled(feature) ? juce::String("Off for this board") : juce::String("Off in Settings");
+}
+
+// ---- Metronome (M6 U9; its readout, optional-features U5): Play, the beats of the bar
 
 class MetronomeControls final : public ProcessorControls
 {
@@ -390,26 +423,42 @@ public:
         auto area = getLocalBounds();
         playButton_.setBounds(area.removeFromLeft(22).withSizeKeepingCentre(20, 18));
         area.removeFromLeft(6);
+        readout_ = area.removeFromRight(72);
+        area.removeFromRight(4);
         dots_ = area;
     }
 
     void paint(juce::Graphics& g) override
     {
-        // One dot per beat of the bar; the current beat is lit, beat 1 in amber.
-        if (dots_.isEmpty())
-            return;
-        const int beats = juce::jlimit(1, 16, beats_);
-        const float size = juce::jlimit(2.0f, 10.0f, static_cast<float>(dots_.getWidth()) / beats - 3.0f);
-        const float step = static_cast<float>(dots_.getWidth()) / beats;
-        for (int i = 0; i < beats; ++i)
+        if (off_.isNotEmpty())
         {
-            const auto dot = juce::Rectangle<float>(size, size)
-                                 .withCentre({static_cast<float>(dots_.getX()) + step * (static_cast<float>(i) + 0.5f),
-                                              static_cast<float>(dots_.getCentreY())});
-            const bool lit = i == beat_;
-            g.setColour(lit ? (i == 0 ? tokens::accentWarning : tokens::accentPrimary) : tokens::bgMuted);
-            g.fillEllipse(dot);
+            g.setColour(tokens::fgMuted);
+            g.setFont(juce::Font(juce::FontOptions(11.0f)));
+            g.drawText(off_, dots_.getUnion(readout_), juce::Justification::centredLeft, true);
+            return;
         }
+
+        // One dot per beat of the bar; the current beat is lit, beat 1 in amber.
+        if (!dots_.isEmpty())
+        {
+            const int beats = juce::jlimit(1, 16, beats_);
+            const float size = juce::jlimit(2.0f, 10.0f, static_cast<float>(dots_.getWidth()) / beats - 3.0f);
+            const float step = static_cast<float>(dots_.getWidth()) / beats;
+            for (int i = 0; i < beats; ++i)
+            {
+                const auto dot =
+                    juce::Rectangle<float>(size, size)
+                        .withCentre({static_cast<float>(dots_.getX()) + step * (static_cast<float>(i) + 0.5f),
+                                     static_cast<float>(dots_.getCentreY())});
+                const bool lit = i == beat_;
+                g.setColour(lit ? (i == 0 ? tokens::accentWarning : tokens::accentPrimary) : tokens::bgMuted);
+                g.fillEllipse(dot);
+            }
+        }
+
+        g.setColour(tokens::fgMuted);
+        g.setFont(juce::Font(juce::FontOptions(juce::Font::getDefaultMonospacedFontName(), 10.0f, juce::Font::plain)));
+        g.drawText(readoutText_, readout_, juce::Justification::centredRight, true);
     }
 
 private:
@@ -423,6 +472,15 @@ private:
         auto* m = metronome();
         if (m == nullptr)
             return;
+
+        const auto off = m->isFeatureOff() ? offText(ctx_, session::Feature::Metronome) : juce::String();
+        if (off != off_)
+        {
+            off_ = off;
+            playButton_.setEnabled(off_.isEmpty());
+            repaint();
+        }
+
         const bool running = m->isRunning();
         if (running != shownRunning_)
         {
@@ -439,16 +497,25 @@ private:
             beats_ = beats;
             repaint(dots_);
         }
+        const auto readout = card::metronomeReadout(beats, m->getNoteValue(), m->isSynced(), m->getTempo());
+        if (readout != readoutText_)
+        {
+            readoutText_ = readout;
+            repaint(readout_);
+        }
     }
 
     juce::ShapeButton playButton_{"Play", tokens::fgPrimary, tokens::accentPrimary, tokens::accentPrimary};
     juce::Rectangle<int> dots_;
+    juce::Rectangle<int> readout_;
+    juce::String readoutText_;
+    juce::String off_;
     int beat_{-1};
     int beats_{4};
     bool shownRunning_{false};
 };
 
-// ---- Looper (M6 U8): Record, Play, Return to Zero, and the loop -----------------
+// ---- Looper (M6 U8; its status tag, optional-features U5): Record, Play, Return to Zero, the loop
 
 class LooperControls final : public ProcessorControls
 {
@@ -518,6 +585,20 @@ private:
         // Loops are saved as takes named after the playing patch.
         l->setTakePrefix(ctx_.bankDocument.activePatch().name);
 
+        const bool off = l->isFeatureOff();
+        if (off != shownOff_)
+        {
+            shownOff_ = off;
+            for (auto* button : {&recordButton_, &playButton_, &returnButton_})
+                button->setEnabled(!off);
+        }
+        if (off)
+        {
+            waveform_.setBadge({}, {});
+            waveform_.setState(0.0, offText(ctx_, session::Feature::Looper));
+            return;
+        }
+
         const bool recording = l->isRecording();
         if (recording != shownRecording_)
         {
@@ -555,6 +636,12 @@ private:
             text = minutesAndSeconds(l->getPositionSeconds()) + " / " + minutesAndSeconds(length) +
                    (l->ranOutOfMemory() ? " (full)" : "");
         waveform_.setState(!recording && length > 0.0 ? l->getPositionSeconds() / length : 0.0, text);
+
+        const auto status = card::looperStatus(recording, playing, length > 0.0);
+        waveform_.setBadge(status,
+                           recording          ? tokens::accentDestructive
+                           : status == "PLAY" ? tokens::accentPrimary
+                                              : tokens::fgMuted);
     }
 
     juce::ShapeButton recordButton_{"Record", tokens::fgPrimary, tokens::accentDestructive, tokens::accentDestructive};
@@ -563,6 +650,7 @@ private:
     Waveform waveform_;
     bool shownRecording_{false};
     bool shownPlaying_{false};
+    bool shownOff_{false};
     int overviewGeneration_{-1};
 };
 

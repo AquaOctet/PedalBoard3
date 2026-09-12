@@ -178,6 +178,20 @@ void LooperProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
     const int channels = juce::jmin(LoopBuffer::kChannels, buffer.getNumChannels());
     if (numSamples <= 0 || channels == 0)
         return;
+    if (isFeatureOff())
+    {
+        // Off (optional-features KD6): the input passes through untouched.
+        // Nothing plays or records; a loop being recorded ends here, and a
+        // press while off is dropped.
+        requests_.store(0, std::memory_order_relaxed);
+        seekRequest_.store(-1, std::memory_order_relaxed);
+        if (recordingNow_)
+            stopRecording();
+        gain_ = 0.0f;
+        pendingJump_ = -1;
+        firstBlock_ = true; // the levels start afresh when it's back
+        return;
+    }
 
     const float inputGain = gainOf(inputLevel_->get());
     const float loopGain = gainOf(loopLevel_->get());

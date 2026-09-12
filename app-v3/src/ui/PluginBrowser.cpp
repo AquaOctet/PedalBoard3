@@ -1,6 +1,7 @@
 #include "PluginBrowser.h"
 #include "engine/processors/LooperProcessor.h"
 #include "engine/processors/MetronomeProcessor.h"
+#include "session/FeatureGate.h"
 
 #include "engine/PluginHost.h"
 #include "Icons.h"
@@ -42,6 +43,12 @@ juce::MemoryBlock settingsStateFor(AppContext& ctx, const juce::String& internal
 }
 } // namespace
 
+bool builtInAvailable(AppContext& ctx, const juce::String& internalType)
+{
+    const auto feature = session::featureForNodeType(internalType);
+    return !feature.has_value() || ctx.features.isAvailable(*feature);
+}
+
 bool addBrowserEntry(AppContext& ctx,
                      const juce::String& id,
                      std::optional<juce::Point<float>> position,
@@ -55,6 +62,8 @@ bool addBrowserEntry(AppContext& ctx,
     if (id.startsWith(kInternalPrefix))
     {
         const auto type = id.fromFirstOccurrenceOf(kInternalPrefix, false, false);
+        if (!builtInAvailable(ctx, type))
+            return false; // switched off since the list or the drag began
         ctx.editHistory.addInternalNode(type, position, state.getSize() > 0 ? state : settingsStateFor(ctx, type));
     }
     else if (id.startsWith(kPluginPrefix))
@@ -113,11 +122,13 @@ PluginBrowser::PluginBrowser(AppContext& ctx) : ctx_(ctx)
 
     ctx_.pluginHost.getKnownPluginList().addChangeListener(this);
     ctx_.session.addChangeListener(this);
+    ctx_.features.addChangeListener(this);
     rebuildEntries();
 }
 
 PluginBrowser::~PluginBrowser()
 {
+    ctx_.features.removeChangeListener(this);
     ctx_.session.removeChangeListener(this);
     ctx_.pluginHost.getKnownPluginList().removeChangeListener(this);
     list_.setModel(nullptr);
@@ -125,8 +136,8 @@ PluginBrowser::~PluginBrowser()
 
 void PluginBrowser::changeListenerCallback(juce::ChangeBroadcaster* source)
 {
-    if (source == &ctx_.pluginHost.getKnownPluginList())
-        rebuildEntries();
+    if (source == &ctx_.pluginHost.getKnownPluginList() || source == &ctx_.features)
+        rebuildEntries(); // new plugins, or a built-in switched on or off
     else
         refilter(); // a Session change: an add may have updated the recents
 }
@@ -135,8 +146,9 @@ void PluginBrowser::rebuildEntries()
 {
     entries_.clear();
     for (const auto& type : ctx_.pluginHost.getInternalNodeTypes())
-        entries_.push_back(
-            {kInternalPrefix + type.typeId, type.displayName, {}, "Built-in", browser::kBuiltInChip, true});
+        if (builtInAvailable(ctx_, type.typeId))
+            entries_.push_back(
+                {kInternalPrefix + type.typeId, type.displayName, {}, "Built-in", browser::kBuiltInChip, true});
     // Effects only, like the Add Plugin menu (PluginHost::getKnownEffects).
     for (const auto& desc : ctx_.pluginHost.getKnownEffects())
         entries_.push_back({kPluginPrefix + desc.createIdentifierString(),

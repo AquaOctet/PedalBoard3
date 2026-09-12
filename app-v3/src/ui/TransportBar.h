@@ -30,9 +30,11 @@ class SignalCanvas;
 //           (new, duplicate, rename, remove, go to a patch). Every switch
 //           goes through BankDocument, which closes open editors first via
 //           beforeSwap (D1b / AC-UI-P).
-//   then:   the transport (M6 U4): Play / Pause, Return to Zero, the tempo
-//           with Tap, the time signature and the position. Below the fold
-//           width the time signature and position fold away.
+//   then:   the transport pill (M6 U4, optional-features U4), only while
+//           Tempo / BPM is available: Play / Pause, Return to Zero, the tempo
+//           (its popover has Tap and the time signature), the position and
+//           the Metronome's click button. On a narrow window the position
+//           folds away, then the click button.
 //   right:  the MIDI / OSC activity lights and the CPU meter (UI refresh
 //           U3 / U2).
 //

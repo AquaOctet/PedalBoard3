@@ -170,3 +170,12 @@ TEST_CASE("Features: the question lists features the way a sentence does", "[ses
     REQUIRE(session::featureListText({Feature::Tempo, Feature::Looper, Feature::Osc}) == "Tempo / BPM, Looper and OSC");
     REQUIRE(session::featureShortName(Feature::Tempo) == "Tempo");
 }
+
+TEST_CASE("Features: the Metronome and the Looper belong to their features; other built-ins to none",
+          "[session][features]")
+{
+    REQUIRE(session::featureForNodeType("MetronomeProcessor") == Feature::Metronome);
+    REQUIRE(session::featureForNodeType("LooperProcessor") == Feature::Looper);
+    REQUIRE_FALSE(session::featureForNodeType("FilePlayerProcessor").has_value());
+    REQUIRE_FALSE(session::featureForNodeType({}).has_value());
+}

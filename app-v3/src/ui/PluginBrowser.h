@@ -31,6 +31,11 @@ bool addBrowserEntry(AppContext& ctx,
 // browser.
 juce::String browserDragId(const juce::var& dragDescription);
 
+// Whether a built-in can be added now: the Metronome and the Looper only while
+// their feature is available (optional-features U4); every other built-in
+// always.
+bool builtInAvailable(AppContext& ctx, const juce::String& internalType);
+
 // The plugin browser (UI refresh U5): a 256 px right-hand panel with a
 // search box, category chips and the Built-in / Recently used / All effects
 // groups. A double-click adds at the end of the chain; dragging a row onto the

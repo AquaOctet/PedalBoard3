@@ -26,6 +26,13 @@ public:
 
     const juce::String& getTypeId() const noexcept { return typeId_; }
 
+    // Switched off by an optional feature (optional-features plan KD6): the
+    // processor passes its input through untouched until switched on again.
+    // Runtime only: never saved, and not the node's bypass. (Not JUCE's
+    // suspendProcessing / isSuspended, which the host uses for its own ends.)
+    void setFeatureOff(bool off) noexcept { featureOff_.store(off, std::memory_order_relaxed); }
+    bool isFeatureOff() const noexcept { return featureOff_.load(std::memory_order_relaxed); }
+
     bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
@@ -57,6 +64,7 @@ private:
 
     juce::String typeId_;
     std::atomic<std::uint32_t> pending_{0};
+    std::atomic<bool> featureOff_{false};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ProcessorBase)
 };

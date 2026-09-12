@@ -22,10 +22,12 @@ add_library(pb3_session_core STATIC
     PatchBank.h
     BoardFiles.h
     FeatureGate.h
+    FeatureNodeGate.h
     InputGates.h
     Features.h
     BankDocument.cpp
     FeatureGate.cpp
+    FeatureNodeGate.cpp
     InputGates.cpp
     Features.cpp
     BankDocument.h
@@ -95,6 +97,7 @@ pb3_apply_strict_warnings(pb3_session_core
     PatchBank.cpp
     BankDocument.cpp
     FeatureGate.cpp
+    FeatureNodeGate.cpp
     InputGates.cpp
     Features.cpp
     DefaultBank.cpp

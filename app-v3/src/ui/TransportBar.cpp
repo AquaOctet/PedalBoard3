@@ -46,8 +46,9 @@ constexpr int kPluginsButtonWidth = 90;
 constexpr int kPatchArrowWidth = 28;
 constexpr int kPatchStripGap = 4;
 constexpr int kPatchNameMaxWidth = 320;
-// Below this window width the transport folds its time signature and position.
+// Below these window widths the transport pill folds its position away, then ♩.
 constexpr int kTransportFoldBelow = 1120;
+constexpr int kTransportFoldMoreBelow = 960;
 // Patch-menu item ids at or above this select patch (id - base).
 constexpr int kGoToPatchBase = 1000;
 constexpr int kBoardFeatureBase = 500; // the board's feature switches, below kGoToPatchBase
@@ -119,6 +120,7 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas, FileActions& f
     addAndMakeVisible(activityLights_);
     addAndMakeVisible(cpuMeter_);
     addAndMakeVisible(transportControls_);
+    transportControls_.onLayoutChanged = [this] { resized(); };
     addAndMakeVisible(settingsButton_);
     addAndMakeVisible(pluginsButton_);
     pluginsButton_.setTooltip("Add a plugin, the plugin list, rescan");
@@ -140,6 +142,7 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas, FileActions& f
 
     ctx_.bankDocument.addChangeListener(this);
     ctx_.session.addChangeListener(this);
+    ctx_.features.addChangeListener(this);
 }
 
 TransportBar::~TransportBar()
@@ -148,6 +151,7 @@ TransportBar::~TransportBar()
     ctx_.bankDocument.beforeSwap = nullptr;
     ctx_.bankDocument.removeChangeListener(this);
     ctx_.session.removeChangeListener(this);
+    ctx_.features.removeChangeListener(this);
 
     // Join any in-flight rescan before AppContext/Session/PluginHost tear down
     // (crash-hunt #8). The scan worker holds references into ctx_; letting it
@@ -166,6 +170,11 @@ TransportBar::~TransportBar()
 
 void TransportBar::changeListenerCallback(juce::ChangeBroadcaster* source)
 {
+    if (source == &ctx_.features)
+    {
+        resized(); // the transport pill comes or goes with Tempo / BPM
+        return;
+    }
     if (source == &ctx_.bankDocument)
     {
         // A swap the bank issued while Test Tone was on (a Program Change, the
@@ -205,13 +214,19 @@ void TransportBar::resized()
 
     bounds.removeFromRight(kBarPadding);
 
-    // The transport, left of the lights (M6 U4). On a narrow window it folds
-    // its time signature and position; the patch name still gives way first.
-    const bool foldTransport = getWidth() < kTransportFoldBelow;
-    transportControls_.setFolded(foldTransport);
-    transportControls_.setBounds(
-        bounds.removeFromRight(foldTransport ? TransportControls::kFoldedWidth : TransportControls::kFullWidth));
-    bounds.removeFromRight(kBarPadding);
+    // The transport pill, left of the lights (M6 U4, optional-features U4), only
+    // while Tempo / BPM is available. On a narrow window it folds its position
+    // away, then its click button; the patch name still gives way first.
+    const bool tempoOn = ctx_.features.isAvailable(session::Feature::Tempo);
+    transportControls_.setVisible(tempoOn);
+    if (tempoOn)
+    {
+        transportControls_.setFoldLevel(getWidth() < kTransportFoldMoreBelow ? 2
+                                        : getWidth() < kTransportFoldBelow   ? 1
+                                                                             : 0);
+        transportControls_.setBounds(bounds.removeFromRight(transportControls_.preferredWidth()));
+        bounds.removeFromRight(kBarPadding);
+    }
 
     // Left cluster: File | Settings | Plugins | +.
     fileButton_.setBounds(bounds.removeFromLeft(kFileButtonWidth));
@@ -452,9 +467,10 @@ juce::PopupMenu TransportBar::makeAddPluginMenu()
     // Built-in nodes (Level, VU, ...) in their own submenu.
     juce::PopupMenu internalMenu;
     for (const auto& type : internals)
-        internalMenu.addItem(type.displayName,
-                             [this, typeId = type.typeId]
-                             { addBrowserEntry(ctx_, "internal:" + typeId, std::nullopt); });
+        if (builtInAvailable(ctx_, type.typeId)) // the Metronome and Looper only while they're on
+            internalMenu.addItem(type.displayName,
+                                 [this, typeId = type.typeId]
+                                 { addBrowserEntry(ctx_, "internal:" + typeId, std::nullopt); });
     menu.addSubMenu("Built-in", internalMenu);
     return menu;
 }

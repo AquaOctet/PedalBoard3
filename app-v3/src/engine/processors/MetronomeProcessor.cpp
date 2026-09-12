@@ -107,6 +107,7 @@ int MetronomeProcessor::findBeats(int numSamples, std::array<Beat, 32>& beats) n
             position = *info;
     const double bpm =
         position.has_value() ? position->getBpm().orFallback(transport::kDefaultTempo) : transport::kDefaultTempo;
+    tempo_.store(bpm, std::memory_order_relaxed);
 
     if (synced)
     {
@@ -122,6 +123,7 @@ int MetronomeProcessor::findBeats(int numSamples, std::array<Beat, 32>& beats) n
         const int beatsPerBar = juce::jmax(1, signature.numerator);
         const double beatLength = 4.0 / juce::jmax(1, signature.denominator); // in quarter notes
         beatsPerBar_.store(beatsPerBar, std::memory_order_relaxed);
+        noteValue_.store(juce::jmax(1, signature.denominator), std::memory_order_relaxed);
         const double ppq = position->getPpqPosition().orFallback(0.0);
         const double samplesPerPpq = sampleRate_ * 60.0 / bpm;
 
@@ -159,6 +161,7 @@ int MetronomeProcessor::findBeats(int numSamples, std::array<Beat, 32>& beats) n
     running_.store(running, std::memory_order_relaxed);
     const int beatsPerBar = numerator_->get();
     beatsPerBar_.store(beatsPerBar, std::memory_order_relaxed);
+    noteValue_.store(kDenominators[denominator_->getIndex()].getIntValue(), std::memory_order_relaxed);
     if (!running)
     {
         beatInBar_.store(-1, std::memory_order_relaxed);
@@ -213,6 +216,13 @@ void MetronomeProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     const int numSamples = buffer.getNumSamples();
     if (numSamples <= 0 || buffer.getNumChannels() == 0)
         return;
+    if (isFeatureOff())
+    {
+        // Off (optional-features KD6): the input passes through, and no click.
+        running_.store(false, std::memory_order_relaxed);
+        beatInBar_.store(-1, std::memory_order_relaxed);
+        return;
+    }
 
     std::array<Beat, 32> beats{};
     const int beatCount = findBeats(numSamples, beats);

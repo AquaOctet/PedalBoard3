@@ -9,6 +9,7 @@
 #include "engine/processors/MetronomeProcessor.h"
 #include "engine/Transport.h"
 
+#include <algorithm>
 #include <cmath>
 #include <memory>
 #include <vector>
@@ -263,4 +264,18 @@ TEST_CASE("Metronome: a new Metronome can start at the level set in Settings", "
     const auto state = MetronomeProcessor::stateWithLevel(-12.0f);
     metronome.setStateInformation(state.getData(), static_cast<int>(state.getSize()));
     REQUIRE(parameter<juce::AudioParameterFloat>(metronome, "level").get() == Approx(-12.0f).margin(0.01f));
+}
+
+TEST_CASE("Metronome: switched off by its feature, it adds nothing; switched back on, it clicks again",
+          "[engine][processors][metronome][features]")
+{
+    Rig rig;
+    rig.metronome.togglePlay();
+    rig.metronome.setFeatureOff(true);
+    const auto silent = rig.run(100);
+    REQUIRE(std::all_of(silent.begin(), silent.end(), [](float v) { return v == 0.0f; }));
+    REQUIRE_FALSE(rig.metronome.isRunning());
+
+    rig.metronome.setFeatureOff(false);
+    REQUIRE_FALSE(onsets(rig.run(100)).empty());
 }

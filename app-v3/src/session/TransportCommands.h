@@ -42,6 +42,13 @@ public:
     bool isMmcEnabled() const noexcept { return mmcEnabled_; }
     bool handleMmc(const juce::MidiMessage& msg);
 
+    // Tempo / BPM on or off (optional-features plan KD6; session::InputGates
+    // drives it). Off, every command and MMC does nothing, and switching off
+    // pauses the transport, so it can't keep playing with no controls on
+    // screen. On by default.
+    void setEnabled(bool enabled);
+    bool isEnabled() const noexcept { return enabled_; }
+
     engine::Transport& transport() noexcept { return transport_; }
 
 private:
@@ -49,6 +56,7 @@ private:
     engine::Transport& transport_;
     TapTempo tapTempo_;
     bool mmcEnabled_{false};
+    bool enabled_{true};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TransportCommands)
 };

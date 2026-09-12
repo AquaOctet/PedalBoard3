@@ -95,3 +95,28 @@ TEST_CASE("TransportCommands: the transport app commands run through invokeAppCo
     // Without a transport target the commands are unhandled, like undo without a history.
     REQUIRE_FALSE(session::invokeAppCommand(doc, session::appcommands::kPlayPause));
 }
+
+TEST_CASE("TransportCommands: with Tempo / BPM off, the commands, taps and MMC do nothing, and switching off pauses",
+          "[session][transport][features]")
+{
+    Rig rig;
+    auto& transport = rig.eng.getTransport();
+    rig.commands.playPause();
+    REQUIRE(transport.isPlaying());
+
+    rig.commands.setEnabled(false);
+    REQUIRE_FALSE(transport.isPlaying());
+    rig.commands.playPause();
+    rig.commands.returnToZero();
+    REQUIRE_FALSE(transport.isPlaying());
+    rig.commands.tapAt(10000.0);
+    rig.commands.tapAt(10625.0); // would be 96 BPM
+    REQUIRE(rig.s.getActivePatch().tempo == Approx(120.0));
+    rig.commands.setMmcEnabled(true);
+    REQUIRE_FALSE(rig.commands.handleMmc(juce::MidiMessage::midiMachineControlCommand(juce::MidiMessage::mmc_play)));
+    REQUIRE_FALSE(transport.isPlaying());
+
+    rig.commands.setEnabled(true);
+    rig.commands.playPause();
+    REQUIRE(transport.isPlaying());
+}
