@@ -217,6 +217,13 @@ public:
     // Same guards as setNodeBypass (Idle, committed graph).
     void setNodeMidiChannel(NodeId, int channel1To16Or0);
 
+    // The active patch's tempo and time signature (M6 U2). Stored in the
+    // patch, so the board's unsaved marker and the next save pick them up, and
+    // applied to the transport at once. A patch load applies its own. Message
+    // thread.
+    void setTempo(double bpm);
+    void setTimeSignature(int numerator, int denominator);
+
     // ---- Free-routing edits (interactive canvas, message thread) -----------
 
     // Create a user-authored connection. Returns false (patch unchanged) if the

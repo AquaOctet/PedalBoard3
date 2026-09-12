@@ -76,6 +76,10 @@ public:
     AudioGraphRuntime* getRuntime() noexcept { return runtime_.get(); }
     juce::AudioDeviceManager* getDeviceManager() noexcept { return &deviceManager_; }
 
+    // The transport (M6 U1): play, stop, tempo, time signature; every hosted
+    // plugin's play head.
+    Transport& getTransport() noexcept { return runtime_->getTransport(); }
+
     // The error message from the most recent initialise() call (empty when
     // the device opened cleanly). Retained so the UI can tell the user WHY
     // there's no sound — otherwise a failed device open is silent except

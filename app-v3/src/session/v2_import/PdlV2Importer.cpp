@@ -1,5 +1,9 @@
 #include "PdlV2Importer.h"
 
+#include "engine/TransportMath.h"
+
+#include <cmath>
+
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include <optional>
@@ -149,6 +153,10 @@ static ImportResult importOnePatch(const juce::XmlElement& patchEl)
 
     auto patch = std::make_unique<Patch>();
     patch->name = patchEl.getStringAttribute("name", "Imported");
+    // Pedalboard2 kept a tempo per patch (<Patch tempo>, default 120); it had
+    // no time signature, so the patch stays in 4/4.
+    const double tempo = patchEl.getDoubleAttribute("tempo", engine::transport::kDefaultTempo);
+    patch->tempo = std::isfinite(tempo) ? engine::transport::clampTempo(tempo) : engine::transport::kDefaultTempo;
 
     // First pass: filters -> nodes (or graphIO for internal I/O). Build the
     // v2-uid -> v3-NodeId map used to translate connections.

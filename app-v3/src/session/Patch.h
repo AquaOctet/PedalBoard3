@@ -102,6 +102,13 @@ struct Patch
 
     juce::String name{"Untitled"};
 
+    // Transport (M6 U2): the patch's tempo and time signature, applied to the
+    // transport when the patch goes live. On <PATCH> from schemaMinor 6; a file
+    // without them reads back 120 BPM in 4/4.
+    double tempo{120.0};
+    int timeSigNumerator{4};
+    int timeSigDenominator{4};
+
     // max(existing node.id) + 1, or 1 if empty. Never reuses an id
     // observed in this Patch's lifetime, even post-remove.
     NodeId nextNodeId() const noexcept;

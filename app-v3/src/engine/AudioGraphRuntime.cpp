@@ -118,6 +118,10 @@ void AudioGraphRuntime::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
 {
     const juce::ScopedNoDenormals nodn;
 
+    // The transport's snapshot for this block: every plugin in the block
+    // sees the same position, and a Return to Zero lands here.
+    transport_.beginBlock(currentSampleRate_);
+
     // 1. Atomic check for a pending swap. exchange(acquire) ensures all
     //    of the message thread's writes that happened-before publishing
     //    the pending pointer (including the prepared graph's prepareToPlay)
@@ -149,8 +153,11 @@ void AudioGraphRuntime::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     }
     else
     {
+        // The graph passes its play head on to every node as it processes.
+        g->setPlayHead(&transport_);
         g->processBlock(buffer, midi);
     }
+    transport_.endBlock(buffer.getNumSamples());
 
     sanitiser_.processBlock(buffer, midi);
 
