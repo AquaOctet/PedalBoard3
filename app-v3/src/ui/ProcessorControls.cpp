@@ -3,9 +3,11 @@
 #include "ColourScheme.h"
 #include "engine/processors/AudioRecorderProcessor.h"
 #include "engine/processors/FilePlayerProcessor.h"
+#include "engine/processors/LooperProcessor.h"
 #include "engine/processors/MetronomeProcessor.h"
 #include "FilePlayerWindow.h"
 #include "Icons.h"
+#include "LooperWindow.h"
 #include "MetronomeWindow.h"
 #include "RecorderWindow.h"
 #include "session/BankDocument.h"
@@ -446,6 +448,124 @@ private:
     bool shownRunning_{false};
 };
 
+// ---- Looper (M6 U8): Record, Play, Return to Zero, and the loop -----------------
+
+class LooperControls final : public ProcessorControls
+{
+public:
+    LooperControls(AppContext& ctx, session::NodeId node) : ProcessorControls(ctx, node, 30)
+    {
+        recordButton_.setShape(recordIcon(), false, true, false);
+        recordButton_.setTooltip("Record a loop; press again to end it. Each loop is also saved as a take.");
+        recordButton_.onClick = [this]
+        {
+            if (auto* l = looper())
+                l->toggleRecord();
+            refresh();
+        };
+        playButton_.setShape(playIcon(), false, true, false);
+        playButton_.setTooltip("Play / Pause the loop; while recording, end the loop and play it. Synced, it "
+                               "plays while the transport does.");
+        playButton_.onClick = [this]
+        {
+            if (auto* l = looper())
+                l->togglePlay();
+            refresh();
+        };
+        returnButton_.setShape(returnToZeroIcon(), false, true, false);
+        returnButton_.setTooltip("Back to the start of the loop");
+        returnButton_.onClick = [this]
+        {
+            if (auto* l = looper())
+                l->returnToZero();
+            refresh();
+        };
+        waveform_.setTooltip("Click to jump there. ED sets Sync, Auto-play, Stop After Bar, the bar and the levels.");
+        waveform_.onSeek = [this](double fraction)
+        {
+            if (auto* l = looper())
+                l->seekTo(fraction);
+        };
+        for (auto* c :
+             std::initializer_list<juce::Component*>{&recordButton_, &playButton_, &returnButton_, &waveform_})
+            addAndMakeVisible(c);
+        refresh();
+    }
+
+    void resized() override
+    {
+        auto area = getLocalBounds();
+        recordButton_.setBounds(area.removeFromLeft(22).withSizeKeepingCentre(18, 18));
+        area.removeFromLeft(2);
+        playButton_.setBounds(area.removeFromLeft(22).withSizeKeepingCentre(20, 18));
+        area.removeFromLeft(2);
+        returnButton_.setBounds(area.removeFromLeft(22).withSizeKeepingCentre(20, 18));
+        area.removeFromLeft(4);
+        waveform_.setBounds(area);
+    }
+
+private:
+    engine::processors::LooperProcessor* looper() const
+    {
+        return dynamic_cast<engine::processors::LooperProcessor*>(processor());
+    }
+
+    void refresh() override
+    {
+        auto* l = looper();
+        if (l == nullptr)
+            return;
+        // Loops are saved as takes named after the playing patch.
+        l->setTakePrefix(ctx_.bankDocument.activePatch().name);
+
+        const bool recording = l->isRecording();
+        if (recording != shownRecording_)
+        {
+            shownRecording_ = recording;
+            recordButton_.setColours(recording ? tokens::accentDestructive : tokens::fgPrimary,
+                                     tokens::accentDestructive,
+                                     tokens::accentDestructive);
+            if (recording)
+                waveform_.setPeaks({}); // the old loop's gone
+        }
+        const bool playing = l->isPlaying();
+        if (playing != shownPlaying_)
+        {
+            shownPlaying_ = playing;
+            playButton_.setShape(playing ? pauseIcon() : playIcon(), false, true, false);
+            playButton_.setColours(
+                playing ? tokens::accentPrimary : tokens::fgPrimary, tokens::accentPrimary, tokens::accentPrimary);
+        }
+        // The new loop's waveform arrives once its take is written.
+        if (const int generation = l->getOverviewGeneration(); !recording && generation != overviewGeneration_)
+        {
+            overviewGeneration_ = generation;
+            waveform_.setPeaks(l->getOverview());
+        }
+
+        const double length = l->getLengthSeconds();
+        juce::String text;
+        if (recording)
+            text = "Recording " + minutesAndSeconds(l->getRecordedSeconds());
+        else if (l->isLoading())
+            text = "Loading...";
+        else if (length <= 0.0)
+            text = "Record a loop";
+        else
+            text = minutesAndSeconds(l->getPositionSeconds()) + " / " + minutesAndSeconds(length) +
+                   (l->ranOutOfMemory() ? " (full)" : "");
+        waveform_.setState(!recording && length > 0.0 ? l->getPositionSeconds() / length : 0.0, text);
+    }
+
+    juce::ShapeButton recordButton_{"Record", tokens::fgPrimary, tokens::accentDestructive, tokens::accentDestructive};
+    juce::ShapeButton playButton_{"Play", tokens::fgPrimary, tokens::accentPrimary, tokens::accentPrimary};
+    juce::ShapeButton returnButton_{"Return to Zero", tokens::fgPrimary, tokens::accentPrimary, tokens::accentPrimary};
+    Waveform waveform_;
+    bool shownRecording_{false};
+    bool shownPlaying_{false};
+    int overviewGeneration_{-1};
+};
+
 } // namespace
 
 std::unique_ptr<ProcessorControls> makeProcessorControls(AppContext& ctx,
@@ -460,13 +580,15 @@ std::unique_ptr<ProcessorControls> makeProcessorControls(AppContext& ctx,
         return std::make_unique<RecorderControls>(ctx, node);
     if (internalType == "MetronomeProcessor")
         return std::make_unique<MetronomeControls>(ctx, node);
+    if (internalType == "LooperProcessor")
+        return std::make_unique<LooperControls>(ctx, node);
     return nullptr;
 }
 
 bool hasProcessorEditor(const juce::String& internalType)
 {
     return internalType == "FilePlayerProcessor" || internalType == "AudioRecorderProcessor" ||
-           internalType == "MetronomeProcessor";
+           internalType == "MetronomeProcessor" || internalType == "LooperProcessor";
 }
 
 juce::AudioProcessorEditor* makeProcessorEditor(AppContext& ctx,
@@ -482,6 +604,9 @@ juce::AudioProcessorEditor* makeProcessorEditor(AppContext& ctx,
     if (internalType == "MetronomeProcessor")
         if (auto* metronome = dynamic_cast<engine::processors::MetronomeProcessor*>(&processor))
             return new MetronomeEditor(ctx, *metronome);
+    if (internalType == "LooperProcessor")
+        if (auto* looper = dynamic_cast<engine::processors::LooperProcessor*>(&processor))
+            return new LooperEditor(ctx, *looper);
     return nullptr;
 }
 

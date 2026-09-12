@@ -391,7 +391,7 @@ TEST_CASE("PluginHost: getInternalNodeTypes lists the built-in nodes", "[engine]
 {
     engine::PluginHost host;
     const auto types = host.getInternalNodeTypes();
-    REQUIRE(types.size() == 6);
+    REQUIRE(types.size() == 7);
 
     bool hasLevel = false;
     bool hasVu = false;
@@ -399,6 +399,7 @@ TEST_CASE("PluginHost: getInternalNodeTypes lists the built-in nodes", "[engine]
     bool hasFilePlayer = false;
     bool hasRecorder = false;
     bool hasMetronome = false;
+    bool hasLooper = false;
     for (const auto& t : types)
     {
         if (t.typeId == "LevelProcessor" && t.displayName == "Level")
@@ -413,6 +414,8 @@ TEST_CASE("PluginHost: getInternalNodeTypes lists the built-in nodes", "[engine]
             hasRecorder = true;
         if (t.typeId == "MetronomeProcessor" && t.displayName == "Metronome")
             hasMetronome = true;
+        if (t.typeId == "LooperProcessor" && t.displayName == "Looper")
+            hasLooper = true;
     }
     REQUIRE(hasLevel);
     REQUIRE(hasVu);
@@ -420,4 +423,5 @@ TEST_CASE("PluginHost: getInternalNodeTypes lists the built-in nodes", "[engine]
     REQUIRE(hasFilePlayer);
     REQUIRE(hasRecorder);
     REQUIRE(hasMetronome);
+    REQUIRE(hasLooper);
 }
