@@ -70,7 +70,7 @@ bool decode(juce::AudioFormatManager& formats,
     usedRate = rate > 0.0 ? rate : reader->sampleRate;
     const double ratio = reader->sampleRate / usedRate;
     const auto sourceLimit = static_cast<std::int64_t>(std::ceil(static_cast<double>(maxFrames) * ratio));
-    const int length = static_cast<int>(juce::jmin(reader->lengthInSamples, sourceLimit));
+    const int length = static_cast<int>(juce::jmin<std::int64_t>(reader->lengthInSamples, sourceLimit));
     juce::AudioBuffer<float> source(2, length);
     source.clear();
     reader->read(&source, 0, length, 0, true, true); // a mono file fills both channels

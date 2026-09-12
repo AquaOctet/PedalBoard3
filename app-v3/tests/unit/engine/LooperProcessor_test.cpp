@@ -86,7 +86,7 @@ struct Rig
     }
 };
 
-float signal(std::int64_t g)
+float phrase(std::int64_t g)
 {
     const auto x = static_cast<double>(g);
     return static_cast<float>(0.4 * std::sin(x * 0.0123) + 0.1 * std::sin(x * 0.37));
@@ -117,7 +117,7 @@ TEST_CASE("Looper: record then play is sample-exact", "[engine][processors][loop
     rig.run(4); // silence before the loop
     rig.looper.toggleRecord();
     const auto recordStart = rig.frame;
-    rig.run(40, signal);
+    rig.run(40, phrase);
     rig.looper.toggleRecord();
     const auto out = rig.run(100); // silence in; Auto-play plays the loop
 
@@ -131,10 +131,10 @@ TEST_CASE("Looper: record then play is sample-exact", "[engine][processors][loop
     constexpr std::int64_t fade = LooperProcessor::kFadeFrames;
     int bad = 0;
     for (std::int64_t j = fade - 1; j < length - fade; ++j)
-        if (at(out, j) != signal(recordStart + j))
+        if (at(out, j) != phrase(recordStart + j))
             ++bad;
     for (std::int64_t j = 0; j < length - fade; ++j)
-        if (at(out, length + j) != signal(recordStart + j))
+        if (at(out, length + j) != phrase(recordStart + j))
             ++bad;
     REQUIRE(bad == 0);
 }
@@ -242,7 +242,7 @@ TEST_CASE("Looper: synced, it follows the transport, and the transport's Return 
     parameter<juce::AudioParameterBool>(rig.looper, "sync") = true;
     rig.transport.play();
     rig.looper.toggleRecord(); // recorded from the transport's zero
-    rig.run(20, signal);
+    rig.run(20, phrase);
     rig.looper.toggleRecord();
     rig.run(30); // Auto-play: it plays with the transport
 
@@ -272,10 +272,10 @@ TEST_CASE("Looper: the loop's take, its settings and the loop itself round-trip 
           "[engine][processors][looper]")
 {
     Rig a;
-    a.run(2, signal);
+    a.run(2, phrase);
     a.looper.toggleRecord();
     const auto recordStart = a.frame;
-    a.run(20, signal);
+    a.run(20, phrase);
     a.looper.toggleRecord();
     a.run(2);
     const auto length = a.looper.getLoopLength();
@@ -295,7 +295,7 @@ TEST_CASE("Looper: the loop's take, its settings and the loop itself round-trip 
         reader->read(&audio, 0, static_cast<int>(length), 0, true, true);
         int bad = 0;
         for (int j = 0; j < static_cast<int>(length); ++j)
-            if (std::abs(audio.getSample(0, j) - signal(recordStart + j)) > 1e-6f)
+            if (std::abs(audio.getSample(0, j) - phrase(recordStart + j)) > 1e-6f)
                 ++bad;
         REQUIRE(bad == 0);
     }
@@ -330,12 +330,12 @@ TEST_CASE("Looper: the loop's take, its settings and the loop itself round-trip 
     int bad = 0;
     for (std::int64_t j = fade - 1; j < length; ++j)
     {
-        float expected = signal(recordStart + j);
+        float expected = phrase(recordStart + j);
         if (j >= length - fade)
         {
             const auto i = j - (length - fade);
             const float w = static_cast<float>(i + 1) / static_cast<float>(fade);
-            expected = expected * (1.0f - w) + signal(recordStart - fade + i) * w;
+            expected = expected * (1.0f - w) + phrase(recordStart - fade + i) * w;
         }
         if (std::abs(at(out, j) - expected) > 1e-5f)
             ++bad;
