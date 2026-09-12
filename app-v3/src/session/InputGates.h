@@ -16,6 +16,8 @@ class OscServer;
 namespace pedalboard3::session
 {
 
+class TransportCommands;
+
 // Runs MIDI input and the OSC listener only while their features are available
 // (plan docs/plans/2026-09-12-002-feat-optional-features-plan.md, KD6):
 //   - MIDI off stops all MIDI input: MidiInputManager unregisters every device.
@@ -41,6 +43,10 @@ public:
     void apply();
     const juce::String& lastOscError() const noexcept { return oscError_; }
 
+    // The transport's commands follow Tempo / BPM (U4): off, they do nothing
+    // and the transport pauses.
+    void setTransport(TransportCommands* transport) noexcept { transport_ = transport; }
+
 private:
     void changeListenerCallback(juce::ChangeBroadcaster*) override { apply(); }
 
@@ -50,6 +56,7 @@ private:
     control::OscServer& osc_;
     OscConfig oscConfig_;
     juce::String oscError_;
+    TransportCommands* transport_ = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(InputGates)
 };

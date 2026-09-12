@@ -53,6 +53,8 @@ void App::initialise(const juce::String& /*commandLine*/)
             [this](session::Feature feature) { return preferences->getFeatureEnabled(feature); },
             [this](session::Feature feature, bool on) { preferences->setFeatureEnabled(feature, on); }},
         *bankDocument);
+    featureNodeGate = std::make_unique<session::FeatureNodeGate>(*featureGate, *session);
+    featureNodeGate->apply();
     editHistory = std::make_unique<session::EditHistory>(*session);
     // M6 U3: transport commands for keys, MIDI and OSC, with the MMC switch
     // restored from Preferences.
@@ -90,6 +92,7 @@ void App::initialise(const juce::String& /*commandLine*/)
         *midiInputManager,
         *oscServer,
         [this] { return std::make_pair(preferences->getOscPort(), preferences->getOscMulticastAddress()); });
+    inputGates->setTransport(transportCommands.get());
     inputGates->apply();
 
     persister = std::make_unique<session::PreferencesPersister>(
@@ -153,6 +156,7 @@ void App::shutdown()
     controlHub.reset();
     editHistory.reset();       // listens to session; the UI and patch switcher are gone
     transportCommands.reset(); // the UI and patch switcher that call it are gone
+    featureNodeGate.reset();   // listens to featureGate and session
     featureGate.reset();       // listens to bankDocument
     bankDocument.reset();
     session.reset();

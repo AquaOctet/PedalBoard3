@@ -62,6 +62,8 @@ public:
     bool isRunning() const noexcept { return running_.load(std::memory_order_relaxed); }
     int getBeatInBar() const noexcept { return beatInBar_.load(std::memory_order_relaxed); } // -1 when stopped
     int getBeatsPerBar() const noexcept { return beatsPerBar_.load(std::memory_order_relaxed); }
+    int getNoteValue() const noexcept { return noteValue_.load(std::memory_order_relaxed); } // the beat\'s note
+    double getTempo() const noexcept { return tempo_.load(std::memory_order_relaxed); }
 
     // Samples in place of the synthesized clicks; File() for the synthesized one.
     void setSampleFiles(const juce::File& accent, const juce::File& click);
@@ -124,6 +126,8 @@ private:
     std::atomic<bool> running_{false};
     std::atomic<int> beatInBar_{-1};
     std::atomic<int> beatsPerBar_{4};
+    std::atomic<int> noteValue_{4};
+    std::atomic<double> tempo_{120.0};
     std::atomic<double> deviceRate_{0.0};
 
     // The samples, swapped in by the disk thread; the audio thread only try-locks.

@@ -352,3 +352,19 @@ TEST_CASE("Looper: a new Looper can start with the folder set in Settings", "[en
     looper.setStateInformation(state.getData(), static_cast<int>(state.getSize()));
     REQUIRE(looper.getFolder() == folder);
 }
+
+TEST_CASE("Looper: switched off by its feature, it passes the input through untouched and records nothing",
+          "[engine][processors][looper][features]")
+{
+    Rig rig;
+    rig.looper.setFeatureOff(true);
+    rig.looper.toggleRecord(); // dropped while off
+    const auto out = rig.run(10, ramp);
+    int bad = 0;
+    for (std::int64_t j = 0; j < 10 * kBlock; ++j)
+        if (at(out, j) != ramp(j))
+            ++bad;
+    REQUIRE(bad == 0);
+    REQUIRE_FALSE(rig.looper.isRecording());
+    REQUIRE(rig.looper.getLoopLength() == 0);
+}

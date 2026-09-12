@@ -1,27 +1,27 @@
 #include "TransportControls.h"
 
+#include "engine/processors/MetronomeProcessor.h"
 #include "engine/Transport.h"
 #include "engine/TransportMath.h"
 #include "Icons.h"
+#include "session/FeatureGate.h"
+#include "session/Preferences.h"
 #include "session/Session.h"
 #include "session/TransportCommands.h"
-
-#include <cmath>
-#include <functional>
+#include "TempoPopover.h"
 
 namespace pedalboard3::ui
 {
 
 namespace
 {
-constexpr int kIconButton = 28;
-constexpr int kTempoWidth = 70;
-constexpr int kTapWidth = 40;
-constexpr int kSignatureWidth = 44;
-constexpr int kPositionWidth = 70;
-constexpr int kGap = 4;
-constexpr int kGroupGap = 10;
-constexpr int kControlHeight = 28;
+constexpr int kPad = 6;
+constexpr int kIconButton = 26;
+constexpr int kTempoWidth = 104;
+constexpr int kPositionWidth = 52;
+constexpr int kClickWidth = 28;
+constexpr int kDividerGap = 9; // room for a divider between groups
+constexpr int kControlHeight = 26;
 
 juce::Font monoFont(float height)
 {
@@ -33,80 +33,19 @@ juce::String signatureText(int numerator, int denominator)
     return juce::String(numerator) + "/" + juce::String(denominator);
 }
 
-// The common time signatures the menu offers; anything else is typed.
-constexpr int kCommonSignatures[][2] = {{2, 4}, {3, 4}, {4, 4}, {5, 4}, {6, 8}, {7, 8}, {9, 8}, {12, 8}};
+const juce::String kDownArrow{juce::CharPointer_UTF8(" \xe2\x96\xbe")};  // ▾
+const juce::String kQuarterNote{juce::CharPointer_UTF8("\xe2\x99\xa9")}; // ♩
+
+void makeFlat(juce::TextButton& button)
+{
+    button.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+    button.setColour(juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
+    button.setColour(juce::TextButton::textColourOffId, tokens::fgPrimary);
+    button.setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
+}
 } // namespace
 
-// ---- the tempo: drag it, or double-click to type -----------------------------
-
-class TransportControls::TempoField : public juce::Label
-{
-public:
-    std::function<void(double)> onTempoChange;
-
-    TempoField()
-    {
-        setEditable(false, /*editOnDoubleClick*/ true, false);
-        setJustificationType(juce::Justification::centred);
-        setFont(monoFont(13.0f));
-        setColour(juce::Label::textColourId, tokens::fgPrimary);
-        setColour(juce::Label::backgroundColourId, tokens::bgSecondary);
-        setColour(juce::Label::outlineColourId, tokens::borderDefault);
-        setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
-        setTooltip("Tempo (BPM): drag up or down, hold Shift for fine steps, or double-click to type");
-        onTextChange = [this]
-        {
-            const double typed = getText().retainCharacters("0123456789.").getDoubleValue();
-            if (typed > 0.0 && onTempoChange)
-                onTempoChange(typed);
-        };
-    }
-
-    void showTempo(double bpm)
-    {
-        tempo_ = bpm;
-        if (!isBeingEdited() && !dragging_)
-            setText(juce::String(bpm, 1), juce::dontSendNotification);
-    }
-
-    void mouseDown(const juce::MouseEvent& e) override
-    {
-        dragStartTempo_ = tempo_;
-        dragging_ = false;
-        juce::Label::mouseDown(e);
-    }
-
-    void mouseDrag(const juce::MouseEvent& e) override
-    {
-        if (isBeingEdited())
-            return;
-        const int dy = e.getDistanceFromDragStartY();
-        if (!dragging_ && std::abs(dy) < 3)
-            return;
-        dragging_ = true;
-        const double step = e.mods.isShiftDown() ? 0.1 : 0.5;
-        const double next =
-            engine::transport::clampTempo(std::round((dragStartTempo_ - dy * step) * 10.0) / 10.0); // up = faster
-        setText(juce::String(next, 1), juce::dontSendNotification);
-        if (onTempoChange)
-            onTempoChange(next);
-    }
-
-    void mouseUp(const juce::MouseEvent& e) override
-    {
-        dragging_ = false;
-        juce::Label::mouseUp(e);
-    }
-
-private:
-    double tempo_{engine::transport::kDefaultTempo};
-    double dragStartTempo_{engine::transport::kDefaultTempo};
-    bool dragging_{false};
-};
-
-// ---- the transport ---------------------------------------------------------------
-
-TransportControls::TransportControls(AppContext& ctx) : ctx_(ctx), tempo_(std::make_unique<TempoField>())
+TransportControls::TransportControls(AppContext& ctx) : ctx_(ctx)
 {
     playButton_.setShape(playIcon(), false, true, false);
     playButton_.setTooltip("Play (Space)");
@@ -124,67 +63,117 @@ TransportControls::TransportControls(AppContext& ctx) : ctx_(ctx), tempo_(std::m
         refresh();
     };
 
-    tempo_->onTempoChange = [this](double bpm) { ctx_.session.setTempo(bpm); };
-
-    tapButton_.setTooltip("Tap Tempo: tap in time; a pause of more than 2 s starts again");
-    tapButton_.onClick = [this]
-    {
-        ctx_.transportCommands.tap();
-        refresh();
-    };
-
-    timeSignatureButton_.setTooltip("Time signature of this patch");
-    timeSignatureButton_.onClick = [this] { showTimeSignatureMenu(); };
+    makeFlat(tempoButton_);
+    tempoButton_.setTooltip("This patch's tempo and time signature: click for Tap, -/+ and the time signature");
+    tempoButton_.onClick = [this] { openTempoPopover(); };
 
     position_.setFont(monoFont(13.0f));
     position_.setJustificationType(juce::Justification::centred);
     position_.setColour(juce::Label::textColourId, tokens::fgMuted);
     position_.setTooltip("Position: bar.beat");
 
-    for (auto* c : std::initializer_list<juce::Component*>{
-             &playButton_, &returnButton_, tempo_.get(), &tapButton_, &timeSignatureButton_, &position_})
-        addAndMakeVisible(c);
+    makeFlat(clickButton_);
+    clickButton_.setButtonText(kQuarterNote);
+    clickButton_.setTooltip("The patch's Metronome: start or stop it (synced, the transport's Play runs it)");
+    clickButton_.onClick = [this]
+    {
+        toggleMetronome();
+        refresh();
+    };
 
-    refresh();
+    for (auto* c : std::initializer_list<juce::Component*>{&playButton_, &returnButton_, &tempoButton_, &position_})
+        addAndMakeVisible(c);
+    addChildComponent(clickButton_);
+
+    ctx_.session.addChangeListener(this);
+    ctx_.features.addChangeListener(this);
+    changeListenerCallback(nullptr); // find the patch's Metronome, then show it all
     startTimerHz(30);
 }
 
 TransportControls::~TransportControls()
 {
     stopTimer();
+    ctx_.features.removeChangeListener(this);
+    ctx_.session.removeChangeListener(this);
 }
 
-void TransportControls::setFolded(bool folded)
+void TransportControls::setFoldLevel(int level)
 {
-    if (folded == folded_)
+    level = juce::jlimit(0, 2, level);
+    if (level == foldLevel_)
         return;
-    folded_ = folded;
-    timeSignatureButton_.setVisible(!folded_);
-    position_.setVisible(!folded_);
+    foldLevel_ = level;
+    position_.setVisible(foldLevel_ < 1);
+    clickButton_.setVisible(clickShown());
     resized();
+}
+
+int TransportControls::preferredWidth() const noexcept
+{
+    int width = kPad + kIconButton + 2 + kIconButton + kDividerGap + kTempoWidth;
+    if (foldLevel_ < 1)
+        width += kDividerGap + kPositionWidth;
+    if (clickShown())
+        width += kDividerGap + kClickWidth;
+    return width + kPad;
+}
+
+void TransportControls::paint(juce::Graphics& g)
+{
+    const auto pill = getLocalBounds()
+                          .toFloat()
+                          .withSizeKeepingCentre(static_cast<float>(getWidth()), kControlHeight + 4.0f)
+                          .reduced(0.5f);
+    const float radius = pill.getHeight() * 0.5f;
+    g.setColour(tokens::bgSecondary);
+    g.fillRoundedRectangle(pill, radius);
+    g.setColour(tokens::borderDefault);
+    g.drawRoundedRectangle(pill, radius, 1.0f);
+    for (const int x : dividers_)
+        g.drawVerticalLine(x, pill.getY() + 6.0f, pill.getBottom() - 6.0f);
 }
 
 void TransportControls::resized()
 {
-    auto area = getLocalBounds();
-    const auto place = [&area](juce::Component& c, int width, int gapAfter)
+    dividers_.clear();
+    auto area = getLocalBounds().reduced(kPad, 0);
+    const auto place = [&area](juce::Component& c, int width)
+    { c.setBounds(area.removeFromLeft(width).withSizeKeepingCentre(width, kControlHeight)); };
+    const auto divider = [this, &area]
     {
-        c.setBounds(area.removeFromLeft(width).withSizeKeepingCentre(width, kControlHeight));
-        area.removeFromLeft(gapAfter);
+        dividers_.push_back(area.getX() + kDividerGap / 2);
+        area.removeFromLeft(kDividerGap);
     };
-    place(playButton_, kIconButton, kGap);
-    place(returnButton_, kIconButton, kGroupGap);
-    place(*tempo_, kTempoWidth, kGap);
-    place(tapButton_, kTapWidth, kGroupGap);
-    if (!folded_)
+
+    place(playButton_, kIconButton);
+    area.removeFromLeft(2);
+    place(returnButton_, kIconButton);
+    divider();
+    place(tempoButton_, kTempoWidth);
+    if (foldLevel_ < 1)
     {
-        place(timeSignatureButton_, kSignatureWidth, kGroupGap);
-        place(position_, kPositionWidth, 0);
+        divider();
+        place(position_, kPositionWidth);
     }
+    if (clickShown())
+    {
+        divider();
+        place(clickButton_, kClickWidth);
+    }
+    repaint();
 }
 
-void TransportControls::timerCallback()
+void TransportControls::changeListenerCallback(juce::ChangeBroadcaster*)
 {
+    // The patch, or what's available, changed: find the patch's Metronome again.
+    metronomeNode_.reset();
+    for (const auto& node : ctx_.session.getActivePatch().nodes)
+        if (node.internalType == "MetronomeProcessor")
+        {
+            metronomeNode_ = node.id;
+            break;
+        }
     refresh();
 }
 
@@ -201,41 +190,63 @@ void TransportControls::refresh()
         playButton_.setTooltip(playing ? "Pause (Space)" : "Play (Space)");
     }
 
-    tempo_->showTempo(transport.getTempo());
+    const auto tempoText = juce::String(transport.getTempo(), 1) + " BPM" + kDownArrow;
+    if (tempoButton_.getButtonText() != tempoText)
+        tempoButton_.setButtonText(tempoText);
 
-    const int numerator = transport.getNumerator();
-    const int denominator = transport.getDenominator();
-    const auto signature = signatureText(numerator, denominator);
-    if (timeSignatureButton_.getButtonText() != signature)
-        timeSignatureButton_.setButtonText(signature);
-
-    const auto position = engine::transport::barsBeatsText(transport.getPpqPosition(), numerator, denominator);
+    const auto position = engine::transport::barsBeatsText(
+        transport.getPpqPosition(), transport.getNumerator(), transport.getDenominator());
     if (position_.getText() != position)
         position_.setText(position, juce::dontSendNotification);
     position_.setColour(juce::Label::textColourId, playing ? tokens::fgPrimary : tokens::fgMuted);
+
+    // ♩ follows the Metronome's switches, the patch and Settings > Metronome.
+    const bool want = ctx_.features.isAvailable(session::Feature::Metronome) && metronomeNode_.has_value() &&
+                      ctx_.preferences.getMetronomeClickButton();
+    if (want != wantClick_)
+    {
+        wantClick_ = want;
+        clickButton_.setVisible(clickShown());
+        resized();
+        if (onLayoutChanged)
+            onLayoutChanged();
+    }
+    if (clickShown())
+    {
+        const auto* m = metronome();
+        clickButton_.setColour(juce::TextButton::textColourOffId,
+                               m != nullptr && m->isRunning() ? tokens::accentPrimary : tokens::fgMuted);
+    }
 }
 
-void TransportControls::showTimeSignatureMenu()
+engine::processors::MetronomeProcessor* TransportControls::metronome() const
 {
-    const auto& transport = ctx_.transportCommands.transport();
-    juce::PopupMenu menu;
-    for (const auto& signature : kCommonSignatures)
+    if (!metronomeNode_.has_value() || ctx_.session.getState() != session::Session::State::Idle)
+        return nullptr; // a rebuild can free it
+    return dynamic_cast<engine::processors::MetronomeProcessor*>(ctx_.session.getHostedPlugin(*metronomeNode_));
+}
+
+void TransportControls::toggleMetronome()
+{
+    if (auto* m = metronome())
     {
-        const int numerator = signature[0];
-        const int denominator = signature[1];
-        const bool current = transport.getNumerator() == numerator && transport.getDenominator() == denominator;
-        menu.addItem(signatureText(numerator, denominator),
-                     true,
-                     current,
-                     [this, numerator, denominator]
-                     {
-                         ctx_.session.setTimeSignature(numerator, denominator);
-                         refresh();
-                     });
+        if (m->isSynced())
+            ctx_.transportCommands.playPause(); // synced, it runs with the transport
+        else
+            m->togglePlay();
     }
-    menu.addSeparator();
-    menu.addItem("Other...", [this] { promptTimeSignature(); });
-    menu.showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(timeSignatureButton_));
+}
+
+void TransportControls::openTempoPopover()
+{
+    auto popover = std::make_unique<TempoPopover>(ctx_);
+    juce::Component::SafePointer<TransportControls> safeThis(this);
+    popover->onOtherSignature = [safeThis]
+    {
+        if (auto* self = safeThis.getComponent())
+            self->promptTimeSignature();
+    };
+    juce::CallOutBox::launchAsynchronously(std::move(popover), tempoButton_.getScreenBounds(), nullptr);
 }
 
 void TransportControls::promptTimeSignature()

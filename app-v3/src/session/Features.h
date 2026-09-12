@@ -5,6 +5,7 @@
 #include <array>
 #include <cstddef>
 #include <functional>
+#include <optional>
 #include <vector>
 
 namespace pedalboard3::session
@@ -62,5 +63,9 @@ std::vector<Feature> featuresToAsk(const PatchBank& bank, const std::function<bo
 // The features as a sentence would list them: "Looper", "Looper and OSC",
 // "Tempo / BPM, Looper and OSC".
 juce::String featureListText(const std::vector<Feature>& features);
+
+// The feature a built-in node type belongs to: the Metronome and the Looper;
+// nullopt for everything else (U4).
+std::optional<Feature> featureForNodeType(const juce::String& internalType);
 
 } // namespace pedalboard3::session

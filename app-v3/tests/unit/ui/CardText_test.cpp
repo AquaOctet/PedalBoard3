@@ -64,3 +64,22 @@ TEST_CASE("CardText: the VU readout is dBFS with a -60 dB floor", "[ui][card]")
     REQUIRE(ui::card::meterFraction(0.0316228f) == Approx(0.5f).margin(0.001)); // -30 dBFS
     REQUIRE(ui::card::meterFraction(2.0f) == Approx(1.0f));                     // clipping stays full
 }
+
+TEST_CASE("CardText: the Metronome's readout shows its time signature, and synced or its tempo", "[ui][card]")
+{
+    using pedalboard3::ui::card::metronomeReadout;
+    const juce::String dot(juce::CharPointer_UTF8(" \xc2\xb7 "));
+    REQUIRE(metronomeReadout(4, 4, true, 120.0) == "4/4" + dot + "synced");
+    REQUIRE(metronomeReadout(3, 4, false, 96.0) == "3/4" + dot + "96 BPM");
+    REQUIRE(metronomeReadout(7, 8, false, 92.5) == "7/8" + dot + "92.5 BPM");
+}
+
+TEST_CASE("CardText: the Looper's status is REC, PLAY or a dash", "[ui][card]")
+{
+    using pedalboard3::ui::card::looperStatus;
+    REQUIRE(looperStatus(true, false, false) == "REC");
+    REQUIRE(looperStatus(true, true, true) == "REC");
+    REQUIRE(looperStatus(false, true, true) == "PLAY");
+    REQUIRE(looperStatus(false, true, false) == juce::String(juce::CharPointer_UTF8("\xe2\x80\x94")));
+    REQUIRE(looperStatus(false, false, true) == juce::String(juce::CharPointer_UTF8("\xe2\x80\x94")));
+}

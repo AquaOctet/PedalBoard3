@@ -87,7 +87,9 @@ add_library(pb3_app_core STATIC
     ui/StatusBar.h
     ui/TransportBar.cpp
     ui/TransportBar.h
+    ui/TempoPopover.cpp
     ui/TransportControls.cpp
+    ui/TempoPopover.h
     ui/TransportControls.h
 )
 
@@ -149,6 +151,7 @@ pb3_apply_strict_warnings(pb3_app_core
     ui/SignalCanvas.cpp
     ui/StatusBar.cpp
     ui/TransportBar.cpp
+    ui/TempoPopover.cpp
     ui/TransportControls.cpp
 )
 

@@ -2,6 +2,7 @@
 
 #include "control/MidiInputManager.h"
 #include "control/OscServer.h"
+#include "TransportCommands.h"
 
 namespace pedalboard3::session
 {
@@ -24,6 +25,8 @@ InputGates::~InputGates()
 void InputGates::apply()
 {
     midi_.setEnabled(available_(Feature::Midi));
+    if (transport_ != nullptr)
+        transport_->setEnabled(available_(Feature::Tempo));
 
     const bool wantOsc = available_(Feature::Osc);
     if (wantOsc && !osc_.isConnected())

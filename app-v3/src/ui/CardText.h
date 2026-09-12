@@ -5,6 +5,8 @@
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
+#include <cmath>
+
 namespace pedalboard3::ui::card
 {
 
@@ -52,6 +54,30 @@ inline juce::String dbfsText(float level)
 {
     const float db = juce::Decibels::gainToDecibels(level, kMeterFloorDb);
     return db <= kMeterFloorDb ? juce::String("-inf") : juce::String(db, 1);
+}
+
+// The Metronome card's readout (optional-features U5): "4/4 · synced" while it
+// follows the transport, or its own count's "3/4 · 96 BPM" (a whole tempo
+// without decimals).
+inline juce::String metronomeReadout(int beats, int noteValue, bool synced, double bpm)
+{
+    const auto signature = juce::String(beats) + "/" + juce::String(noteValue);
+    if (synced)
+        return signature + kDot + "synced";
+    const double rounded = std::round(bpm * 10.0) / 10.0;
+    const bool whole = juce::approximatelyEqual(rounded, std::round(rounded));
+    return signature + kDot + (whole ? juce::String(juce::roundToInt(rounded)) : juce::String(rounded, 1)) + " BPM";
+}
+
+// The Looper card's status tag (optional-features U5): REC while recording,
+// PLAY while a loop plays, a dash otherwise.
+inline juce::String looperStatus(bool recording, bool playing, bool hasLoop)
+{
+    if (recording)
+        return "REC";
+    if (playing && hasLoop)
+        return "PLAY";
+    return juce::String(juce::CharPointer_UTF8("\xe2\x80\x94"));
 }
 
 } // namespace pedalboard3::ui::card

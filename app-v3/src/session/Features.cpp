@@ -122,4 +122,13 @@ juce::String featureListText(const std::vector<Feature>& features)
     return text;
 }
 
+std::optional<Feature> featureForNodeType(const juce::String& internalType)
+{
+    if (internalType == "MetronomeProcessor")
+        return Feature::Metronome;
+    if (internalType == "LooperProcessor")
+        return Feature::Looper;
+    return std::nullopt;
+}
+
 } // namespace pedalboard3::session

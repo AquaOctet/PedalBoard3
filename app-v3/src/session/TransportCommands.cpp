@@ -12,18 +12,33 @@ TransportCommands::TransportCommands(Session& session, engine::Transport& transp
 {
 }
 
+void TransportCommands::setEnabled(bool enabled)
+{
+    if (enabled == enabled_)
+        return;
+    enabled_ = enabled;
+    if (!enabled_)
+        transport_.pause();
+}
+
 void TransportCommands::playPause()
 {
+    if (!enabled_)
+        return;
     transport_.togglePlayPause();
 }
 
 void TransportCommands::stop()
 {
+    if (!enabled_)
+        return;
     transport_.stop();
 }
 
 void TransportCommands::returnToZero()
 {
+    if (!enabled_)
+        return;
     transport_.returnToZero();
 }
 
@@ -34,13 +49,15 @@ void TransportCommands::tap()
 
 void TransportCommands::tapAt(double nowMs)
 {
+    if (!enabled_)
+        return;
     if (const auto bpm = tapTempo_.tap(nowMs))
         session_.setTempo(*bpm); // into the patch, and on to the transport
 }
 
 bool TransportCommands::handleMmc(const juce::MidiMessage& msg)
 {
-    if (!mmcEnabled_)
+    if (!mmcEnabled_ || !enabled_)
         return false;
     switch (mmc::commandOf(msg))
     {
