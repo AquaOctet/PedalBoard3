@@ -40,6 +40,8 @@ public:
     static constexpr double kAccentHz = 880.0;
     static constexpr double kClickHz = 440.0;
     static constexpr double kMaxSampleSeconds = 2.0;
+    static constexpr float kMinLevelDb = -40.0f;
+    static constexpr float kMaxLevelDb = 6.0f;
 
     explicit MetronomeProcessor(DiskThread& disk);
     ~MetronomeProcessor() override;
@@ -53,6 +55,10 @@ public:
     // The card and the window (message thread).
     void togglePlay() noexcept;
     bool isSynced() const noexcept { return sync_->get(); }
+
+    // A new Metronome's state, starting at `db` (Settings > Metronome,
+    // optional-features U2).
+    static juce::MemoryBlock stateWithLevel(float db);
     bool isRunning() const noexcept { return running_.load(std::memory_order_relaxed); }
     int getBeatInBar() const noexcept { return beatInBar_.load(std::memory_order_relaxed); } // -1 when stopped
     int getBeatsPerBar() const noexcept { return beatsPerBar_.load(std::memory_order_relaxed); }

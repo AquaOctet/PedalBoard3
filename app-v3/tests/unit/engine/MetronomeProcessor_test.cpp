@@ -255,3 +255,12 @@ TEST_CASE("Metronome: a click sample plays in place of the synthesized click", "
     REQUIRE(out[100] == 0.0f);
     file.deleteFile();
 }
+
+TEST_CASE("Metronome: a new Metronome can start at the level set in Settings", "[engine][processors][metronome]")
+{
+    DiskThread disk;
+    MetronomeProcessor metronome(disk);
+    const auto state = MetronomeProcessor::stateWithLevel(-12.0f);
+    metronome.setStateInformation(state.getData(), static_cast<int>(state.getSize()));
+    REQUIRE(parameter<juce::AudioParameterFloat>(metronome, "level").get() == Approx(-12.0f).margin(0.01f));
+}

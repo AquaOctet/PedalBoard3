@@ -45,6 +45,7 @@ set(PB3_TEST_SOURCES
     unit/session/TransportCommands_test.cpp
     unit/session/BankDocument_test.cpp
     unit/session/FeatureGate_test.cpp
+    unit/session/InputGates_test.cpp
     unit/session/Features_test.cpp
     unit/session/EditHistory_test.cpp
     unit/session/PatchSwitcher_test.cpp

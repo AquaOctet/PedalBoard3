@@ -1,4 +1,7 @@
 #include "TransportBar.h"
+#include "FeatureSettingsWindows.h"
+#include "PluginBrowser.h"
+#include "session/FeatureGate.h"
 
 #include "session/AppCommands.h"
 #include "session/BoardFiles.h"
@@ -106,7 +109,8 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas, FileActions& f
     { makeSettingsMenu().showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(settingsButton_)); };
     pluginsButton_.onClick = [this] { openPluginsMenu(); };
 
-    settingsButton_.setTooltip("Audio devices, MIDI inputs, OSC and the test tone");
+    settingsButton_.setTooltip(
+        "Audio devices, MIDI, OSC, Tempo / BPM, Metronome and Looper settings, and the test tone");
     testTone_.addListener(this);
 
     addAndMakeVisible(fileButton_);
@@ -262,6 +266,8 @@ void TransportBar::openPatchMenu()
                            {
                                session::Patch fresh;
                                fresh.name = "Patch " + juce::String(doc.size() + 1);
+                               if (ctx_.features.isAvailable(session::Feature::Tempo))
+                                   ctx_.preferences.applyNewPatchDefaults(fresh);
                                doc.select(doc.addPatch(std::move(fresh)));
                            }
                            else if (choice == 2)
@@ -422,7 +428,8 @@ juce::PopupMenu TransportBar::makeAddPluginMenu()
     juce::PopupMenu internalMenu;
     for (const auto& type : internals)
         internalMenu.addItem(type.displayName,
-                             [this, typeId = type.typeId] { ctx_.editHistory.addInternalNode(typeId); });
+                             [this, typeId = type.typeId]
+                             { addBrowserEntry(ctx_, "internal:" + typeId, std::nullopt); });
     menu.addSubMenu("Built-in", internalMenu);
     return menu;
 }
@@ -723,6 +730,9 @@ juce::PopupMenu TransportBar::makeSettingsMenu()
     menu.addItem("Audio Devices...", [this] { showAudioDevicesWindow(ctx_, testTone_); });
     menu.addItem("MIDI Settings...", [this] { showMidiSettingsWindow(ctx_); });
     menu.addItem("OSC Settings...", [this] { showOscSettingsWindow(ctx_); });
+    menu.addItem("Tempo / BPM Settings...", [this] { showTempoSettingsWindow(ctx_); });
+    menu.addItem("Metronome Settings...", [this] { showMetronomeSettingsWindow(ctx_); });
+    menu.addItem("Looper Settings...", [this] { showLooperSettingsWindow(ctx_); });
     menu.addSeparator();
     menu.addItem("Test Tone", true, toneActive_, [this] { testTone_ = !toneActive_; });
     return menu;

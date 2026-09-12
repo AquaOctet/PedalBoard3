@@ -694,6 +694,17 @@ void LooperProcessor::load(const juce::File& file, const PreRoll& preRoll, std::
         requestLoad(file, preRoll, origin);
 }
 
+juce::MemoryBlock LooperProcessor::stateForFolder(const juce::File& folder)
+{
+    juce::XmlElement xml("PB3_PROCESSOR");
+    xml.setAttribute("type", "LooperProcessor");
+    xml.setAttribute("version", 1);
+    xml.setAttribute("folder", folder.getFullPathName());
+    juce::MemoryBlock state;
+    juce::AudioProcessor::copyXmlToBinary(xml, state);
+    return state;
+}
+
 void LooperProcessor::writeState(juce::XmlElement& xml) const
 {
     if (const auto folder = takes_.getChosenFolder(); folder != juce::File())

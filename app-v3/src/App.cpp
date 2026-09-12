@@ -80,14 +80,17 @@ void App::initialise(const juce::String& /*commandLine*/)
 
     oscServer =
         std::make_unique<control::OscServer>([this](const juce::OSCMessage& msg) { controlHub->handleOsc(msg); });
-    // A bind failure (port already in use, no permission) is non-fatal — the
-    // control layer above it works regardless; the user can retry with a
-    // different port via the settings surface (U5).
-    if (const auto error = oscServer->rebind(preferences->getOscPort(), preferences->getOscMulticastAddress());
-        error.isNotEmpty())
-    {
-        juce::Logger::writeToLog("Pedalboard 3: OSC listener warning — " + error);
-    }
+    // Optional features U2 (KD6): MIDI input runs, and the OSC listener binds,
+    // only while their feature is available (on in Settings and for the
+    // board). OSC starts off, so nothing listens on the network by default. A
+    // bind failure is non-fatal and logged; OSC Settings can retry.
+    inputGates = std::make_unique<session::InputGates>(
+        *featureGate,
+        [this](session::Feature feature) { return featureGate->isAvailable(feature); },
+        *midiInputManager,
+        *oscServer,
+        [this] { return std::make_pair(preferences->getOscPort(), preferences->getOscMulticastAddress()); });
+    inputGates->apply();
 
     persister = std::make_unique<session::PreferencesPersister>(
         *preferences, *engine, *pluginHost, *session, *bankDocument, *appMappings);
@@ -141,6 +144,7 @@ void App::shutdown()
         session::revertPersistedBank(*preferences, bankDocument->currentFile());
         preferences->flush();
     }
+    inputGates.reset(); // listens to featureGate; drives both inputs
     midiInputManager.reset();
     oscServer.reset();
     patchSwitcher.reset(); // after both input edges, before controlHub/bankDocument

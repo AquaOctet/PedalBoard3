@@ -342,3 +342,13 @@ TEST_CASE("Looper: the loop's take, its settings and the loop itself round-trip 
     }
     REQUIRE(bad == 0);
 }
+
+TEST_CASE("Looper: a new Looper can start with the folder set in Settings", "[engine][processors][looper]")
+{
+    DiskThread disk;
+    LooperProcessor looper(disk);
+    const auto folder = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("pb3_loops_here");
+    const auto state = LooperProcessor::stateForFolder(folder);
+    looper.setStateInformation(state.getData(), static_cast<int>(state.getSize()));
+    REQUIRE(looper.getFolder() == folder);
+}

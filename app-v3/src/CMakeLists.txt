@@ -73,6 +73,8 @@ add_library(pb3_app_core STATIC
     ui/ProcessorControls.h
     ui/RecorderWindow.cpp
     ui/RecorderWindow.h
+    ui/FeatureSettingsWindows.cpp
+    ui/FeatureSettingsWindows.h
     ui/SettingsWindow.cpp
     ui/SettingsWindow.h
     ui/SignalCanvas.cpp
@@ -136,6 +138,7 @@ pb3_apply_strict_warnings(pb3_app_core
     ui/PluginCard.cpp
     ui/ProcessorControls.cpp
     ui/RecorderWindow.cpp
+    ui/FeatureSettingsWindows.cpp
     ui/SettingsWindow.cpp
     ui/SignalCanvas.cpp
     ui/StatusBar.cpp

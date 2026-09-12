@@ -63,7 +63,7 @@ MetronomeProcessor::MetronomeProcessor(DiskThread& disk)
                      juce::ParameterID{"denominator", 1}, "Note Value", kDenominators, 2));
     addParameter(level_ = new juce::AudioParameterFloat(juce::ParameterID{"level", 1},
                                                         "Level",
-                                                        juce::NormalisableRange<float>(-40.0f, 6.0f),
+                                                        juce::NormalisableRange<float>(kMinLevelDb, kMaxLevelDb),
                                                         -6.0f,
                                                         juce::AudioParameterFloatAttributes().withLabel("dB")));
     play_->addListener(this);
@@ -281,6 +281,18 @@ juce::String MetronomeProcessor::getLoadError() const
 {
     const std::lock_guard<std::mutex> lk(fileMutex_);
     return error_;
+}
+
+juce::MemoryBlock MetronomeProcessor::stateWithLevel(float db)
+{
+    juce::XmlElement xml("PB3_PROCESSOR");
+    xml.setAttribute("type", "MetronomeProcessor");
+    xml.setAttribute("version", 1);
+    const juce::NormalisableRange<float> range(kMinLevelDb, kMaxLevelDb);
+    xml.setAttribute("p_level", static_cast<double>(range.convertTo0to1(juce::jlimit(kMinLevelDb, kMaxLevelDb, db))));
+    juce::MemoryBlock state;
+    juce::AudioProcessor::copyXmlToBinary(xml, state);
+    return state;
 }
 
 void MetronomeProcessor::writeState(juce::XmlElement& xml) const

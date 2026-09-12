@@ -7,6 +7,7 @@
 #include <juce_data_structures/juce_data_structures.h>
 
 #include <memory>
+#include <utility>
 
 namespace pedalboard3::session
 {
@@ -128,6 +129,24 @@ public:
     // "feature.<key>", session::enabledByDefault until the user sets it.
     bool getFeatureEnabled(Feature feature);
     void setFeatureEnabled(Feature feature, bool enabled);
+
+    // What the feature Settings sections keep (optional-features U2, KD7):
+    //   - the tempo and time signature new patches start with (120 BPM in 4/4
+    //     until set); applyNewPatchDefaults writes them into a new patch
+    //   - whether the transport shows the Metronome's click button (yes)
+    //   - the level new Metronomes start at (-6 dB)
+    //   - the folder new Loopers save loops in (File() = the Recordings folder)
+    double getNewPatchTempo();
+    void setNewPatchTempo(double bpm);
+    std::pair<int, int> getNewPatchTimeSignature();
+    void setNewPatchTimeSignature(int numerator, int denominator);
+    void applyNewPatchDefaults(Patch& patch);
+    bool getMetronomeClickButton();
+    void setMetronomeClickButton(bool shown);
+    float getNewMetronomeLevel();
+    void setNewMetronomeLevel(float db);
+    juce::File getLooperFolder();
+    void setLooperFolder(const juce::File& folder);
 
     // The plugin browser's recently used entries, newest first (UI refresh U5):
     // browser ids, "plugin:<identifier>" or "internal:<typeId>".
