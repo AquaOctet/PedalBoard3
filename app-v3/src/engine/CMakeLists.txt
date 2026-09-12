@@ -26,6 +26,8 @@ add_library(pb3_engine_core STATIC
     TransportMath.h
     DiskThread.h
     Recordings.h
+    TakeWriter.cpp
+    TakeWriter.h
     BypassableInstance.cpp
     BypassableInstance.h
     KnownProblemPlugins.h
@@ -37,11 +39,16 @@ add_library(pb3_engine_core STATIC
     processors/OutputToggleProcessor.cpp
     processors/FilePlayerProcessor.cpp
     processors/AudioRecorderProcessor.cpp
+    processors/MetronomeProcessor.cpp
+    processors/LooperProcessor.cpp
     processors/ProcessorBase.cpp
     processors/LevelProcessor.h
     processors/OutputToggleProcessor.h
     processors/FilePlayerProcessor.h
     processors/AudioRecorderProcessor.h
+    processors/MetronomeProcessor.h
+    processors/LooperProcessor.h
+    processors/LoopBuffer.h
     processors/ProcessorBase.h
     processors/OutputSanitiser.cpp
     processors/OutputSanitiser.h
@@ -79,12 +86,15 @@ pb3_apply_strict_warnings(pb3_engine_core
     AudioGraphRuntime.cpp
     BypassableInstance.cpp
     Transport.cpp
+    TakeWriter.cpp
     PluginHost.cpp
     PluginScanner.cpp
     processors/LevelProcessor.cpp
     processors/OutputToggleProcessor.cpp
     processors/FilePlayerProcessor.cpp
     processors/AudioRecorderProcessor.cpp
+    processors/MetronomeProcessor.cpp
+    processors/LooperProcessor.cpp
     processors/ProcessorBase.cpp
     processors/OutputSanitiser.cpp
     processors/TestToneProcessor.cpp
