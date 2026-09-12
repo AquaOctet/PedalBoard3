@@ -1,6 +1,7 @@
 #include "PluginHost.h"
 
 #include "KnownProblemPlugins.h"
+#include "processors/FilePlayerProcessor.h"
 #include "processors/LevelProcessor.h"
 #include "processors/OutputToggleProcessor.h"
 #include "processors/VuMeterProcessor.h"
@@ -211,6 +212,7 @@ juce::Array<InternalNodeType> PluginHost::getInternalNodeTypes() const
     types.add({"LevelProcessor", "Level"});
     types.add({"VuMeterProcessor", "VU Meter"});
     types.add({"OutputToggleProcessor", "Output Toggle"});
+    types.add({"FilePlayerProcessor", "File Player"});
     return types;
 }
 
@@ -226,6 +228,8 @@ std::unique_ptr<juce::AudioProcessor> PluginHost::createInternalInstance(const j
         proc = std::make_unique<processors::VuMeterProcessor>();
     else if (type == "OutputToggleProcessor")
         proc = std::make_unique<processors::OutputToggleProcessor>();
+    else if (type == "FilePlayerProcessor")
+        proc = std::make_unique<processors::FilePlayerProcessor>(diskThread_);
 
     if (proc == nullptr)
     {

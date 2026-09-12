@@ -21,7 +21,11 @@ namespace pedalboard3::ui
 // end of the chain. Returns false (nothing added) when the id is unknown or
 // the chain can't take an add right now (Session busy, or Test Tone has the
 // graph).
-bool addBrowserEntry(AppContext& ctx, const juce::String& id, std::optional<juce::Point<float>> position);
+// `state`: a built-in's starting state (a File Player dropped with its file).
+bool addBrowserEntry(AppContext& ctx,
+                     const juce::String& id,
+                     std::optional<juce::Point<float>> position,
+                     const juce::MemoryBlock& state = {});
 
 // The browser entry id a drag carries, or empty when the drag isn't from the
 // browser.

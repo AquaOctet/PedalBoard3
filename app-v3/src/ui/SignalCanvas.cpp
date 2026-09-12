@@ -4,9 +4,11 @@
 #include "ColourScheme.h"
 #include "control/MidiMapping.h"
 #include "engine/PluginHost.h"
+#include "engine/processors/FilePlayerProcessor.h"
 #include "engine/processors/VuMeterProcessor.h"
 #include "PluginBrowser.h"
 #include "ProcessorControls.h"
+#include "session/BoardFiles.h"
 #include "session/ControlHub.h"
 #include "session/EditHistory.h"
 #include "session/Patch.h"
@@ -488,9 +490,15 @@ void SignalCanvas::onCardEdit(NodeId id)
     }
 
     auto* plugin = ctx_.session.getHostedPlugin(id);
-    if (plugin == nullptr || !plugin->hasEditor())
+    if (plugin == nullptr)
         return;
-    auto* editor = plugin->createEditorIfNeeded();
+    // A built-in processor's window is the UI's (M6 U6); a plugin brings its own.
+    juce::AudioProcessorEditor* editor = nullptr;
+    for (const auto& s : ctx_.session.getNodeSnapshots())
+        if (s.id == id && s.builtIn)
+            editor = makeProcessorEditor(ctx_, *plugin, s.internalType);
+    if (editor == nullptr && plugin->hasEditor())
+        editor = plugin->createEditorIfNeeded();
     if (editor == nullptr)
         return;
 
@@ -760,6 +768,24 @@ void SignalCanvas::itemDropped(const SourceDetails& details)
     const auto topLeft = details.localPosition - viewOffset_.value_or(juce::Point<int>{}) -
                          juce::Point<int>(kCardWidth / 2, kCardHeight / 2);
     addBrowserEntry(ctx_, browserDragId(details.description), topLeft.toFloat());
+}
+
+bool SignalCanvas::isInterestedInFileDrag(const juce::StringArray& files)
+{
+    return session::boardfiles::firstAudioFile(files) != juce::File();
+}
+
+void SignalCanvas::filesDropped(const juce::StringArray& files, int x, int y)
+{
+    const auto file = session::boardfiles::firstAudioFile(files);
+    if (file == juce::File())
+        return;
+    const auto topLeft = juce::Point<int>(x, y) - viewOffset_.value_or(juce::Point<int>{}) -
+                         juce::Point<int>(kCardWidth / 2, kCardHeight / 2);
+    addBrowserEntry(ctx_,
+                    "internal:FilePlayerProcessor",
+                    topLeft.toFloat(),
+                    engine::processors::FilePlayerProcessor::stateForFile(file));
 }
 
 void SignalCanvas::setSelectedNode(std::optional<NodeId> id)

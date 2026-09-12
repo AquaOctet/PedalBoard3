@@ -1,16 +1,22 @@
 #include "ProcessorControls.h"
 
 #include "ColourScheme.h"
+#include "engine/processors/FilePlayerProcessor.h"
+#include "FilePlayerWindow.h"
+#include "Icons.h"
 #include "session/Session.h"
 
 #include <array>
+#include <cmath>
+#include <functional>
+#include <vector>
 
 namespace pedalboard3::ui
 {
 
-ProcessorControls::ProcessorControls(AppContext& ctx, session::NodeId node) : ctx_(ctx), node_(node)
+ProcessorControls::ProcessorControls(AppContext& ctx, session::NodeId node, int refreshHz) : ctx_(ctx), node_(node)
 {
-    startTimerHz(15);
+    startTimerHz(refreshHz);
 }
 
 ProcessorControls::~ProcessorControls()
@@ -38,8 +44,17 @@ juce::AudioProcessorParameterWithID* ProcessorControls::parameter(const juce::St
 namespace
 {
 
-// Output Toggle (M6 U10): one big 1 / 2 switch. The lit half is where the
-// input goes; clicking the other half switches it.
+using engine::processors::FilePlayerProcessor;
+
+juce::String minutesAndSeconds(double seconds)
+{
+    const int whole = static_cast<int>(std::floor(juce::jmax(0.0, seconds)));
+    return juce::String(whole / 60) + ":" + juce::String(whole % 60).paddedLeft('0', 2);
+}
+
+// ---- Output Toggle (M6 U10): one big 1 / 2 switch ------------------------------
+
+// The lit half is where the input goes; clicking the other half switches it.
 class OutputToggleControls final : public ProcessorControls
 {
 public:
@@ -100,6 +115,158 @@ private:
     std::array<juce::TextButton, 2> buttons_;
 };
 
+// ---- File Player (M6 U6): play, return to zero, and the waveform -----------------
+
+// The file's overview, lit up to where it's played, with the time; a click
+// seeks there.
+class Waveform final : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    std::function<void(double)> onSeek;
+
+    void setPeaks(std::vector<float> peaks)
+    {
+        peaks_ = std::move(peaks);
+        repaint();
+    }
+
+    void setState(double fraction, const juce::String& text)
+    {
+        if (std::abs(fraction - fraction_) < 0.0005 && text == text_)
+            return;
+        fraction_ = fraction;
+        text_ = text;
+        repaint();
+    }
+
+    void paint(juce::Graphics& g) override
+    {
+        const auto area = getLocalBounds().toFloat();
+        g.setColour(tokens::bgMuted);
+        g.fillRoundedRectangle(area, 3.0f);
+
+        if (!peaks_.empty())
+        {
+            const float mid = area.getCentreY();
+            const float half = area.getHeight() * 0.5f - 2.0f;
+            const float step = area.getWidth() / static_cast<float>(peaks_.size());
+            const float playedTo =
+                area.getX() + area.getWidth() * static_cast<float>(juce::jlimit(0.0, 1.0, fraction_));
+            for (std::size_t i = 0; i < peaks_.size(); ++i)
+            {
+                const float x = area.getX() + step * static_cast<float>(i);
+                const float h = juce::jmax(0.5f, peaks_[i] * half);
+                g.setColour(x < playedTo ? tokens::accentPrimary : tokens::fgMuted.withAlpha(0.55f));
+                g.fillRect(x, mid - h, juce::jmax(1.0f, step - 0.5f), h * 2.0f);
+            }
+            g.setColour(tokens::fgPrimary);
+            g.drawVerticalLine(juce::roundToInt(playedTo), area.getY(), area.getBottom());
+        }
+
+        g.setColour(peaks_.empty() ? tokens::fgMuted : tokens::fgPrimary);
+        g.setFont(juce::Font(juce::FontOptions(juce::Font::getDefaultMonospacedFontName(), 10.0f, juce::Font::plain)));
+        g.drawText(text_,
+                   getLocalBounds().reduced(4, 1),
+                   peaks_.empty() ? juce::Justification::centred : juce::Justification::topRight,
+                   true);
+    }
+
+    void mouseDown(const juce::MouseEvent& e) override
+    {
+        if (!peaks_.empty() && onSeek && getWidth() > 0)
+            onSeek(static_cast<double>(e.position.x) / static_cast<double>(getWidth()));
+    }
+
+private:
+    std::vector<float> peaks_;
+    double fraction_{-1.0};
+    juce::String text_;
+};
+
+class FilePlayerControls final : public ProcessorControls
+{
+public:
+    FilePlayerControls(AppContext& ctx, session::NodeId node) : ProcessorControls(ctx, node, 30)
+    {
+        playButton_.setShape(playIcon(), false, true, false);
+        playButton_.setTooltip("Play / Pause");
+        playButton_.onClick = [this]
+        {
+            if (auto* p = player())
+                p->togglePlay();
+            refresh();
+        };
+        returnButton_.setShape(returnToZeroIcon(), false, true, false);
+        returnButton_.setTooltip("Return to Zero");
+        returnButton_.onClick = [this]
+        {
+            if (auto* p = player())
+                p->returnToZero();
+            refresh();
+        };
+        waveform_.setTooltip("Click to jump there. ED chooses the file, Loop and Sync.");
+        waveform_.onSeek = [this](double fraction)
+        {
+            if (auto* p = player())
+                p->seekTo(fraction);
+        };
+        for (auto* c : std::initializer_list<juce::Component*>{&playButton_, &returnButton_, &waveform_})
+            addAndMakeVisible(c);
+        refresh();
+    }
+
+    void resized() override
+    {
+        auto area = getLocalBounds();
+        playButton_.setBounds(area.removeFromLeft(22).withSizeKeepingCentre(20, 18));
+        area.removeFromLeft(2);
+        returnButton_.setBounds(area.removeFromLeft(22).withSizeKeepingCentre(20, 18));
+        area.removeFromLeft(4);
+        waveform_.setBounds(area);
+    }
+
+private:
+    FilePlayerProcessor* player() const { return dynamic_cast<FilePlayerProcessor*>(processor()); }
+
+    void refresh() override
+    {
+        auto* p = player();
+        const bool playing = p != nullptr && p->isPlaying();
+        if (playing != shownPlaying_)
+        {
+            shownPlaying_ = playing;
+            playButton_.setShape(playing ? pauseIcon() : playIcon(), false, true, false);
+            playButton_.setColours(
+                playing ? tokens::accentPrimary : tokens::fgPrimary, tokens::accentPrimary, tokens::accentPrimary);
+        }
+        if (p == nullptr)
+            return;
+
+        if (const int generation = p->getOverviewGeneration(); generation != overviewGeneration_)
+        {
+            overviewGeneration_ = generation;
+            waveform_.setPeaks(p->getOverview());
+        }
+        const double length = p->getLengthSeconds();
+        juce::String text;
+        if (p->isLoading())
+            text = "Loading...";
+        else if (p->getLoadError().isNotEmpty())
+            text = "Can't read the file";
+        else if (length <= 0.0)
+            text = "No file: ED to choose one";
+        else
+            text = minutesAndSeconds(p->getPositionSeconds()) + " / " + minutesAndSeconds(length);
+        waveform_.setState(length > 0.0 ? p->getPositionSeconds() / length : 0.0, text);
+    }
+
+    juce::ShapeButton playButton_{"Play", tokens::fgPrimary, tokens::accentPrimary, tokens::accentPrimary};
+    juce::ShapeButton returnButton_{"Return to Zero", tokens::fgPrimary, tokens::accentPrimary, tokens::accentPrimary};
+    Waveform waveform_;
+    bool shownPlaying_{false};
+    int overviewGeneration_{-1};
+};
+
 } // namespace
 
 std::unique_ptr<ProcessorControls> makeProcessorControls(AppContext& ctx,
@@ -108,6 +275,23 @@ std::unique_ptr<ProcessorControls> makeProcessorControls(AppContext& ctx,
 {
     if (internalType == "OutputToggleProcessor")
         return std::make_unique<OutputToggleControls>(ctx, node);
+    if (internalType == "FilePlayerProcessor")
+        return std::make_unique<FilePlayerControls>(ctx, node);
+    return nullptr;
+}
+
+bool hasProcessorEditor(const juce::String& internalType)
+{
+    return internalType == "FilePlayerProcessor";
+}
+
+juce::AudioProcessorEditor* makeProcessorEditor(AppContext& ctx,
+                                                juce::AudioProcessor& processor,
+                                                const juce::String& internalType)
+{
+    if (internalType == "FilePlayerProcessor")
+        if (auto* player = dynamic_cast<FilePlayerProcessor*>(&processor))
+            return new FilePlayerEditor(ctx, *player);
     return nullptr;
 }
 

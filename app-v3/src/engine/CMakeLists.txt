@@ -24,6 +24,7 @@ add_library(pb3_engine_core STATIC
     Transport.cpp
     Transport.h
     TransportMath.h
+    DiskThread.h
     BypassableInstance.cpp
     BypassableInstance.h
     KnownProblemPlugins.h
@@ -33,9 +34,11 @@ add_library(pb3_engine_core STATIC
     PluginScanner.h
     processors/LevelProcessor.cpp
     processors/OutputToggleProcessor.cpp
+    processors/FilePlayerProcessor.cpp
     processors/ProcessorBase.cpp
     processors/LevelProcessor.h
     processors/OutputToggleProcessor.h
+    processors/FilePlayerProcessor.h
     processors/ProcessorBase.h
     processors/OutputSanitiser.cpp
     processors/OutputSanitiser.h
@@ -77,6 +80,7 @@ pb3_apply_strict_warnings(pb3_engine_core
     PluginScanner.cpp
     processors/LevelProcessor.cpp
     processors/OutputToggleProcessor.cpp
+    processors/FilePlayerProcessor.cpp
     processors/ProcessorBase.cpp
     processors/OutputSanitiser.cpp
     processors/TestToneProcessor.cpp

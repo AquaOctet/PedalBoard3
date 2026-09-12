@@ -391,11 +391,12 @@ TEST_CASE("PluginHost: getInternalNodeTypes lists the built-in nodes", "[engine]
 {
     engine::PluginHost host;
     const auto types = host.getInternalNodeTypes();
-    REQUIRE(types.size() == 3);
+    REQUIRE(types.size() == 4);
 
     bool hasLevel = false;
     bool hasVu = false;
     bool hasOutputToggle = false;
+    bool hasFilePlayer = false;
     for (const auto& t : types)
     {
         if (t.typeId == "LevelProcessor" && t.displayName == "Level")
@@ -404,8 +405,11 @@ TEST_CASE("PluginHost: getInternalNodeTypes lists the built-in nodes", "[engine]
             hasVu = true;
         if (t.typeId == "OutputToggleProcessor" && t.displayName == "Output Toggle")
             hasOutputToggle = true;
+        if (t.typeId == "FilePlayerProcessor" && t.displayName == "File Player")
+            hasFilePlayer = true;
     }
     REQUIRE(hasLevel);
     REQUIRE(hasVu);
     REQUIRE(hasOutputToggle);
+    REQUIRE(hasFilePlayer);
 }

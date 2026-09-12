@@ -22,6 +22,7 @@ set(PB3_TEST_SOURCES
     unit/engine/AudioEngine_test.cpp
     unit/engine/PluginHost_test.cpp
     unit/engine/PluginScanner_test.cpp
+    unit/engine/FilePlayerProcessor_test.cpp
     unit/engine/OutputToggleProcessor_test.cpp
     unit/engine/PlayHead_test.cpp
     unit/engine/Transport_test.cpp

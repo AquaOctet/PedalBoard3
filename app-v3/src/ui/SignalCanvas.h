@@ -67,6 +67,7 @@ namespace pedalboard3::ui
 // adjacency.
 class SignalCanvas : public juce::Component,
                      public juce::DragAndDropTarget,
+                     public juce::FileDragAndDropTarget,
                      private juce::ChangeListener,
                      private juce::Timer
 {
@@ -97,6 +98,11 @@ public:
     // it lands, its card centred on the pointer.
     bool isInterestedInDragSource(const SourceDetails&) override;
     void itemDropped(const SourceDetails&) override;
+
+    // An audio file dropped on the canvas adds a File Player with it, where it
+    // lands (M6 U6, AC-FP-6). A .pdl goes on up to the window, which opens it.
+    bool isInterestedInFileDrag(const juce::StringArray& files) override;
+    void filesDropped(const juce::StringArray& files, int x, int y) override;
 
     // The selected card (UI refresh U7): set by a click on a card, cleared by a
     // click on empty canvas. The board mappings panel (U9) highlights its rows.

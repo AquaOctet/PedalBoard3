@@ -33,9 +33,11 @@ void EditHistory::addPlugin(juce::PluginDescription desc, std::optional<juce::Po
     session_.addPlugin(std::move(desc), position); // recorded when it commits
 }
 
-void EditHistory::addInternalNode(juce::String internalType, std::optional<juce::Point<float>> position)
+void EditHistory::addInternalNode(juce::String internalType,
+                                  std::optional<juce::Point<float>> position,
+                                  juce::MemoryBlock initialState)
 {
-    session_.addInternalNode(std::move(internalType), position); // recorded when it commits
+    session_.addInternalNode(std::move(internalType), position, std::move(initialState)); // recorded when it commits
 }
 
 void EditHistory::removeNode(NodeId id)

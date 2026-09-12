@@ -25,7 +25,10 @@ const juce::String kInternalPrefix{"internal:"};
 const juce::String kDragPrefix{"pb3browser:"};
 } // namespace
 
-bool addBrowserEntry(AppContext& ctx, const juce::String& id, std::optional<juce::Point<float>> position)
+bool addBrowserEntry(AppContext& ctx,
+                     const juce::String& id,
+                     std::optional<juce::Point<float>> position,
+                     const juce::MemoryBlock& state)
 {
     // The same rule as the top bar's Add Plugin: only while Session is idle
     // and the chain is the live graph (Test Tone suspends live capture).
@@ -34,7 +37,7 @@ bool addBrowserEntry(AppContext& ctx, const juce::String& id, std::optional<juce
 
     if (id.startsWith(kInternalPrefix))
     {
-        ctx.editHistory.addInternalNode(id.fromFirstOccurrenceOf(kInternalPrefix, false, false), position);
+        ctx.editHistory.addInternalNode(id.fromFirstOccurrenceOf(kInternalPrefix, false, false), position, state);
     }
     else if (id.startsWith(kPluginPrefix))
     {

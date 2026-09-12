@@ -24,6 +24,26 @@ inline juce::File firstBoardFile(const juce::StringArray& paths)
     return {};
 }
 
+// Audio files a File Player can play, for a drop on the canvas (M6 U6): the
+// formats JUCE's basic set reads on every platform.
+inline bool isAudioFile(const juce::File& file)
+{
+    return file.hasFileExtension("wav;aif;aiff;flac;ogg;mp3");
+}
+
+// The first existing audio file among dropped paths, or File() when there is none.
+inline juce::File firstAudioFile(const juce::StringArray& paths)
+{
+    for (const auto& path : paths)
+        if (juce::File::isAbsolutePath(path))
+        {
+            const juce::File file(path);
+            if (isAudioFile(file) && file.existsAsFile())
+                return file;
+        }
+    return {};
+}
+
 // File > Open Recent's list (full paths, newest first) with `file` moved to the
 // front. An older entry for the same file goes (compared as the file system
 // compares, so case-insensitively on Windows and macOS), so does anything that
