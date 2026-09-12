@@ -21,7 +21,11 @@ add_library(pb3_session_core STATIC
     PatchBank.cpp
     PatchBank.h
     BoardFiles.h
+    FeatureGate.h
+    Features.h
     BankDocument.cpp
+    FeatureGate.cpp
+    Features.cpp
     BankDocument.h
     DefaultBank.cpp
     DefaultBank.h
@@ -88,6 +92,8 @@ pb3_apply_strict_warnings(pb3_session_core
     Patch.cpp
     PatchBank.cpp
     BankDocument.cpp
+    FeatureGate.cpp
+    Features.cpp
     DefaultBank.cpp
     EditHistory.cpp
     PatchSwitcher.cpp

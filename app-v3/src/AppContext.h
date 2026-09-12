@@ -14,6 +14,7 @@ class Preferences;
 class Session;
 class ControlHub;
 class EditHistory;
+class FeatureGate;
 class TransportCommands;
 } // namespace pedalboard3::session
 
@@ -54,6 +55,7 @@ struct AppContext
     control::OscServer& oscServer;
     session::EditHistory& editHistory;             // finish pass U8: undoable canvas edits
     session::TransportCommands& transportCommands; // M6 U3: play, stop, tap tempo, MMC
+    session::FeatureGate& features;                // optional-features U1: on in Settings and for this board
 };
 
 } // namespace pedalboard3

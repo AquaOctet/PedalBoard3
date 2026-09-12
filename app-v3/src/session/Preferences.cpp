@@ -303,6 +303,19 @@ void Preferences::setMmcTransport(bool enabled)
         store->setValue("mmcTransport", enabled);
 }
 
+bool Preferences::getFeatureEnabled(Feature feature)
+{
+    if (auto* store = props_.getUserSettings())
+        return store->getBoolValue(juce::String("feature.") + featureKey(feature), enabledByDefault(feature));
+    return enabledByDefault(feature);
+}
+
+void Preferences::setFeatureEnabled(Feature feature, bool enabled)
+{
+    if (auto* store = props_.getUserSettings())
+        store->setValue(juce::String("feature.") + featureKey(feature), enabled);
+}
+
 juce::StringArray Preferences::getRecentPlugins()
 {
     juce::StringArray ids;

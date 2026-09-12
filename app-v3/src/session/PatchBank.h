@@ -1,9 +1,11 @@
 #pragma once
 
+#include "Features.h"
 #include "Patch.h"
 
 #include <juce_core/juce_core.h>
 
+#include <array>
 #include <memory>
 #include <vector>
 
@@ -25,6 +27,14 @@ struct PatchBank
 {
     std::vector<Patch> patches{Patch{}};
     int activeIndex{0};
+
+    // The board's switches for the optional features (plan
+    // docs/plans/2026-09-12-002-feat-optional-features-plan.md, KD3): on unless
+    // the board turns one off. Saved as <BANK> attributes, only when off.
+    std::array<bool, kFeatureCount> features{true, true, true, true, true};
+
+    bool featureOn(Feature feature) const noexcept { return features[indexOf(feature)]; }
+    void setFeature(Feature feature, bool on) noexcept { features[indexOf(feature)] = on; }
 
     int size() const noexcept { return static_cast<int>(patches.size()); }
     bool isValidIndex(int i) const noexcept { return i >= 0 && i < size(); }
@@ -60,7 +70,8 @@ struct PatchBank
 };
 
 // PatchBank <-> XML: a <BANK activeIndex="n"> element holding one <PATCH>
-// child per patch (patchToXml / patchFromXml). Shared by Preferences
+// child per patch (patchToXml / patchFromXml), plus tempo="0" and so on for
+// each board feature switch that's off (an absent one is on). Shared by Preferences
 // (auto-restore) and available to any other store. bankFromXml returns
 // nullptr if the element is not a <BANK>, holds no <PATCH>, or any patch
 // fails to parse or validatePatch; an out-of-range activeIndex clamps to 0.

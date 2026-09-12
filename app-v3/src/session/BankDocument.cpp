@@ -114,6 +114,16 @@ bool BankDocument::rename(int index, juce::String name)
     return true;
 }
 
+bool BankDocument::setBoardFeature(Feature feature, bool on)
+{
+    if (bank_.featureOn(feature) == on)
+        return false;
+    bank_.setFeature(feature, on);
+    refreshModified();
+    sendChangeMessage();
+    return true;
+}
+
 bool BankDocument::remove(int index)
 {
     if (!bank_.isValidIndex(index))
