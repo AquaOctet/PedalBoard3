@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 
+#include "AboutWindow.h"
 #include "AppContext.h"
 #include "AppMappingsWindow.h"
 #include "BankSidebar.h"
@@ -351,6 +352,15 @@ MainWindow::MainWindow(const juce::String& name, AppContext& context)
     keys->addChangeListener(this);
     root_->transportBar().onOpenAppMappings = [this] { openAppMappings(); };
 
+    // The macOS menu bar (#25). Undo, Redo and Save are command items, so they
+    // show their shortcuts and follow the saved key mappings.
+    setApplicationCommandManagerToWatch(&commandManager_);
+#if JUCE_MAC
+    juce::PopupMenu appMenu;
+    appMenu.addItem("About Pedalboard 3", [] { showAboutWindow(); });
+    juce::MenuBarModel::setMacMainMenu(this, &appMenu);
+#endif
+
     // Finish pass U3: file.save (Ctrl/Cmd+S, or a mapped trigger) saves through
     // the File workflow, and the title follows the board's file and unsaved
     // changes.
@@ -365,6 +375,9 @@ MainWindow::MainWindow(const juce::String& name, AppContext& context)
 
 MainWindow::~MainWindow()
 {
+#if JUCE_MAC
+    juce::MenuBarModel::setMacMainMenu(nullptr); // before anything its menus reach goes
+#endif
     // Finish pass U6: remember where the window was. Preferences saves it on
     // teardown (App::shutdown destroys this window before Preferences).
     ctx_.preferences.setWindowState(getWindowStateAsString());
@@ -444,6 +457,59 @@ void MainWindow::restoreWindowPosition()
         if (display.userArea.intersects(titleStrip))
             return;
     centreWithSize(kInitialWidth, kInitialHeight);
+}
+
+juce::StringArray MainWindow::getMenuBarNames()
+{
+    return {"File", "Edit", "Settings", "Plugins", "Window"};
+}
+
+juce::PopupMenu MainWindow::getMenuForIndex(int topLevelMenuIndex, const juce::String&)
+{
+    auto& bar = root_->transportBar();
+    switch (topLevelMenuIndex)
+    {
+    case 0:
+        return bar.makeFileMenu(&commandManager_);
+    case 1:
+    {
+        // Undo / Redo run the edit history (finish pass U7-U8).
+        juce::PopupMenu menu;
+        for (const auto* id : {session::appcommands::kUndo, session::appcommands::kRedo})
+            if (const auto* command = session::findAppCommand(id))
+                menu.addCommandItem(&commandManager_, command->juceCommandId, command->name);
+        return menu;
+    }
+    case 2:
+        return bar.makeSettingsMenu();
+    case 3:
+        return bar.makePluginsMenu();
+    case 4:
+    {
+        juce::PopupMenu menu;
+        menu.addItem("Minimize", [this] { setMinimised(true); });
+        menu.addItem("Zoom", [this] { setFullScreen(!isFullScreen()); });
+        menu.addSeparator();
+        const auto panel =
+            [&menu](const juce::String& name, const std::function<bool()>& shown, const std::function<void()>& toggle)
+        {
+            menu.addItem(name,
+                         true,
+                         shown && shown(),
+                         [toggle]
+                         {
+                             if (toggle)
+                                 toggle();
+                         });
+        };
+        panel("Patch Bank", bar.isPatchBankShown, bar.onTogglePatchBank);
+        panel("Plugin Browser", bar.isPluginBrowserShown, bar.onTogglePluginBrowser);
+        panel("Mappings Panel", bar.isMappingsPanelShown, bar.onToggleMappingsPanel);
+        return menu;
+    }
+    default:
+        return {};
+    }
 }
 
 } // namespace pedalboard3::ui

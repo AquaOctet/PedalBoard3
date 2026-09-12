@@ -27,7 +27,10 @@ class AppMappingsWindow;
 // Preferences on every change, and the App Mappings window that edits them.
 // The title shows the board and an unsaved marker ("* Gig - Pedalboard 3"),
 // and quit goes through the save prompt (finish pass U3 / U4).
-class MainWindow : public juce::DocumentWindow, private juce::ChangeListener
+// On macOS it is also the menu bar (#25): File, Edit, Settings, Plugins and
+// Window, built from the top bar's menus each time one opens, with About in
+// the app menu.
+class MainWindow : public juce::DocumentWindow, private juce::ChangeListener, private juce::MenuBarModel
 {
 public:
     MainWindow(const juce::String& name, AppContext& context);
@@ -52,6 +55,12 @@ private:
     // Reopen where the window was left (finish pass U6), unless that spot is
     // no longer on a connected display.
     void restoreWindowPosition();
+
+    // juce::MenuBarModel: the macOS menu bar (#25). Built on every platform so
+    // every build compiles it; only macOS installs it (setMacMainMenu).
+    juce::StringArray getMenuBarNames() override;
+    juce::PopupMenu getMenuForIndex(int topLevelMenuIndex, const juce::String& menuName) override;
+    void menuItemSelected(int, int) override {} // every item carries its own action or command
 
     class RootComponent;
     AppContext& ctx_;

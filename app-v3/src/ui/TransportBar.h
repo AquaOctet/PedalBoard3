@@ -67,6 +67,14 @@ public:
     void promptRenamePatch();
     void confirmRemovePatch();
 
+    // The File, Settings and Plugins menus, shared by the bar's buttons and the
+    // macOS menu bar (#25). With `menuBarCommands` the File menu is the menu
+    // bar's: Save runs through the app command, so it shows its shortcut, and
+    // Settings, Patch Bank and About are left to the menu bar's other menus.
+    juce::PopupMenu makeFileMenu(juce::ApplicationCommandManager* menuBarCommands = nullptr);
+    juce::PopupMenu makeSettingsMenu();
+    juce::PopupMenu makePluginsMenu();
+
 private:
     void changeListenerCallback(juce::ChangeBroadcaster*) override;
 
@@ -81,8 +89,6 @@ private:
     // The Test Tone switch changed (the Settings menu or the Audio Devices
     // dialog): start or stop the tone.
     void valueChanged(juce::Value&) override;
-    // The Settings menu, shared by [Settings] and File > Settings.
-    juce::PopupMenu makeSettingsMenu();
     void updateAddPluginEnabled();
     void openPluginsMenu();
 
