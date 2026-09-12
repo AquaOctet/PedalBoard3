@@ -673,3 +673,17 @@ TEST_CASE("Preferences: the plugin browser's recents round-trip in order", "[ses
     prefs.setRecentPlugins(previous);
     prefs.flush();
 }
+
+TEST_CASE("Preferences: Open Recent's files round-trip in order", "[session][preferences]")
+{
+    session::Preferences prefs;
+    const auto previous = prefs.getRecentFiles(); // the developer's real list; put it back
+
+    prefs.setRecentFiles({"C:/boards/Live.pdl", "/home/me/Rehearsal.pdl"});
+    REQUIRE(prefs.getRecentFiles() == juce::StringArray{"C:/boards/Live.pdl", "/home/me/Rehearsal.pdl"});
+    prefs.setRecentFiles({});
+    REQUIRE(prefs.getRecentFiles().isEmpty());
+
+    prefs.setRecentFiles(previous);
+    prefs.flush();
+}

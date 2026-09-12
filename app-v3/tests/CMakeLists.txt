@@ -28,6 +28,7 @@ set(PB3_TEST_SOURCES
     unit/session/Session_test.cpp
     unit/session/Patch_test.cpp
     unit/session/PatchBank_test.cpp
+    unit/session/BoardFiles_test.cpp
     unit/session/BankDocument_test.cpp
     unit/session/EditHistory_test.cpp
     unit/session/PatchSwitcher_test.cpp

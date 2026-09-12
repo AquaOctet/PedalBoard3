@@ -2,6 +2,7 @@
 
 #include "engine/PluginHost.h"
 #include "session/BankDocument.h"
+#include "session/BoardFiles.h"
 #include "session/DefaultBank.h"
 #include "session/PdlSerializer.h"
 #include "session/Preferences.h"
@@ -166,6 +167,7 @@ void FileActions::openFile(const juce::File& file)
 
     // A Pedalboard2 import stays untitled until it is saved as a v3 .pdl.
     loadIntoDocument(std::move(*loaded.bank), loaded.imported ? juce::File{} : file);
+    rememberRecent(file);
 
     // Surface import notes (Pedalboard2 conversion: dropped state, skipped
     // plugins, etc.) once the chain is in.
@@ -231,7 +233,10 @@ void FileActions::writeTo(const juce::File& file, const std::function<void(bool)
     // now, not when the chooser opened, so markSaved matches what was written.
     const auto result = session::pdl::writeBank(ctx_.bankDocument.snapshotForSave(), file);
     if (result.wasOk())
+    {
         ctx_.bankDocument.markSaved(file);
+        rememberRecent(file);
+    }
     else
         showMessage(juce::MessageBoxIconType::WarningIcon, "Couldn't save", result.getErrorMessage());
 
@@ -306,6 +311,57 @@ void FileActions::confirmDiscard(const juce::String& beforeWhat, std::function<v
                                          proceed(true);
                                  }),
                              false);
+}
+
+juce::Array<juce::File> FileActions::recentFiles() const
+{
+    juce::Array<juce::File> recent;
+    for (const auto& path : ctx_.preferences.getRecentFiles())
+        if (juce::File::isAbsolutePath(path))
+            recent.add(juce::File(path));
+    return recent;
+}
+
+void FileActions::openRecent(const juce::File& file)
+{
+    if (!file.existsAsFile())
+    {
+        ctx_.preferences.setRecentFiles(session::boardfiles::removeRecent(ctx_.preferences.getRecentFiles(), file));
+        showMessage(juce::MessageBoxIconType::WarningIcon,
+                    "Couldn't open patch",
+                    "\"" + file.getFullPathName() +
+                        "\" isn't there any more, so it has been removed from Open Recent.");
+        return;
+    }
+    promptThenOpen(file, "opening another board");
+}
+
+void FileActions::clearRecentFiles()
+{
+    ctx_.preferences.setRecentFiles({});
+}
+
+void FileActions::openDropped(const juce::File& file)
+{
+    promptThenOpen(file, "opening \"" + boardDisplayName(file) + "\"");
+}
+
+void FileActions::promptThenOpen(const juce::File& file, const juce::String& beforeWhat)
+{
+    juce::WeakReference<FileActions> weak(this);
+    confirmDiscard(beforeWhat,
+                   [weak, file](bool)
+                   {
+                       if (weak != nullptr)
+                           weak->openFile(file);
+                   });
+}
+
+// A bank opened (including a Pedalboard2 file, which reopens as an import) or
+// saved goes to the front of Open Recent.
+void FileActions::rememberRecent(const juce::File& file)
+{
+    ctx_.preferences.setRecentFiles(session::boardfiles::pushRecent(ctx_.preferences.getRecentFiles(), file));
 }
 
 } // namespace pedalboard3::ui

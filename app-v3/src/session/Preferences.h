@@ -124,6 +124,11 @@ public:
     juce::StringArray getRecentPlugins();
     void setRecentPlugins(const juce::StringArray& ids);
 
+    // File > Open Recent (#30): full paths of the banks last opened or saved,
+    // newest first (session/BoardFiles.h keeps the list).
+    juce::StringArray getRecentFiles();
+    void setRecentFiles(const juce::StringArray& paths);
+
     // OSC listener config (M2, KTD4). Plain scalar values via
     // juce::PropertiesFile's typed getters — no XML needed. Port defaults to
     // 9000 when unset. Multicast address is empty ("") when unset, meaning
