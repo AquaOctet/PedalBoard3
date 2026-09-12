@@ -168,7 +168,11 @@ void SignalCanvas::changeListenerCallback(juce::ChangeBroadcaster*)
         if (m.target.kind == control::MidiTargetKind::PluginParameter)
             ++mappingCounts[m.target.node];
     if (selectedNode_.has_value() && newIds.find(*selectedNode_) == newIds.end())
+    {
         selectedNode_.reset();
+        if (onSelectionChanged)
+            onSelectionChanged(selectedNode_);
+    }
     for (auto it = activityBlinks_.begin(); it != activityBlinks_.end();)
         it = newIds.find(it->first) == newIds.end() ? activityBlinks_.erase(it) : std::next(it);
     for (auto& card : cards_)
@@ -754,6 +758,8 @@ void SignalCanvas::setSelectedNode(std::optional<NodeId> id)
         selectedCable_.reset();
     for (auto& card : cards_)
         card->setSelected(selectedNode_ == card->getNodeId());
+    if (onSelectionChanged)
+        onSelectionChanged(selectedNode_);
     repaint();
 }
 

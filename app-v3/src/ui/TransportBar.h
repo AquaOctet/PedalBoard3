@@ -58,6 +58,10 @@ public:
     std::function<void()> onTogglePluginBrowser;
     std::function<bool()> isPluginBrowserShown;
 
+    // Plugins > Mappings Panel (UI refresh U9): the same pattern.
+    std::function<void()> onToggleMappingsPanel;
+    std::function<bool()> isMappingsPanelShown;
+
     // Rename / remove the playing patch through the bar's prompts; the bank
     // sidebar (UI refresh U4) uses them too.
     void promptRenamePatch();

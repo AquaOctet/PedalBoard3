@@ -67,4 +67,22 @@ inline juce::Rectangle<int> overlayFor(const Layout& l, bool leftSide, const Met
     return {x, strip.getY(), width, strip.getHeight()};
 }
 
+// The board mappings panel under the canvas (UI refresh U9): only its header
+// when collapsed; when open, `openHeight`, but at most half the area and never
+// less than the header.
+struct Split
+{
+    juce::Rectangle<int> canvas;
+    juce::Rectangle<int> bottom;
+};
+
+inline Split splitBottom(juce::Rectangle<int> area, bool open, int openHeight, int headerHeight)
+{
+    const int height = open ? juce::jmax(headerHeight, juce::jmin(openHeight, area.getHeight() / 2)) : headerHeight;
+    Split out;
+    out.bottom = area.removeFromBottom(height); // Rectangle clamps
+    out.canvas = area;
+    return out;
+}
+
 } // namespace pedalboard3::ui::body

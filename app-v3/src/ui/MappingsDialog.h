@@ -3,6 +3,7 @@
 #include "AppContext.h"
 #include "control/MidiMapping.h"
 #include "control/OscMapping.h"
+#include "MappingRowEditors.h"
 #include "session/NodeId.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -20,16 +21,18 @@ namespace pedalboard3::ui
 // Lists the node's MIDI mappings (source kind, channel, number, target
 // parameter, range min/max, invert, latch, learn, delete) and OSC mappings
 // (address, argument index, parameter, range, invert, delete), and sets the
-// node's MIDI channel filter.
+// node's MIDI channel filter. The row editors are shared with the board
+// mappings panel (ui/MappingRowEditors.h).
 //
 // Edits are live: every change hands the node's whole mapping tables to
 // Session::setNodeMappings (one call per edit, KD6), so ControlWiring re-feeds
 // the hub at once and the next save persists them. The channel filter goes
-// through Session::setNodeMidiChannel.
+// through Session::setNodeMidiChannel. The panel follows Session changes, so an
+// edit made in the board mappings panel (UI refresh U9) shows here too.
 //
 // Learn arms ControlHub for one MIDI row; the next learnable message becomes
 // that row's source. Destroying the panel cancels an armed learn.
-class MappingsPanel : public juce::Component
+class MappingsPanel : public juce::Component, private juce::ChangeListener
 {
 public:
     MappingsPanel(AppContext& ctx, session::NodeId node);
@@ -39,8 +42,7 @@ public:
     void resized() override;
 
 private:
-    class MidiRow;
-    class OscRow;
+    void changeListenerCallback(juce::ChangeBroadcaster*) override;
 
     void rebuildRows();
     void layoutRows();
@@ -49,9 +51,6 @@ private:
     void cancelLearn();
     void deleteMidiLater(int index);
     void deleteOscLater(int index);
-
-    control::MidiMapping defaultMidiMapping() const;
-    control::OscMapping defaultOscMapping() const;
 
     AppContext& ctx_;
     session::NodeId node_;
@@ -71,8 +70,8 @@ private:
     juce::Label oscHeader_;
     juce::TextButton addMidiButton_{"+ MIDI mapping"};
     juce::TextButton addOscButton_{"+ OSC mapping"};
-    std::vector<std::unique_ptr<MidiRow>> midiRows_;
-    std::vector<std::unique_ptr<OscRow>> oscRows_;
+    std::vector<std::unique_ptr<MidiMappingRow>> midiRows_;
+    std::vector<std::unique_ptr<OscMappingRow>> oscRows_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MappingsPanel)
 };

@@ -343,6 +343,14 @@ void TransportBar::openPluginsMenu()
                      if (onTogglePluginBrowser)
                          onTogglePluginBrowser();
                  });
+    menu.addItem("Mappings Panel",
+                 true,
+                 isMappingsPanelShown && isMappingsPanelShown(),
+                 [this]
+                 {
+                     if (onToggleMappingsPanel)
+                         onToggleMappingsPanel();
+                 });
     menu.addSeparator();
     menu.addItem("Plugin List...", [this] { openPluginList(); });
     menu.addItem("Rescan Plugins", [this] { rescanPlugins(); });

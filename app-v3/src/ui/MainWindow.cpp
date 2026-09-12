@@ -3,6 +3,7 @@
 #include "AppContext.h"
 #include "AppMappingsWindow.h"
 #include "BankSidebar.h"
+#include "BoardMappingsPanel.h"
 #include "BodyLayout.h"
 #include "ColourScheme.h"
 #include "FileActions.h"
@@ -39,7 +40,7 @@ class MainWindow::RootComponent : public juce::Component,
 public:
     explicit RootComponent(AppContext& ctxRef)
         : ctx_(ctxRef), files_(ctx_), canvas_(ctx_), transportBar_(ctx_, canvas_, files_), statusBar_(ctx_),
-          bankSidebar_(ctx_), patchRail_(ctx_), pluginBrowser_(ctx_)
+          bankSidebar_(ctx_), patchRail_(ctx_), pluginBrowser_(ctx_), mappingsPanel_(ctx_)
     {
         addAndMakeVisible(transportBar_);
         addAndMakeVisible(viewport_);
@@ -78,13 +79,30 @@ public:
         browserRail_.onOpenPanel = [this] { togglePluginBrowser(); };
         transportBar_.onTogglePluginBrowser = [this] { togglePluginBrowser(); };
         transportBar_.isPluginBrowserShown = [this] { return pluginBrowser_.isVisible(); };
+        // The board mappings panel under the canvas (UI refresh U9): its
+        // three-bar toggle and Plugins > Mappings Panel open it or collapse it
+        // to its header, and it follows the canvas selection both ways.
+        addAndMakeVisible(mappingsPanel_);
+        mappingsOpen_ = ctx_.preferences.getPanelShown("mappings", true);
+        mappingsPanel_.setOpen(mappingsOpen_);
+        mappingsPanel_.onToggle = [this] { toggleMappingsPanel(); };
+        mappingsPanel_.onOpenDialog = [this](session::NodeId id) { canvas_.openMappings(id); };
+        mappingsPanel_.onSelectNode = [this](session::NodeId id) { canvas_.selectNode(id); };
+        canvas_.onSelectionChanged = [this](std::optional<session::NodeId> id) { mappingsPanel_.setSelectedNode(id); };
+        transportBar_.onToggleMappingsPanel = [this] { toggleMappingsPanel(); };
+        transportBar_.isMappingsPanelShown = [this] { return mappingsOpen_; };
+
         // A click on the canvas closes a slid-open panel.
         viewport_.addMouseListener(this, true);
 
         setSize(kInitialWidth, kInitialHeight);
     }
 
-    ~RootComponent() override { viewport_.removeMouseListener(this); }
+    ~RootComponent() override
+    {
+        canvas_.onSelectionChanged = nullptr; // the panel is destroyed first
+        viewport_.removeMouseListener(this);
+    }
 
     void mouseDown(const juce::MouseEvent&) override { closeOverlays(); }
 
@@ -156,7 +174,11 @@ public:
                                          browserOpen_ ? body::Panel::Open : body::Panel::Collapsed);
         if (!panels.narrow)
             patchesOverlay_ = browserOverlay_ = false;
-        viewport_.setBounds(panels.canvas);
+        // The board mappings panel docks under the canvas (UI refresh U9).
+        const auto split = body::splitBottom(
+            panels.canvas, mappingsOpen_, BoardMappingsPanel::kOpenHeight, BoardMappingsPanel::kHeaderHeight);
+        viewport_.setBounds(split.canvas);
+        mappingsPanel_.setBounds(split.bottom);
 
         patchRail_.setVisible(panels.leftFolded);
         if (panels.leftFolded)
@@ -230,6 +252,16 @@ public:
         resized();
     }
 
+    // The mappings panel's three-bar toggle and Plugins > Mappings Panel: open
+    // it or collapse it to its header (remembered).
+    void toggleMappingsPanel()
+    {
+        mappingsOpen_ = !mappingsOpen_;
+        ctx_.preferences.setPanelShown("mappings", mappingsOpen_);
+        mappingsPanel_.setOpen(mappingsOpen_);
+        resized();
+    }
+
     // A pick, Escape or a click on the canvas closes a slid-open panel.
     void closeOverlays()
     {
@@ -254,6 +286,8 @@ private:
     BrowserRail browserRail_;
     bool browserOpen_{true};
     bool browserOverlay_{false};
+    BoardMappingsPanel mappingsPanel_;
+    bool mappingsOpen_{true};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RootComponent)
 };
