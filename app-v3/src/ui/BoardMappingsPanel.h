@@ -2,6 +2,7 @@
 
 #include "AppContext.h"
 #include "ColourScheme.h"
+#include "FeatureChips.h"
 #include "MappingRows.h"
 #include "session/NodeId.h"
 
@@ -24,6 +25,8 @@ namespace pedalboard3::ui
 //   - Rows edit in place with the dialog's row editors, and every edit goes
 //     through Session::setNodeMappings, as the dialog's do.
 //   - MIDI learn stays in the per-plugin dialog: a row's Learn... opens it.
+//   - The board's feature switches sit in its bottom-right corner as chips
+//     (optional-features U3), on the header row when it's collapsed.
 //   - Collapsed, only the header shows, with the tab counts. Its three-bar
 //     toggle (and Plugins > Mappings Panel) opens and collapses it.
 //
@@ -86,6 +89,7 @@ private:
     juce::TextButton midiTab_;
     juce::TextButton oscTab_;
     juce::TextButton addButton_{"+ Mapping"};
+    FeatureChips chips_; // the board's feature switches, bottom right (optional-features U3)
     juce::Viewport viewport_;
     std::unique_ptr<Content> content_;
     std::vector<std::unique_ptr<Row>> rows_;

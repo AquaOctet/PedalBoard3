@@ -4,6 +4,8 @@
 
 #include <array>
 #include <cstddef>
+#include <functional>
+#include <vector>
 
 namespace pedalboard3::session
 {
@@ -48,5 +50,17 @@ bool enabledByDefault(Feature feature) noexcept;
 //   - Metronome / Looper: a node of that type in any patch
 //   - MIDI / OSC: MIDI / OSC mappings in any patch
 bool boardUses(const PatchBank& bank, Feature feature);
+
+// The short label on a chip: "Tempo", "Metronome", "Looper", "MIDI", "OSC".
+juce::String featureShortName(Feature feature);
+
+// What opening `bank` asks to turn on (KD5, U3): the features it uses and keeps
+// on for itself that are off in Settings (`enabledInSettings`), in the order
+// of kAllFeatures.
+std::vector<Feature> featuresToAsk(const PatchBank& bank, const std::function<bool(Feature)>& enabledInSettings);
+
+// The features as a sentence would list them: "Looper", "Looper and OSC",
+// "Tempo / BPM, Looper and OSC".
+juce::String featureListText(const std::vector<Feature>& features);
 
 } // namespace pedalboard3::session
