@@ -46,6 +46,8 @@ add_library(pb3_app_core STATIC
     ui/EditorWindow.h
     ui/FileActions.cpp
     ui/FileActions.h
+    ui/FilePlayerWindow.cpp
+    ui/FilePlayerWindow.h
     ui/Icons.h
     ui/MappingRowEditors.cpp
     ui/MappingRowEditors.h
@@ -116,6 +118,7 @@ pb3_apply_strict_warnings(pb3_app_core
     ui/CpuMeter.cpp
     ui/EditorWindow.cpp
     ui/FileActions.cpp
+    ui/FilePlayerWindow.cpp
     ui/MappingRowEditors.cpp
     ui/MappingsDialog.cpp
     ui/MainWindow.cpp

@@ -1,6 +1,7 @@
 #include "PluginCard.h"
 
 #include "CardText.h"
+#include "ProcessorControls.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
@@ -161,7 +162,7 @@ void PluginCard::refreshButtons()
                             snapshot_.bypassed ? tokens::accentWarning.withAlpha(0.18f) : tokens::bgSecondary);
     bypassButton_.setColour(juce::TextButton::textColourOffId,
                             snapshot_.bypassed ? tokens::accentWarning : tokens::fgPrimary);
-    editButton_.setVisible(!snapshot_.builtIn);
+    editButton_.setVisible(!snapshot_.builtIn || hasProcessorEditor(snapshot_.internalType));
     mappingsButton_.setVisible(!isVuMeter());
     removeButton_.setVisible(hovered_);
 }

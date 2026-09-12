@@ -73,3 +73,13 @@ TEST_CASE("BoardFiles: the first existing .pdl among dropped files opens", "[ses
 
     dir.deleteRecursively();
 }
+
+TEST_CASE("BoardFiles: audio files a File Player plays are recognised", "[session][boardfiles]")
+{
+    REQUIRE(boardfiles::isAudioFile(tempDir().getChildFile("take.wav")));
+    REQUIRE(boardfiles::isAudioFile(tempDir().getChildFile("Loop.AIFF")));
+    REQUIRE(boardfiles::isAudioFile(tempDir().getChildFile("song.flac")));
+    REQUIRE_FALSE(boardfiles::isAudioFile(tempDir().getChildFile("board.pdl")));
+    REQUIRE_FALSE(boardfiles::isAudioFile(tempDir().getChildFile("notes.txt")));
+    REQUIRE(boardfiles::firstAudioFile({tempDir().getChildFile("gone.wav").getFullPathName()}) == juce::File());
+}

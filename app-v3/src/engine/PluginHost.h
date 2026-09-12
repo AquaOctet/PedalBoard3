@@ -1,5 +1,7 @@
 #pragma once
 
+#include "DiskThread.h"
+
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include <memory>
@@ -151,6 +153,9 @@ public:
     // JUCE's own PluginListComponent in a future settings dialog).
     juce::AudioPluginFormatManager& getFormatManager() noexcept { return formats_; }
 
+    // The built-in processors' shared disk thread (M6 U6).
+    DiskThread& getDiskThread() noexcept { return diskThread_; }
+
     // Mutable reference to the underlying KnownPluginList. Intended for
     // JUCE's built-in PluginListComponent, which mutates the list as the
     // user adds/removes plugins through the UI. Message-thread-only —
@@ -195,6 +200,7 @@ private:
     // §4.2.D); v3.1 will lift this filter and start hosting instruments.
     void changeListenerCallback(juce::ChangeBroadcaster* source) override;
 
+    DiskThread diskThread_; // first, so it outlives nothing that uses it: processors go with Session
     juce::AudioPluginFormatManager formats_;
     juce::KnownPluginList knownList_;
     mutable juce::ReadWriteLock listLock_;

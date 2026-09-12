@@ -27,7 +27,7 @@ class ProcessorControls : public juce::Component, private juce::Timer
 public:
     static constexpr int kHeight = 32;
 
-    ProcessorControls(AppContext& ctx, session::NodeId node);
+    ProcessorControls(AppContext& ctx, session::NodeId node, int refreshHz = 15);
     ~ProcessorControls() override;
 
 protected:
@@ -51,5 +51,12 @@ private:
 std::unique_ptr<ProcessorControls> makeProcessorControls(AppContext& ctx,
                                                          const juce::String& internalType,
                                                          session::NodeId node);
+
+// A built-in processor's window, opened by ED on its card (M6 U6), or
+// nullptr / false for a type without one.
+bool hasProcessorEditor(const juce::String& internalType);
+juce::AudioProcessorEditor* makeProcessorEditor(AppContext& ctx,
+                                                juce::AudioProcessor& processor,
+                                                const juce::String& internalType);
 
 } // namespace pedalboard3::ui

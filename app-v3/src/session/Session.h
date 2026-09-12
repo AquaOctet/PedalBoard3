@@ -150,7 +150,11 @@ public:
     // Append a built-in (internal) node to the active patch's chain, by its
     // typeId (e.g. "LevelProcessor"). Same worker pipeline as addPlugin — the
     // worker calls PluginHost::createInternalInstance instead of createInstance.
-    void addInternalNode(juce::String internalType, std::optional<juce::Point<float>> position = std::nullopt);
+    // `initialState`: the new node's state, applied before it goes live (a File
+    // Player added by dropping a file carries the file, M6 U6).
+    void addInternalNode(juce::String internalType,
+                         std::optional<juce::Point<float>> position = std::nullopt,
+                         juce::MemoryBlock initialState = {});
 
     // Synchronous: take effect before the call returns.
     void removeNode(NodeId);
@@ -327,6 +331,7 @@ private:
         int restoreIndex{-1};
         std::vector<PatchConnection> restoreConnections;
         std::optional<juce::Point<float>> position; // a positioned add (UI refresh U5)
+        juce::MemoryBlock initialState;             // a new node's starting state (M6 U6)
     };
 
     struct LoadPatchResult
@@ -348,6 +353,7 @@ private:
         int restoreIndex{-1};
         std::vector<PatchConnection> restoreConnections;
         std::optional<juce::Point<float>> position;
+        juce::MemoryBlock initialState;
     };
 
     using Result = std::variant<std::monostate, LoadPatchResult, AddPluginResult>;

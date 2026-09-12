@@ -116,6 +116,7 @@ public:
                 ar.restoreIndex = addReq->restoreIndex;
                 ar.restoreConnections = std::move(addReq->restoreConnections);
                 ar.position = addReq->position;
+                ar.initialState = std::move(addReq->initialState);
 
                 // Direct host factory — bypasses BuildFn so we get a single
                 // processor back, not a graph. Internal nodes go through the
@@ -134,6 +135,11 @@ public:
                     if (ar.restore.has_value() && ar.restore->state.getSize() > 0)
                         proc->setStateInformation(ar.restore->state.getData(),
                                                   static_cast<int>(ar.restore->state.getSize()));
+                    // A new node's starting state (a dropped file), likewise before
+                    // prepareToPlay.
+                    if (!ar.restore.has_value() && ar.initialState.getSize() > 0)
+                        proc->setStateInformation(ar.initialState.getData(),
+                                                  static_cast<int>(ar.initialState.getSize()));
                     ar.hosted = proc.get();
                     ar.wrapped = std::make_unique<engine::BypassableInstance>(std::move(proc));
                     if (ar.restore.has_value())
@@ -298,12 +304,15 @@ void Session::addPlugin(juce::PluginDescription desc, std::optional<juce::Point<
     enqueueAddRequest(std::move(req));
 }
 
-void Session::addInternalNode(juce::String internalType, std::optional<juce::Point<float>> position)
+void Session::addInternalNode(juce::String internalType,
+                              std::optional<juce::Point<float>> position,
+                              juce::MemoryBlock initialState)
 {
     AddPluginRequest req;
     req.kind = NodeKind::Internal;
     req.internalType = std::move(internalType);
     req.position = position;
+    req.initialState = std::move(initialState);
     enqueueAddRequest(std::move(req));
 }
 
@@ -1231,6 +1240,7 @@ void Session::commitAddPlugin(AddPluginResult&& result)
             PatchNode pn;
             pn.id = newId;
             pn.kind = result.kind;
+            pn.state = std::move(result.initialState);
             if (result.kind == NodeKind::Internal)
                 pn.internalType = std::move(result.internalType);
             else
