@@ -43,6 +43,8 @@ constexpr int kPluginsButtonWidth = 90;
 constexpr int kPatchArrowWidth = 28;
 constexpr int kPatchStripGap = 4;
 constexpr int kPatchNameMaxWidth = 320;
+// Below this window width the transport folds its time signature and position.
+constexpr int kTransportFoldBelow = 1120;
 // Patch-menu item ids at or above this select patch (id - base).
 constexpr int kGoToPatchBase = 1000;
 
@@ -89,7 +91,7 @@ std::unique_ptr<juce::AudioProcessorGraph> buildTestToneGraph(juce::AudioDeviceM
 
 TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas, FileActions& files)
     : ctx_(ctx), canvas_(canvas), files_(files), activityLights_(ctx.controlHub),
-      cpuMeter_(ctx.audioEngine.getDeviceManager())
+      cpuMeter_(ctx.audioEngine.getDeviceManager()), transportControls_(ctx)
 {
     setOpaque(true);
 
@@ -111,6 +113,7 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas, FileActions& f
     addAndMakeVisible(addPluginButton_);
     addAndMakeVisible(activityLights_);
     addAndMakeVisible(cpuMeter_);
+    addAndMakeVisible(transportControls_);
     addAndMakeVisible(settingsButton_);
     addAndMakeVisible(pluginsButton_);
     pluginsButton_.setTooltip("Add a plugin, the plugin list, rescan");
@@ -194,6 +197,14 @@ void TransportBar::resized()
     right.removeFromLeft(kButtonGap);
     cpuMeter_.setBounds(right.removeFromLeft(kCpuMeterWidth));
 
+    bounds.removeFromRight(kBarPadding);
+
+    // The transport, left of the lights (M6 U4). On a narrow window it folds
+    // its time signature and position; the patch name still gives way first.
+    const bool foldTransport = getWidth() < kTransportFoldBelow;
+    transportControls_.setFolded(foldTransport);
+    transportControls_.setBounds(
+        bounds.removeFromRight(foldTransport ? TransportControls::kFoldedWidth : TransportControls::kFullWidth));
     bounds.removeFromRight(kBarPadding);
 
     // Left cluster: File | Settings | Plugins | +.
