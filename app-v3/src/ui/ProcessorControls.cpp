@@ -1,9 +1,12 @@
 #include "ProcessorControls.h"
 
 #include "ColourScheme.h"
+#include "engine/processors/AudioRecorderProcessor.h"
 #include "engine/processors/FilePlayerProcessor.h"
 #include "FilePlayerWindow.h"
 #include "Icons.h"
+#include "RecorderWindow.h"
+#include "session/BankDocument.h"
 #include "session/Session.h"
 
 #include <array>
@@ -267,6 +270,91 @@ private:
     int overviewGeneration_{-1};
 };
 
+// ---- Audio Recorder (M6 U7): Record, the take's time, and the input level ------
+
+class RecorderControls final : public ProcessorControls
+{
+public:
+    RecorderControls(AppContext& ctx, session::NodeId node) : ProcessorControls(ctx, node, 30)
+    {
+        recordButton_.setShape(recordIcon(), false, true, false);
+        recordButton_.setTooltip("Record a take: each is a new file, named after the patch and the time. ED sets the "
+                                 "folder and Sync.");
+        recordButton_.onClick = [this]
+        {
+            if (auto* r = recorder())
+                r->toggleRecord();
+            refresh();
+        };
+        time_.setFont(
+            juce::Font(juce::FontOptions(juce::Font::getDefaultMonospacedFontName(), 11.0f, juce::Font::plain)));
+        time_.setColour(juce::Label::textColourId, tokens::fgMuted);
+        addAndMakeVisible(recordButton_);
+        addAndMakeVisible(time_);
+        refresh();
+    }
+
+    void resized() override
+    {
+        auto area = getLocalBounds();
+        recordButton_.setBounds(area.removeFromLeft(22).withSizeKeepingCentre(18, 18));
+        area.removeFromLeft(4);
+        time_.setBounds(area.removeFromLeft(46));
+        area.removeFromLeft(4);
+        meter_ = area.reduced(0, 9);
+    }
+
+    void paint(juce::Graphics& g) override
+    {
+        const auto bar = meter_.toFloat();
+        g.setColour(tokens::bgMuted);
+        g.fillRoundedRectangle(bar, 2.0f);
+        g.setColour(level_ > 0.9f ? tokens::accentDestructive : tokens::accentPrimary);
+        g.fillRoundedRectangle(bar.withWidth(bar.getWidth() * juce::jlimit(0.0f, 1.0f, level_)), 2.0f);
+    }
+
+private:
+    engine::processors::AudioRecorderProcessor* recorder() const
+    {
+        return dynamic_cast<engine::processors::AudioRecorderProcessor*>(processor());
+    }
+
+    void refresh() override
+    {
+        auto* r = recorder();
+        if (r == nullptr)
+            return;
+        // Takes are named after the playing patch.
+        r->setTakePrefix(ctx_.bankDocument.activePatch().name);
+
+        const bool recording = r->isRecording();
+        if (recording != shownRecording_)
+        {
+            shownRecording_ = recording;
+            const auto colour = recording ? tokens::accentDestructive : tokens::fgPrimary;
+            recordButton_.setColours(colour, tokens::accentDestructive, tokens::accentDestructive);
+            time_.setColour(juce::Label::textColourId, recording ? tokens::accentDestructive : tokens::fgMuted);
+        }
+        const auto text = recording ? minutesAndSeconds(r->getTakeSeconds()) : juce::String("Ready");
+        if (time_.getText() != text)
+            time_.setText(text, juce::dontSendNotification);
+
+        const float peak = r->takeInputPeak();
+        const float next = peak > level_ ? peak : level_ * 0.85f; // fast up, slow down
+        if (std::abs(next - level_) > 0.002f)
+        {
+            level_ = next;
+            repaint(meter_);
+        }
+    }
+
+    juce::ShapeButton recordButton_{"Record", tokens::fgPrimary, tokens::accentDestructive, tokens::accentDestructive};
+    juce::Label time_;
+    juce::Rectangle<int> meter_;
+    float level_{0.0f};
+    bool shownRecording_{false};
+};
+
 } // namespace
 
 std::unique_ptr<ProcessorControls> makeProcessorControls(AppContext& ctx,
@@ -277,12 +365,14 @@ std::unique_ptr<ProcessorControls> makeProcessorControls(AppContext& ctx,
         return std::make_unique<OutputToggleControls>(ctx, node);
     if (internalType == "FilePlayerProcessor")
         return std::make_unique<FilePlayerControls>(ctx, node);
+    if (internalType == "AudioRecorderProcessor")
+        return std::make_unique<RecorderControls>(ctx, node);
     return nullptr;
 }
 
 bool hasProcessorEditor(const juce::String& internalType)
 {
-    return internalType == "FilePlayerProcessor";
+    return internalType == "FilePlayerProcessor" || internalType == "AudioRecorderProcessor";
 }
 
 juce::AudioProcessorEditor* makeProcessorEditor(AppContext& ctx,
@@ -292,6 +382,9 @@ juce::AudioProcessorEditor* makeProcessorEditor(AppContext& ctx,
     if (internalType == "FilePlayerProcessor")
         if (auto* player = dynamic_cast<FilePlayerProcessor*>(&processor))
             return new FilePlayerEditor(ctx, *player);
+    if (internalType == "AudioRecorderProcessor")
+        if (auto* recorder = dynamic_cast<engine::processors::AudioRecorderProcessor*>(&processor))
+            return new RecorderEditor(ctx, *recorder);
     return nullptr;
 }
 

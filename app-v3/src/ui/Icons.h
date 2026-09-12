@@ -42,4 +42,12 @@ inline juce::Path returnToZeroIcon()
     return icon;
 }
 
+// The Audio Recorder's Record button (M6 U7): a dot.
+inline juce::Path recordIcon()
+{
+    juce::Path dot;
+    dot.addEllipse(0.0f, 0.0f, 14.0f, 14.0f);
+    return dot;
+}
+
 } // namespace pedalboard3::ui
