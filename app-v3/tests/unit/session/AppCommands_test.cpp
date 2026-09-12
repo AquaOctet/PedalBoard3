@@ -56,3 +56,16 @@ TEST_CASE("AppCommands: Undo and Redo resolve both ways", "[session][app-command
         REQUIRE(session::findAppCommandByJuceId(c->juceCommandId) == c);
     }
 }
+
+TEST_CASE("AppCommands: the transport commands resolve both ways", "[session][app-commands][transport]")
+{
+    namespace cmd = pedalboard3::session::appcommands;
+    for (const auto* id : {cmd::kPlayPause, cmd::kStop, cmd::kReturnToZero, cmd::kTapTempo})
+    {
+        const auto* c = pedalboard3::session::findAppCommand(id);
+        REQUIRE(c != nullptr);
+        REQUIRE(pedalboard3::session::findAppCommandByJuceId(c->juceCommandId) == c);
+        REQUIRE(juce::String(c->name).isNotEmpty());
+        REQUIRE(juce::String(c->id).startsWith("transport."));
+    }
+}

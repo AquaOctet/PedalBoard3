@@ -119,6 +119,10 @@ public:
     bool getPanelShown(const juce::String& panel, bool fallback);
     void setPanelShown(const juce::String& panel, bool shown);
 
+    // MIDI Machine Control drives the transport (M6 U3, plan KD5); off by default.
+    bool getMmcTransport();
+    void setMmcTransport(bool enabled);
+
     // The plugin browser's recently used entries, newest first (UI refresh U5):
     // browser ids, "plugin:<identifier>" or "internal:<typeId>".
     juce::StringArray getRecentPlugins();

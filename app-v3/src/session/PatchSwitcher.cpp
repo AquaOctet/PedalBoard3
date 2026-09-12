@@ -3,6 +3,7 @@
 #include "AppCommands.h"
 #include "BankDocument.h"
 #include "ControlHub.h"
+#include "TransportCommands.h"
 
 #include <utility>
 
@@ -21,6 +22,11 @@ PatchSwitcher::~PatchSwitcher()
 
 void PatchSwitcher::handleMidi(const juce::MidiMessage& msg)
 {
+    // MIDI Machine Control, when it's switched on, is the transport's and
+    // nothing else's (M6 KD5).
+    if (transport_ != nullptr && transport_->handleMmc(msg))
+        return;
+
     // Read before the hub call: a captured message disarms learn.
     const bool learnWasArmed = hub_.isLearning();
 
@@ -45,7 +51,7 @@ void PatchSwitcher::onUnhandledTarget(const control::ParameterUpdate& update)
     case control::MidiTargetKind::AppCommand:
         mappingOwnedThisMessage_ = true;
         if (update.press)
-            invokeAppCommand(bank_, update.target.commandId, history_); // unknown ids are ignored
+            invokeAppCommand(bank_, update.target.commandId, history_, transport_); // unknown ids are ignored
         break;
     case control::MidiTargetKind::PluginParameter:
         break; // applied by ControlHub; never reaches this sink

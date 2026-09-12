@@ -9,6 +9,7 @@ namespace pedalboard3::session
 
 class BankDocument;
 class EditHistory;
+class TransportCommands;
 
 // App-level commands a key, MIDI or OSC trigger can run (roadmap M4, plan
 // docs/plans/2026-09-11-002-feat-mappings-ui-plan.md, KD2 / KTD2). One table
@@ -30,15 +31,23 @@ inline constexpr const char* kPreviousPatch = "patch.previous";
 inline constexpr const char* kSave = "file.save";
 inline constexpr const char* kUndo = "edit.undo";
 inline constexpr const char* kRedo = "edit.redo";
+inline constexpr const char* kPlayPause = "transport.playPause";
+inline constexpr const char* kStop = "transport.stop";
+inline constexpr const char* kReturnToZero = "transport.returnToZero";
+inline constexpr const char* kTapTempo = "transport.tapTempo";
 } // namespace appcommands
 
 // Every command, in display order.
-inline constexpr std::array<AppCommandInfo, 5> kAppCommands{{
+inline constexpr std::array<AppCommandInfo, 9> kAppCommands{{
     {appcommands::kNextPatch, "Next Patch", 0x2001},
     {appcommands::kPreviousPatch, "Previous Patch", 0x2002},
     {appcommands::kSave, "Save", 0x2003},
     {appcommands::kUndo, "Undo", 0x2004},
     {appcommands::kRedo, "Redo", 0x2005},
+    {appcommands::kPlayPause, "Play / Pause", 0x2006},
+    {appcommands::kStop, "Stop", 0x2007},
+    {appcommands::kReturnToZero, "Return to Zero", 0x2008},
+    {appcommands::kTapTempo, "Tap Tempo", 0x2009},
 }};
 
 // Lookups; nullptr when unknown.
@@ -51,6 +60,10 @@ const AppCommandInfo* findAppCommandByJuceId(int juceCommandId) noexcept;
 // installs one.
 // edit.undo / edit.redo run on `history`; unhandled without one, or while
 // Test Tone has replaced the live graph.
-bool invokeAppCommand(BankDocument& bank, const juce::String& id, EditHistory* history = nullptr);
+// The transport.* commands run on `transport` (M6 U3); unhandled without one.
+bool invokeAppCommand(BankDocument& bank,
+                      const juce::String& id,
+                      EditHistory* history = nullptr,
+                      TransportCommands* transport = nullptr);
 
 } // namespace pedalboard3::session
