@@ -66,6 +66,7 @@ set(PB3_TEST_SOURCES
     unit/ui/BrowserModel_test.cpp
     unit/ui/CardText_test.cpp
     unit/ui/Fonts_test.cpp
+    unit/ui/MenuLook_test.cpp
     # ui/Fonts and the LookAndFeel, the only UI sources the tests compile (UI
     # chrome U2): they need nothing but JUCE's graphics and the embedded fonts.
     ../src/ui/Fonts.cpp

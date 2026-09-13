@@ -72,6 +72,40 @@ public:
                      bool shouldDrawButtonAsHighlighted,
                      bool shouldDrawButtonAsDown) override;
 
+    // Menus and submenus, ComboBox lists included, as the mockup's .menu (UI
+    // chrome plan U3): a rounded panel with 5 px of padding, 30 px rows with a
+    // rounded bgSecondary highlight, ticks in a teal left gutter, the shortcut or
+    // format tag on the right in mono, and uppercase Barlow Condensed headers.
+    // A menu opened from a button is at least kMenuMinimumWidth wide and opens
+    // kMenuGap below it.
+    static constexpr int kMenuMinimumWidth = 208;
+    static constexpr int kMenuGap = 6;
+
+    int getPopupMenuBorderSize() override;
+    int getPopupMenuBorderSizeWithOptions(const juce::PopupMenu::Options&) override;
+    void drawPopupMenuBackgroundWithOptions(juce::Graphics&,
+                                            int width,
+                                            int height,
+                                            const juce::PopupMenu::Options&) override;
+    void drawPopupMenuItemWithOptions(juce::Graphics&,
+                                      const juce::Rectangle<int>& area,
+                                      bool isHighlighted,
+                                      const juce::PopupMenu::Item& item,
+                                      const juce::PopupMenu::Options&) override;
+    void drawPopupMenuSectionHeaderWithOptions(juce::Graphics&,
+                                               const juce::Rectangle<int>& area,
+                                               const juce::String& sectionName,
+                                               const juce::PopupMenu::Options&) override;
+    void getIdealPopupMenuItemSizeWithOptions(const juce::String& text,
+                                              bool isSeparator,
+                                              int standardMenuItemHeight,
+                                              int& idealWidth,
+                                              int& idealHeight,
+                                              const juce::PopupMenu::Options&) override;
+    juce::Font getPopupMenuFont() override;
+    void drawPopupMenuUpDownArrowWithOptions(
+        juce::Graphics&, int width, int height, bool isScrollUpArrow, const juce::PopupMenu::Options&) override;
+
     // The mockup's embedded fonts stand in for JUCE's default sans-serif and
     // monospaced fonts (UI chrome plan U2, KD1), so plain juce::FontOptions text
     // and stock JUCE components follow them. Bold is Barlow's SemiBold.

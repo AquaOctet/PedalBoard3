@@ -1,5 +1,6 @@
 #include "TransportBar.h"
 #include "FeatureSettingsWindows.h"
+#include "Pb3LookAndFeel.h"
 #include "PluginBrowser.h"
 #include "session/FeatureGate.h"
 
@@ -26,6 +27,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 
 #include <algorithm>
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -92,6 +94,33 @@ std::unique_ptr<juce::AudioProcessorGraph> buildTestToneGraph(juce::AudioDeviceM
     return graph;
 }
 
+// Opens `menu` under `button` as the mockup does (UI chrome U3): at least the
+// menu width, a small gap below the button, and the button tinted teal while
+// the menu is open. `onResult` gets the chosen item id, or 0 when dismissed.
+void showMenuBelow(juce::PopupMenu menu, juce::Button& button, std::function<void(int)> onResult = {})
+{
+    button.setColour(juce::TextButton::buttonColourId,
+                     tokens::bgCard.overlaidWith(tokens::accentPrimary.withAlpha(0.14f)));
+    button.setColour(juce::TextButton::textColourOffId, tokens::accentPrimary);
+    button.setColour(juce::ComboBox::outlineColourId, tokens::accentPrimary);
+
+    const auto below = button.getScreenBounds().withHeight(button.getHeight() + Pb3LookAndFeel::kMenuGap);
+    menu.showMenuAsync(
+        juce::PopupMenu::Options{}.withTargetComponent(button).withTargetScreenArea(below).withMinimumWidth(
+            Pb3LookAndFeel::kMenuMinimumWidth),
+        [safeButton = juce::Component::SafePointer<juce::Button>(&button), callback = std::move(onResult)](int result)
+        {
+            if (auto* opener = safeButton.getComponent())
+            {
+                opener->removeColour(juce::TextButton::buttonColourId);
+                opener->removeColour(juce::TextButton::textColourOffId);
+                opener->removeColour(juce::ComboBox::outlineColourId);
+            }
+            if (callback)
+                callback(result);
+        });
+}
+
 } // namespace
 
 TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas, FileActions& files)
@@ -107,8 +136,7 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas, FileActions& f
 
     fileButton_.onClick = [this] { openFileMenu(); };
     addPluginButton_.onClick = [this] { openAddPluginMenu(); };
-    settingsButton_.onClick = [this]
-    { makeSettingsMenu().showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(settingsButton_)); };
+    settingsButton_.onClick = [this] { showMenuBelow(makeSettingsMenu(), settingsButton_); };
     pluginsButton_.onClick = [this] { openPluginsMenu(); };
 
     settingsButton_.setTooltip(
@@ -295,42 +323,43 @@ juce::PopupMenu TransportBar::makePatchMenu()
 
 void TransportBar::openPatchMenu()
 {
-    makePatchMenu().showMenuAsync(
-        juce::PopupMenu::Options{}.withTargetComponent(patchButton_),
-        [this](int choice)
-        {
-            auto& doc = ctx_.bankDocument;
-            if (choice == 1)
-            {
-                session::Patch fresh;
-                fresh.name = "Patch " + juce::String(doc.size() + 1);
-                if (ctx_.features.isAvailable(session::Feature::Tempo))
-                    ctx_.preferences.applyNewPatchDefaults(fresh);
-                doc.select(doc.addPatch(std::move(fresh)));
-            }
-            else if (choice == 2)
-            {
-                doc.select(doc.duplicate(doc.activeIndex()));
-            }
-            else if (choice == 3)
-            {
-                promptRenamePatch();
-            }
-            else if (choice == 4)
-            {
-                confirmRemovePatch();
-            }
-            else if (choice >= kBoardFeatureBase &&
-                     choice < kBoardFeatureBase + static_cast<int>(session::kFeatureCount))
-            {
-                const auto feature = session::kAllFeatures[static_cast<std::size_t>(choice - kBoardFeatureBase)];
-                ctx_.features.setOnForBoard(feature, !ctx_.features.isOnForBoard(feature));
-            }
-            else if (choice >= kGoToPatchBase)
-            {
-                doc.select(choice - kGoToPatchBase);
-            }
-        });
+    showMenuBelow(makePatchMenu(),
+                  patchButton_,
+                  [this](int choice)
+                  {
+                      auto& doc = ctx_.bankDocument;
+                      if (choice == 1)
+                      {
+                          session::Patch fresh;
+                          fresh.name = "Patch " + juce::String(doc.size() + 1);
+                          if (ctx_.features.isAvailable(session::Feature::Tempo))
+                              ctx_.preferences.applyNewPatchDefaults(fresh);
+                          doc.select(doc.addPatch(std::move(fresh)));
+                      }
+                      else if (choice == 2)
+                      {
+                          doc.select(doc.duplicate(doc.activeIndex()));
+                      }
+                      else if (choice == 3)
+                      {
+                          promptRenamePatch();
+                      }
+                      else if (choice == 4)
+                      {
+                          confirmRemovePatch();
+                      }
+                      else if (choice >= kBoardFeatureBase &&
+                               choice < kBoardFeatureBase + static_cast<int>(session::kFeatureCount))
+                      {
+                          const auto feature =
+                              session::kAllFeatures[static_cast<std::size_t>(choice - kBoardFeatureBase)];
+                          ctx_.features.setOnForBoard(feature, !ctx_.features.isOnForBoard(feature));
+                      }
+                      else if (choice >= kGoToPatchBase)
+                      {
+                          doc.select(choice - kGoToPatchBase);
+                      }
+                  });
 }
 
 void TransportBar::promptRenamePatch()
@@ -397,7 +426,7 @@ void TransportBar::confirmRemovePatch()
 
 void TransportBar::openPluginsMenu()
 {
-    makePluginsMenu().showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(pluginsButton_));
+    showMenuBelow(makePluginsMenu(), pluginsButton_);
 }
 
 juce::PopupMenu TransportBar::makePluginsMenu()
@@ -447,41 +476,48 @@ juce::PopupMenu TransportBar::makeAddPluginMenu()
     // the heavyweight license/auth crashes that hit Current.vst3 and
     // Kontakt-class plugins during construction. See
     // PluginHost::getKnownEffects for the rationale.
-    const auto effects = ctx_.pluginHost.getKnownEffects();
-    const auto internals = ctx_.pluginHost.getInternalNodeTypes();
+    //
+    // The mockup's list (UI chrome U3): an Effects section, each plugin with its
+    // format on the right, then a Built-in section (the Metronome and Looper
+    // only while they're on). Items add through the browser's path, so they
+    // join its recents too.
+    const auto sections = browser::addPluginSections(browserEntries(ctx_));
 
     juce::PopupMenu menu;
+    menu.addSectionHeader("Effects");
 
-    // A disabled hint stands in when no effects are scanned — built-in nodes
-    // are still available below, so an empty plugin list must NOT block adding.
-    if (effects.isEmpty())
+    // A disabled hint stands in when no effects are scanned. The built-ins are
+    // still offered below, so an empty plugin list must NOT block adding.
+    if (sections.effects.empty())
     {
         const auto allKnown = ctx_.pluginHost.getKnownPlugins().size();
         menu.addItem(juce::PopupMenu::Item(allKnown > 0 ? "(All scanned plugins are instruments)"
-                                                        : "(No effects scanned — open Plugin List)")
+                                                        : "(No effects scanned: open Plugin List)")
                          .setEnabled(false));
     }
-    else
-    {
-        for (const auto& desc : effects)
-            menu.addItem(desc.name + "  [" + desc.pluginFormatName + "]",
-                         [this, desc] { ctx_.editHistory.addPlugin(desc); });
-    }
 
-    // Built-in nodes (Level, VU, ...) in their own submenu.
-    juce::PopupMenu internalMenu;
-    for (const auto& type : internals)
-        if (builtInAvailable(ctx_, type.typeId)) // the Metronome and Looper only while they're on
-            internalMenu.addItem(type.displayName,
-                                 [this, typeId = type.typeId]
-                                 { addBrowserEntry(ctx_, "internal:" + typeId, std::nullopt); });
-    menu.addSubMenu("Built-in", internalMenu);
+    const auto addEntries = [this, &menu](const std::vector<browser::Entry>& entries)
+    {
+        for (const auto& entry : entries)
+        {
+            juce::PopupMenu::Item item(entry.name);
+            item.shortcutKeyDescription = browser::formatTag(entry);
+            item.setAction([this, id = entry.id] { addBrowserEntry(ctx_, id, std::nullopt); });
+            menu.addItem(std::move(item));
+        }
+    };
+    addEntries(sections.effects);
+    if (!sections.builtIn.empty())
+    {
+        menu.addSectionHeader("Built-in");
+        addEntries(sections.builtIn);
+    }
     return menu;
 }
 
 void TransportBar::openAddPluginMenu()
 {
-    makeAddPluginMenu().showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(addPluginButton_));
+    showMenuBelow(makeAddPluginMenu(), addPluginButton_);
 }
 
 void TransportBar::openPluginList()
@@ -740,7 +776,7 @@ void TransportBar::rescanPlugins()
 
 void TransportBar::openFileMenu()
 {
-    makeFileMenu().showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(fileButton_));
+    showMenuBelow(makeFileMenu(), fileButton_);
 }
 
 juce::PopupMenu TransportBar::makeFileMenu(juce::ApplicationCommandManager* menuBarCommands)

@@ -10,6 +10,35 @@ namespace
 {
 constexpr float kButtonCornerRadius = 4.0f;
 constexpr float kTickBoxCornerRadius = 3.0f;
+
+// Menus (UI chrome U3), from the mockup's .menu.
+constexpr int kMenuBorder = 5; // the panel's padding
+constexpr float kMenuCornerRadius = 7.0f;
+constexpr float kMenuItemCornerRadius = 5.0f;
+constexpr int kMenuItemHeight = 30;
+constexpr int kMenuSeparatorHeight = 9;
+constexpr int kMenuHeaderHeight = 16; // JUCE adds half again: 24
+constexpr int kMenuItemPadding = 10;
+constexpr int kMenuGutter = 16;     // the tick or icon column
+constexpr int kMenuArrowWidth = 10; // the submenu marker
+constexpr int kMenuAccessoryGap = 16;
+constexpr int kMenuSeparatorInset = 6;
+constexpr float kMenuFontSize = 14.0f;
+constexpr float kMenuAccessorySize = 10.0f;
+constexpr float kMenuHeaderSize = 11.0f;
+// JUCE measures an item as its text, three spaces and its shortcut
+// (juce_PopupMenu.cpp, ItemComponent::getTextForMeasurement).
+constexpr const char* kMeasureSeparator = "   ";
+
+juce::Font menuAccessoryFont()
+{
+    return fonts::mono(kMenuAccessorySize);
+}
+
+juce::Font menuHeaderFont()
+{
+    return fonts::caption(kMenuHeaderSize);
+}
 } // namespace
 
 Pb3LookAndFeel::Pb3LookAndFeel()
@@ -60,12 +89,15 @@ Pb3LookAndFeel::Pb3LookAndFeel()
     setColour(juce::ComboBox::arrowColourId, tokens::fgMuted);
     setColour(juce::ComboBox::focusedOutlineColourId, tokens::accentPrimary);
 
-    // ----- PopupMenu --------------------------------------------------------
-    setColour(juce::PopupMenu::backgroundColourId, tokens::bgPopover);
-    setColour(juce::PopupMenu::textColourId, tokens::fgPrimary);
-    setColour(juce::PopupMenu::headerTextColourId, tokens::fgMuted);
-    setColour(juce::PopupMenu::highlightedBackgroundColourId, tokens::accentPrimary);
-    setColour(juce::PopupMenu::highlightedTextColourId, tokens::fgInverse);
+    // ----- PopupMenu (UI chrome U3) -----------------------------------------
+    // The background is a shade short of opaque, so JUCE gives menus a
+    // see-through window (juce_PopupMenu.cpp, MenuWindow) and the panel's
+    // rounded corners stay clear; drawPopupMenuBackgroundWithOptions paints it.
+    setColour(juce::PopupMenu::backgroundColourId, tokens::bgPopover.withAlpha(0.99f));
+    setColour(juce::PopupMenu::textColourId, tokens::fgMenu);
+    setColour(juce::PopupMenu::headerTextColourId, tokens::fgSubtle);
+    setColour(juce::PopupMenu::highlightedBackgroundColourId, tokens::bgSecondary);
+    setColour(juce::PopupMenu::highlightedTextColourId, tokens::fgPrimary);
 
     // ----- Slider (Audio Settings has these) -------------------------------
     setColour(juce::Slider::backgroundColourId, tokens::bgMuted);
@@ -118,6 +150,183 @@ juce::Typeface::Ptr Pb3LookAndFeel::getTypefaceForFont(const juce::Font& font)
     if (name == juce::Font::getDefaultMonospacedFontName())
         return fonts::monoTypeface(font.isBold() ? fonts::Weight::Medium : fonts::Weight::Regular);
     return juce::LookAndFeel_V4::getTypefaceForFont(font);
+}
+
+int Pb3LookAndFeel::getPopupMenuBorderSize()
+{
+    return kMenuBorder;
+}
+
+int Pb3LookAndFeel::getPopupMenuBorderSizeWithOptions(const juce::PopupMenu::Options&)
+{
+    return kMenuBorder;
+}
+
+juce::Font Pb3LookAndFeel::getPopupMenuFont()
+{
+    return fonts::ui(kMenuFontSize);
+}
+
+void Pb3LookAndFeel::drawPopupMenuBackgroundWithOptions(juce::Graphics& g,
+                                                        int width,
+                                                        int height,
+                                                        const juce::PopupMenu::Options&)
+{
+    const auto panel =
+        juce::Rectangle<float>(0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height)).reduced(0.5f);
+    g.setColour(tokens::bgPopover);
+    g.fillRoundedRectangle(panel, kMenuCornerRadius);
+    g.setColour(tokens::borderDefault);
+    g.drawRoundedRectangle(panel, kMenuCornerRadius, 1.0f);
+}
+
+void Pb3LookAndFeel::getIdealPopupMenuItemSizeWithOptions(const juce::String& text,
+                                                          bool isSeparator,
+                                                          int standardMenuItemHeight,
+                                                          int& idealWidth,
+                                                          int& idealHeight,
+                                                          const juce::PopupMenu::Options&)
+{
+    if (isSeparator)
+    {
+        idealWidth = 50;
+        idealHeight = kMenuSeparatorHeight;
+        return;
+    }
+
+    // JUCE measures a section header with a standard height of -1
+    // (juce_PopupMenu.cpp, HeaderItemComponent), then adds half again to the
+    // height and a quarter to the width.
+    if (standardMenuItemHeight < 0)
+    {
+        idealWidth =
+            kMenuItemPadding * 2 + juce::GlyphArrangement::getStringWidthInt(menuHeaderFont(), text.toUpperCase());
+        idealHeight = kMenuHeaderHeight;
+        return;
+    }
+
+    // Every item is a mockup row, ComboBox lists too. The width leaves room for
+    // the gutter, the submenu marker and the accessory in its own font.
+    const auto label = text.upToFirstOccurrenceOf(kMeasureSeparator, false, false);
+    const auto accessory = text.fromFirstOccurrenceOf(kMeasureSeparator, false, false).trim();
+    idealWidth = kMenuItemPadding * 2 + kMenuGutter + kMenuArrowWidth +
+                 juce::GlyphArrangement::getStringWidthInt(getPopupMenuFont(), label);
+    if (accessory.isNotEmpty())
+        idealWidth += kMenuAccessoryGap + juce::GlyphArrangement::getStringWidthInt(menuAccessoryFont(), accessory);
+    idealHeight = kMenuItemHeight;
+}
+
+void Pb3LookAndFeel::drawPopupMenuItemWithOptions(juce::Graphics& g,
+                                                  const juce::Rectangle<int>& area,
+                                                  bool isHighlighted,
+                                                  const juce::PopupMenu::Item& item,
+                                                  const juce::PopupMenu::Options& options)
+{
+    // An item spans the menu's whole width; the panel's padding is the border.
+    auto row = area.reduced(getPopupMenuBorderSizeWithOptions(options), 0);
+
+    if (item.isSeparator)
+    {
+        g.setColour(tokens::borderDefault);
+        g.fillRect(row.reduced(kMenuSeparatorInset, 0).withHeight(1).withY(row.getCentreY()));
+        return;
+    }
+
+    const bool highlighted = isHighlighted && item.isEnabled;
+    if (highlighted)
+    {
+        g.setColour(tokens::bgSecondary);
+        g.fillRoundedRectangle(row.toFloat(), kMenuItemCornerRadius);
+    }
+
+    auto textColour = highlighted ? tokens::fgPrimary : tokens::fgMenu;
+    if (item.colour != juce::Colour())
+        textColour = item.colour;
+    if (!item.isEnabled)
+        textColour = tokens::fgSubtle;
+
+    auto content = row.reduced(kMenuItemPadding, 0);
+
+    const auto gutter = content.removeFromLeft(kMenuGutter).toFloat();
+    if (item.image != nullptr)
+    {
+        item.image->drawWithin(g,
+                               gutter.reduced(1.0f),
+                               juce::RectanglePlacement::centred | juce::RectanglePlacement::onlyReduceInSize,
+                               1.0f);
+    }
+    else if (item.isTicked)
+    {
+        const auto tick = getTickShape(1.0f);
+        const juce::Rectangle<float> tickArea(gutter.getX(), gutter.getCentreY() - 5.0f, 10.0f, 10.0f);
+        g.setColour(item.isEnabled ? tokens::accentPrimary : tokens::fgSubtle);
+        g.fillPath(tick, tick.getTransformToScaleToFit(tickArea, true));
+    }
+
+    const bool hasSubMenu = item.subMenu != nullptr && (item.itemID == 0 || item.subMenu->getNumItems() > 0);
+    if (hasSubMenu)
+    {
+        // The mockup's ▸, drawn so it doesn't depend on the font.
+        const auto marker = content.removeFromRight(kMenuArrowWidth).toFloat();
+        const float markerWidth = 4.5f;
+        const float markerHeight = 7.0f;
+        const float x = marker.getRight() - markerWidth;
+        const float y = marker.getCentreY();
+        juce::Path path;
+        path.addTriangle(x, y - markerHeight * 0.5f, x + markerWidth, y, x, y + markerHeight * 0.5f);
+        g.setColour(highlighted ? tokens::fgPrimary : tokens::fgSubtle);
+        g.fillPath(path);
+        content.removeFromRight(4);
+    }
+
+    if (item.shortcutKeyDescription.isNotEmpty())
+    {
+        const auto font = menuAccessoryFont();
+        const int accessoryWidth = juce::GlyphArrangement::getStringWidthInt(font, item.shortcutKeyDescription) + 2;
+        g.setFont(font);
+        g.setColour(tokens::fgSubtle);
+        g.drawText(item.shortcutKeyDescription,
+                   content.removeFromRight(accessoryWidth),
+                   juce::Justification::centredRight,
+                   false);
+        content.removeFromRight(kMenuAccessoryGap);
+    }
+
+    g.setFont(getPopupMenuFont());
+    g.setColour(textColour);
+    g.drawFittedText(item.text, content, juce::Justification::centredLeft, 1);
+}
+
+void Pb3LookAndFeel::drawPopupMenuSectionHeaderWithOptions(juce::Graphics& g,
+                                                           const juce::Rectangle<int>& area,
+                                                           const juce::String& sectionName,
+                                                           const juce::PopupMenu::Options&)
+{
+    // JUCE has already inset the area by the border. The mockup's padding: 10 at
+    // the sides and 3 below, the text sitting on the bottom.
+    g.setFont(menuHeaderFont());
+    g.setColour(tokens::fgSubtle);
+    g.drawFittedText(sectionName.toUpperCase(),
+                     area.reduced(kMenuItemPadding, 0).withTrimmedBottom(3),
+                     juce::Justification::bottomLeft,
+                     1);
+}
+
+void Pb3LookAndFeel::drawPopupMenuUpDownArrowWithOptions(
+    juce::Graphics& g, int width, int height, bool isScrollUpArrow, const juce::PopupMenu::Options&)
+{
+    const auto w = static_cast<float>(width);
+    const auto h = static_cast<float>(height);
+    g.setColour(tokens::bgPopover);
+    g.fillRect(1.0f, 1.0f, w - 2.0f, h - 2.0f);
+
+    const float halfWidth = h * 0.25f;
+    const float y1 = h * (isScrollUpArrow ? 0.6f : 0.4f);
+    const float y2 = h * (isScrollUpArrow ? 0.4f : 0.6f);
+    juce::Path path;
+    path.addTriangle(w * 0.5f - halfWidth, y1, w * 0.5f + halfWidth, y1, w * 0.5f, y2);
+    g.setColour(tokens::fgSubtle);
+    g.fillPath(path);
 }
 
 void Pb3LookAndFeel::drawButtonBackground(juce::Graphics& g,
