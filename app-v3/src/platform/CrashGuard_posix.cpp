@@ -17,6 +17,10 @@ namespace pedalboard3::platform
 namespace
 {
 
+// `struct sigaction` by another name, so its declarations format the same
+// with every clang-format version.
+using SigAction = struct sigaction;
+
 constexpr std::array<int, 4> kSignals{SIGSEGV, SIGBUS, SIGFPE, SIGILL};
 
 // Room for the handler after a stack overflow has used up the thread's stack.
@@ -24,7 +28,7 @@ constexpr std::size_t kAltStackBytes = 64 * 1024;
 
 // The handlers that were there before ours, one per signal: a fault outside a
 // guarded call goes to them.
-std::array<struct sigaction, kSignals.size()> previousHandlers{};
+std::array<SigAction, kSignals.size()> previousHandlers{};
 
 // One per thread. Everything guardedCall needs after the jump lives here rather
 // than in its locals, which a longjmp may clobber.
@@ -65,7 +69,7 @@ void passOn(int sig, siginfo_t* info, void* ucontext)
         previous.sa_handler(sig);
     }
 
-    struct sigaction fallback{};
+    SigAction fallback{};
     fallback.sa_handler = SIG_DFL;
     sigemptyset(&fallback.sa_mask);
     sigaction(sig, &fallback, nullptr);
@@ -84,7 +88,7 @@ void onFault(int sig, siginfo_t* info, void* ucontext)
     passOn(sig, info, ucontext);
 }
 
-bool isOurs(const struct sigaction& action) noexcept
+bool isOurs(const SigAction& action) noexcept
 {
     return (action.sa_flags & SA_SIGINFO) != 0 && action.sa_sigaction == &onFault;
 }
@@ -144,11 +148,11 @@ void installCrashGuard() noexcept
 {
     for (std::size_t i = 0; i < kSignals.size(); ++i)
     {
-        struct sigaction current{};
+        SigAction current{};
         if (sigaction(kSignals[i], nullptr, &current) == 0 && isOurs(current))
             continue;
 
-        struct sigaction ours{};
+        SigAction ours{};
         ours.sa_sigaction = &onFault;
         sigemptyset(&ours.sa_mask);
         // On the alternate stack, so a stack overflow can still be handled; and

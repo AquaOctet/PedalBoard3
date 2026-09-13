@@ -168,6 +168,10 @@ TEST_CASE("CrashGuard: a stack overflow is caught, and so is the next one (Windo
 #if JUCE_LINUX
 namespace
 {
+// `struct sigaction` by another name, so its declarations format the same
+// with every clang-format version.
+using SigAction = struct sigaction;
+
 sigjmp_buf previousJump;
 volatile sig_atomic_t previousHandlerRan = 0;
 
@@ -192,11 +196,11 @@ bool crashOutsideTheGuard()
 TEST_CASE("CrashGuard: after a catch, a crash outside a guarded call still reaches the previous handler (Linux)",
           "[engine][crash-guard]")
 {
-    struct sigaction catchHandler{};
+    SigAction catchHandler{};
     sigaction(SIGSEGV, nullptr, &catchHandler);
 
     // A handler that was there before the guard, as a crash reporter would be.
-    struct sigaction previous{};
+    SigAction previous{};
     previous.sa_handler = previousHandler;
     sigemptyset(&previous.sa_mask);
     previous.sa_flags = SA_NODEFER;
