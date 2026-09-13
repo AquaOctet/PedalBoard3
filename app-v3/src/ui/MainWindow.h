@@ -47,6 +47,10 @@ public:
     // Save. App installs it and reverts the persisted session (KD7).
     std::function<void(bool discardUnsaved)> onQuitConfirmed;
 
+    // A settings file that couldn't be read was set aside at startup (M5 U7):
+    // say so, and offer the plugin scan that brings the plugin list back.
+    void offerRescanAfterReset(const juce::File& setAside);
+
 private:
     // The bank document changed (title) or the key mappings did (persist them).
     void changeListenerCallback(juce::ChangeBroadcaster*) override;

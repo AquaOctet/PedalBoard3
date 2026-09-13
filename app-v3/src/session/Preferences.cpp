@@ -1,4 +1,6 @@
 #include "Preferences.h"
+
+#include "AtomicFileWriter.h"
 #include "engine/TransportMath.h"
 
 namespace pedalboard3::session
@@ -44,24 +46,77 @@ std::unique_ptr<juce::XmlElement> readXml(const juce::PropertiesFile& f, const j
     return nullptr;
 }
 
+// Dirty values are saved this long after the last change, as JUCE's own
+// auto-save did.
+constexpr int kSaveDelayMs = 3000;
+
+// The settings as JUCE's PropertiesFile writes them (saveAsXml), so either can
+// read what the other wrote: one <VALUE name="..."> per key, holding its value
+// as XML when it is XML, else as a val="..." attribute.
+std::unique_ptr<juce::XmlElement> settingsXml(juce::PropertiesFile& store)
+{
+    auto doc = std::make_unique<juce::XmlElement>("PROPERTIES");
+    const auto& props = store.getAllProperties();
+    for (int i = 0; i < props.size(); ++i)
+    {
+        auto* value = doc->createNewChildElement("VALUE");
+        value->setAttribute("name", props.getAllKeys()[i]);
+        if (auto child = juce::parseXML(props.getAllValues()[i]))
+            value->addChildElement(child.release());
+        else
+            value->setAttribute("val", props.getAllValues()[i]);
+    }
+    return doc;
+}
+
 } // namespace
 
-Preferences::Preferences()
+Preferences::Preferences() : Preferences(makeOptions().getDefaultFile()) {}
+
+Preferences::Preferences(juce::File settingsFile) : file_(std::move(settingsFile))
 {
-    props_.setStorageParameters(makeOptions());
+    auto options = makeOptions();
+    // Saved only by flush(), through the atomic writer (M5 U7): JUCE never
+    // writes the file itself.
+    options.doNotSave = true;
+    options.millisecondsBeforeSaving = -1;
+
+    props_.file = std::make_unique<juce::PropertiesFile>(file_, options);
+    if (!props_.file->isValidFile())
+    {
+        // It's there, but it couldn't be read (M5 U7, plan KD8, AC-SE-24).
+        // Move it aside rather than let the next save overwrite it, start
+        // empty, and keep where it went so the app can say so.
+        props_.file.reset();
+        const auto aside = file_.getParentDirectory().getNonexistentChildFile(file_.getFileName(), ".corrupt", false);
+        if (file_.moveFileTo(aside) || file_.copyFileTo(aside))
+            setAside_ = aside;
+        props_.file = std::make_unique<juce::PropertiesFile>(file_, options);
+    }
+    props_.file->addChangeListener(this);
 }
 
 Preferences::~Preferences()
 {
-    // ApplicationProperties' destructor calls saveIfNeeded internally,
-    // but we still call flush() explicitly to keep behaviour identical
-    // whether or not App::shutdown ran cleanly.
+    stopTimer();
+    props_.file->removeChangeListener(this);
     flush();
 }
 
 juce::PropertiesFile* Preferences::getStore() noexcept
 {
     return props_.getUserSettings();
+}
+
+void Preferences::changeListenerCallback(juce::ChangeBroadcaster*)
+{
+    startTimer(kSaveDelayMs);
+}
+
+void Preferences::timerCallback()
+{
+    stopTimer();
+    flush();
 }
 
 std::unique_ptr<juce::XmlElement> Preferences::getAudioDeviceState()
@@ -473,7 +528,13 @@ void Preferences::setOscMulticastAddress(const juce::String& address)
 
 void Preferences::flush()
 {
-    props_.saveIfNeeded();
+    auto* store = props_.getUserSettings();
+    if (store == nullptr || !store->needsToBeSaved())
+        return;
+    // Atomic (M5 U2) and owner-only on POSIX (M5 U7, AC-SE-24): a crash
+    // mid-save leaves the old settings whole, and no other user can read them.
+    if (AtomicFileWriter::writeText(file_, settingsXml(*store)->toString(), {}, /*ownerOnly*/ true).wasOk())
+        store->setNeedsToBeSaved(false);
 }
 
 } // namespace pedalboard3::session

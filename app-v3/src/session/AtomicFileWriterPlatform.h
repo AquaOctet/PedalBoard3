@@ -14,6 +14,8 @@ bool replaceWriteThrough(const wchar_t* from, const wchar_t* to) noexcept;
 bool renameReplace(const char* from, const char* to) noexcept;
 // fsync the folder, so a rename in it survives a power cut.
 void syncDirectory(const char* folder) noexcept;
+// chmod 0600: readable and writable by the owner alone (M5 U7).
+void restrictToOwner(const char* path) noexcept;
 #endif
 
 } // namespace pedalboard3::session::atomicfile

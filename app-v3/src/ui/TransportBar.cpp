@@ -501,20 +501,32 @@ void TransportBar::openPluginList()
     auto& list = ctx_.pluginHost.getKnownPluginList();
     bool blacklistChanged = false;
 
-    const auto crashedFile = ctx_.pluginHost.getCrashedPluginsFile();
-    if (crashedFile.existsAsFile())
+    // Read strictly (M5 U7, plan KD8): a damaged list is reported and set aside,
+    // never half-applied, and JUCE's dialog below doesn't see it either.
+    const auto crashList = ctx_.pluginHost.readCrashList();
+    if (crashList.error.isNotEmpty())
     {
-        const auto contents = crashedFile.loadFileAsString();
-        for (const auto& line : juce::StringArray::fromLines(contents))
+        const auto crashedFile = ctx_.pluginHost.getCrashedPluginsFile();
+        const auto setAside =
+            crashedFile.getParentDirectory().getNonexistentChildFile(crashedFile.getFileName(), ".corrupt", false);
+        crashedFile.moveFileTo(setAside);
+        juce::AlertWindow::showAsync(juce::MessageBoxOptions{}
+                                         .withIconType(juce::MessageBoxIconType::WarningIcon)
+                                         .withTitle("Crash list couldn't be read")
+                                         .withMessage("The list of plugins that crashed a scan was damaged (" +
+                                                      crashList.error +
+                                                      "), so none of it was used. It has been "
+                                                      "set aside as \"" +
+                                                      setAside.getFileName() + "\".")
+                                         .withButton("OK"),
+                                     nullptr);
+    }
+    for (const auto& path : crashList.paths)
+    {
+        if (!list.getBlacklistedFiles().contains(path))
         {
-            const auto trimmed = line.trim();
-            if (trimmed.isEmpty())
-                continue;
-            if (!list.getBlacklistedFiles().contains(trimmed))
-            {
-                list.addToBlacklist(trimmed);
-                blacklistChanged = true;
-            }
+            list.addToBlacklist(path);
+            blacklistChanged = true;
         }
     }
 
