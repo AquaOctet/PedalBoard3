@@ -11,12 +11,13 @@
 #   ./build.ps1 build -Config release   # optimized       (RelWithDebInfo / windows-ci)
 #   ./build.ps1 test                 # build, then run the unit tests
 #   ./build.ps1 run                  # launch the built app
+#   ./build.ps1 snapshots            # render every menu and dialog to build/ui-snapshots
 #   ./build.ps1 configure            # configure only
 #   ./build.ps1 clean                # remove this config's build dir
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('build', 'configure', 'test', 'run', 'clean')]
+    [ValidateSet('build', 'configure', 'test', 'run', 'clean', 'snapshots')]
     [string]$Task = 'build',
 
     # 'debug' -> windows-dev (Debug, fast iteration; needs VS to run, which you have)
@@ -103,6 +104,14 @@ switch ($Task) {
             throw "Not built yet: $appExe  (run './build.ps1 build' first)"
         }
         & $appExe
+    }
+    'snapshots' {
+        # Every menu, dialog and alert, rendered to PNG through the app's own
+        # LookAndFeel: the UI chrome plan's before-and-after images (U1).
+        Invoke-Build
+        $tool = "$buildDir/src/pb3-ui-snapshots_artefacts/$cmakeConfig/pb3-ui-snapshots.exe"
+        & $tool 'build/ui-snapshots'
+        if ($LASTEXITCODE -ne 0) { throw "pb3-ui-snapshots failed ($LASTEXITCODE)" }
     }
     'clean' {
         if (Test-Path -LiteralPath $buildDir) { Remove-Item -Recurse -Force -LiteralPath $buildDir }

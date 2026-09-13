@@ -62,10 +62,15 @@ private:
 
 } // namespace
 
+std::unique_ptr<juce::Component> makeAboutPanel()
+{
+    return std::make_unique<AboutPanel>();
+}
+
 void showAboutWindow()
 {
     juce::DialogWindow::LaunchOptions options;
-    options.content.setOwned(new AboutPanel());
+    options.content.setOwned(makeAboutPanel().release());
     options.dialogTitle = "About Pedalboard 3";
     options.dialogBackgroundColour = tokens::bgPopover;
     options.escapeKeyTriggersCloseButton = true;

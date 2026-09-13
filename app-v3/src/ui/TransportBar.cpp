@@ -259,7 +259,7 @@ void TransportBar::refreshPatchStrip()
     nextPatchButton_.setEnabled(count > 1);
 }
 
-void TransportBar::openPatchMenu()
+juce::PopupMenu TransportBar::makePatchMenu()
 {
     const auto& bank = ctx_.bankDocument.bank();
 
@@ -290,43 +290,47 @@ void TransportBar::openPatchMenu()
         }
     if (!anyEnabled)
         menu.addItem(juce::PopupMenu::Item("Features you turn on in Settings appear here").setEnabled(false));
+    return menu;
+}
 
-    menu.showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(patchButton_),
-                       [this](int choice)
-                       {
-                           auto& doc = ctx_.bankDocument;
-                           if (choice == 1)
-                           {
-                               session::Patch fresh;
-                               fresh.name = "Patch " + juce::String(doc.size() + 1);
-                               if (ctx_.features.isAvailable(session::Feature::Tempo))
-                                   ctx_.preferences.applyNewPatchDefaults(fresh);
-                               doc.select(doc.addPatch(std::move(fresh)));
-                           }
-                           else if (choice == 2)
-                           {
-                               doc.select(doc.duplicate(doc.activeIndex()));
-                           }
-                           else if (choice == 3)
-                           {
-                               promptRenamePatch();
-                           }
-                           else if (choice == 4)
-                           {
-                               confirmRemovePatch();
-                           }
-                           else if (choice >= kBoardFeatureBase &&
-                                    choice < kBoardFeatureBase + static_cast<int>(session::kFeatureCount))
-                           {
-                               const auto feature =
-                                   session::kAllFeatures[static_cast<std::size_t>(choice - kBoardFeatureBase)];
-                               ctx_.features.setOnForBoard(feature, !ctx_.features.isOnForBoard(feature));
-                           }
-                           else if (choice >= kGoToPatchBase)
-                           {
-                               doc.select(choice - kGoToPatchBase);
-                           }
-                       });
+void TransportBar::openPatchMenu()
+{
+    makePatchMenu().showMenuAsync(
+        juce::PopupMenu::Options{}.withTargetComponent(patchButton_),
+        [this](int choice)
+        {
+            auto& doc = ctx_.bankDocument;
+            if (choice == 1)
+            {
+                session::Patch fresh;
+                fresh.name = "Patch " + juce::String(doc.size() + 1);
+                if (ctx_.features.isAvailable(session::Feature::Tempo))
+                    ctx_.preferences.applyNewPatchDefaults(fresh);
+                doc.select(doc.addPatch(std::move(fresh)));
+            }
+            else if (choice == 2)
+            {
+                doc.select(doc.duplicate(doc.activeIndex()));
+            }
+            else if (choice == 3)
+            {
+                promptRenamePatch();
+            }
+            else if (choice == 4)
+            {
+                confirmRemovePatch();
+            }
+            else if (choice >= kBoardFeatureBase &&
+                     choice < kBoardFeatureBase + static_cast<int>(session::kFeatureCount))
+            {
+                const auto feature = session::kAllFeatures[static_cast<std::size_t>(choice - kBoardFeatureBase)];
+                ctx_.features.setOnForBoard(feature, !ctx_.features.isOnForBoard(feature));
+            }
+            else if (choice >= kGoToPatchBase)
+            {
+                doc.select(choice - kGoToPatchBase);
+            }
+        });
 }
 
 void TransportBar::promptRenamePatch()

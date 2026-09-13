@@ -84,6 +84,9 @@ public:
     juce::PopupMenu makeFileMenu(juce::ApplicationCommandManager* menuBarCommands = nullptr);
     juce::PopupMenu makeSettingsMenu();
     juce::PopupMenu makePluginsMenu();
+    // The patch strip's menu: new, duplicate, rename, remove, go to a patch,
+    // and the board's feature switches.
+    juce::PopupMenu makePatchMenu();
 
 private:
     void changeListenerCallback(juce::ChangeBroadcaster*) override;
