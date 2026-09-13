@@ -21,21 +21,44 @@ struct Lines
     juce::String meta; // "VST3 · FabFilter", or the mapping count in place of the vendor
 };
 
-// The card's title: its custom name, else the plugin's; "Missing: <name>" while
-// the plugin is a pass-through placeholder (M5 U3).
+// The card's title: its custom name, else the plugin's. "Missing: <name>" while
+// the plugin is a pass-through placeholder (M5 U3); "Crashed: <name>" or
+// "Stopped: <name>" once it died while playing (M5 U5).
 inline juce::String titleFor(const session::Session::NodeSnapshot& node)
 {
+    using Death = session::Session::NodeSnapshot::Death;
     const auto name = node.customName.isNotEmpty() ? node.customName : node.name;
-    return node.isMissing() ? "Missing: " + name : name;
+    if (node.isMissing())
+        return "Missing: " + name;
+    if (node.death == Death::Crashed)
+        return "Crashed: " + name;
+    if (node.death == Death::Stalled)
+        return "Stopped: " + name;
+    return name;
 }
 
 inline Lines linesFor(const session::Session::NodeSnapshot& node, int mappingCount)
 {
+    using Death = session::Session::NodeSnapshot::Death;
     Lines lines;
     if (node.isMissing())
+    {
         lines.kind = node.missingReason; // why, and how to fix it (M5 U3)
+    }
+    else if (node.death == Death::Crashed)
+    {
+        // How it crashed, and what a click does (M5 U5).
+        const auto fault = node.fault.isNotEmpty() ? node.fault : juce::String("crashed");
+        lines.kind = fault.substring(0, 1).toUpperCase() + fault.substring(1) + kDot + "click to reload";
+    }
+    else if (node.death == Death::Stalled)
+    {
+        lines.kind = "Too slow for the audio block" + kDot + "click to restart";
+    }
     else
+    {
         lines.kind = node.builtIn ? juce::String("Built-in") : browser::chipForCategory(node.category);
+    }
     if (node.bypassed)
         lines.kind += kDot + "bypassed";
 

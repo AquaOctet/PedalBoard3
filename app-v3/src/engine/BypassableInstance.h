@@ -1,5 +1,7 @@
 #pragma once
 
+#include "platform/CrashGuard.h"
+
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include <atomic>
@@ -11,15 +13,22 @@ namespace pedalboard3::engine
 {
 
 // Wraps a hosted AudioProcessor with host-managed bypass, MIDI channel
-// filtering, and per-node CPU metering.
+// filtering, per-node CPU metering, a block-budget watchdog and the crash guard.
 //
-// Phase 1.A scope: the ramped bypass + MIDI filter + metering primitives.
-// Phase 1.B adds SEH (Windows) / signal (POSIX) guards around processBlock
-// and a 3-strikes block-budget watchdog, per plan Appendix A.2.
+// Crash guard (M5 U5, plan KD1 / KD2): every call that runs the hosted
+// processor's code (processBlock, prepareToPlay, get/setStateInformation) goes
+// through platform::guardedCall. A fault, or a C++ exception out of
+// processBlock or prepareToPlay, marks the instance crashed. From then on its
+// slot passes the input through, as if bypassed, so the rest of the chain keeps
+// playing; the block it crashed in is the input too, from the dry snapshot. A
+// crash can leave the plugin's locks held (its destructors never ran), so a
+// crashed hosted plugin is never called again, not even to be deleted: getting
+// it back means loading a fresh instance (Session::rearmNode).
 //
 // RT contract: processBlock does not allocate, lock, or perform I/O. The
-// per-instance ramp state and CPU counters live in value types owned by
-// this object; dry-buffer scratch is reserved in prepareToPlay.
+// per-instance ramp state and CPU counters live in value types owned by this
+// object; the dry snapshot and the MIDI filter's buffer are reserved in
+// prepareToPlay.
 //
 // Bypass ramp: ~20 ms linear fade between wet and dry, sample-rate aware.
 // At 48 kHz / 256-sample buffers that's a little over 4 blocks.
@@ -33,43 +42,63 @@ public:
     };
 
     explicit BypassableInstance(std::unique_ptr<juce::AudioProcessor> inner);
-    ~BypassableInstance() override = default;
+    ~BypassableInstance() override;
 
     // AudioProcessor ---------------------------------------------------------
-    const juce::String getName() const override { return inner_->getName(); }
+    // What the hosted processor says of itself is read once, here, so a crashed
+    // plugin is never asked again.
+    const juce::String getName() const override { return name_; }
 
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
-    void releaseResources() override { inner_->releaseResources(); }
+    void releaseResources() override;
 
     // The graph hands each node its play head every block. Pass it on, or the
     // hosted plugin never sees the transport (M6 U1).
     void setPlayHead(juce::AudioPlayHead* newPlayHead) override
     {
         juce::AudioProcessor::setPlayHead(newPlayHead);
-        inner_->setPlayHead(newPlayHead);
+        if (!hasCrashed())
+            inner_->setPlayHead(newPlayHead);
     }
 
     bool isBusesLayoutSupported(const BusesLayout& layouts) const override;
 
     void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) override;
 
-    bool acceptsMidi() const override { return inner_->acceptsMidi(); }
-    bool producesMidi() const override { return inner_->producesMidi(); }
-    bool isMidiEffect() const override { return inner_->isMidiEffect(); }
-    double getTailLengthSeconds() const override { return inner_->getTailLengthSeconds(); }
+    bool acceptsMidi() const override { return acceptsMidi_; }
+    bool producesMidi() const override { return producesMidi_; }
+    bool isMidiEffect() const override { return isMidiEffect_; }
+    double getTailLengthSeconds() const override { return hasCrashed() ? 0.0 : inner_->getTailLengthSeconds(); }
     int getLatencySamples(); // not override: we compute locally
 
-    juce::AudioProcessorEditor* createEditor() override { return inner_->createEditor(); }
-    bool hasEditor() const override { return inner_->hasEditor(); }
+    juce::AudioProcessorEditor* createEditor() override { return hasCrashed() ? nullptr : inner_->createEditor(); }
+    bool hasEditor() const override { return !hasCrashed() && inner_->hasEditor(); }
 
-    int getNumPrograms() override { return inner_->getNumPrograms(); }
-    int getCurrentProgram() override { return inner_->getCurrentProgram(); }
-    void setCurrentProgram(int i) override { inner_->setCurrentProgram(i); }
-    const juce::String getProgramName(int i) override { return inner_->getProgramName(i); }
-    void changeProgramName(int i, const juce::String& n) override { inner_->changeProgramName(i, n); }
+    int getNumPrograms() override { return hasCrashed() ? 1 : inner_->getNumPrograms(); }
+    int getCurrentProgram() override { return hasCrashed() ? 0 : inner_->getCurrentProgram(); }
+    void setCurrentProgram(int i) override
+    {
+        if (!hasCrashed())
+            inner_->setCurrentProgram(i);
+    }
+    const juce::String getProgramName(int i) override
+    {
+        return hasCrashed() ? juce::String() : inner_->getProgramName(i);
+    }
+    void changeProgramName(int i, const juce::String& n) override
+    {
+        if (!hasCrashed())
+            inner_->changeProgramName(i, n);
+    }
 
-    void getStateInformation(juce::MemoryBlock& m) override { inner_->getStateInformation(m); }
-    void setStateInformation(const void* d, int s) override { inner_->setStateInformation(d, s); }
+    // The hosted processor's state, through the crash guard.
+    void getStateInformation(juce::MemoryBlock& m) override { captureState(m); }
+    void setStateInformation(const void* d, int s) override;
+
+    // Append the hosted processor's state to `out`, through the crash guard.
+    // False when it has crashed, crashes now or throws; `out` may then hold part
+    // of a state, so capture into a fresh block.
+    bool captureState(juce::MemoryBlock& out);
 
     // Public controls --------------------------------------------------------
 
@@ -94,10 +123,9 @@ public:
     //
     // Measures how long each call into the hosted processor takes. If it
     // exceeds `blockBudgetNanos_` three times in a row, the instance is
-    // marked "dead": subsequent processBlock calls output silence without
-    // invoking the hosted processor at all. A healthy (under-budget) block
-    // resets the overrun counter. The Phase 1.B SEH/signal guard lands on
-    // top of this and flips the same flag on a hard fault.
+    // marked "dead": its slot passes the input through (M5 U5, plan KD2)
+    // without invoking the hosted processor at all. A healthy (under-budget)
+    // block resets the overrun counter; clearDeath() brings a dead one back.
     //
     // Default budget in prepareToPlay is 75% of one block's wall-clock
     // time, so a plugin that eats the entire block is immediately over.
@@ -107,17 +135,36 @@ public:
     void setBlockBudgetNanos(std::uint64_t ns) noexcept;
     std::uint64_t getBlockBudgetNanos() const noexcept { return blockBudgetNanos_.load(std::memory_order_relaxed); }
 
+    // Dead: the watchdog stopped it, or it crashed.
     bool isDead() const noexcept { return dead_.load(std::memory_order_acquire); }
+    // Brings back a watchdog death. A crash stays: the plugin isn't called again.
     void clearDeath() noexcept;
+
+    // Crashed: the hosted processor faulted (or threw), for good. isDead() too.
+    bool hasCrashed() const noexcept { return crashed_.load(std::memory_order_acquire); }
+    platform::Fault getFault() const noexcept { return static_cast<platform::Fault>(fault_.load()); }
+
+    // How many instances have died (crashed, or stopped by the watchdog) in
+    // this process. The canvas polls it to know when a card needs another look.
+    static std::uint64_t deathCount() noexcept;
 
     static constexpr int kConsecutiveOverrunsToDie = 3;
 
 private:
     static constexpr double kRampSeconds = 0.020; // 20 ms linear bypass fade
+    static constexpr std::size_t kMidiReserveBytes = 4096;
+
+    void markCrashed(platform::Fault fault) noexcept;
+    void markDead() noexcept;
 
     std::unique_ptr<juce::AudioProcessor> inner_;
+    juce::String name_;
+    bool acceptsMidi_{false};
+    bool producesMidi_{false};
+    bool isMidiEffect_{false};
 
     juce::AudioBuffer<float> dryScratch_;
+    juce::MidiBuffer filtered_; // the MIDI channel filter's events; reserved in prepareToPlay
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> dryRamp_;
 
     std::atomic<bool> wantBypass_{false};
@@ -133,6 +180,10 @@ private:
     std::atomic<std::uint64_t> blockBudgetNanos_{std::numeric_limits<std::uint64_t>::max()};
     std::atomic<int> consecutiveOverruns_{0};
     std::atomic<bool> dead_{false};
+
+    // Crash guard state (M5 U5).
+    std::atomic<bool> crashed_{false};
+    std::atomic<int> fault_{0};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BypassableInstance)
 };

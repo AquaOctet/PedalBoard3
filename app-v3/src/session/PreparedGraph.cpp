@@ -3,6 +3,7 @@
 #include "engine/BypassableInstance.h"
 #include "engine/PluginHost.h"
 #include "engine/processors/MissingPluginProcessor.h"
+#include "platform/CrashGuard.h"
 
 #include <algorithm>
 
@@ -50,6 +51,26 @@ bool hasPluginIdentity(const PatchNode& node) noexcept
     return d.name.isNotEmpty() || d.uniqueId != 0 || d.deprecatedUid != 0 || d.fileOrIdentifier.isNotEmpty();
 }
 
+// setStateInformation as the crash guard takes it: a C++ exception out of the
+// plugin is caught here, below the guard.
+struct SetStateCall
+{
+    juce::AudioProcessor* processor;
+    const juce::MemoryBlock* state;
+    bool threw;
+    void operator()() noexcept
+    {
+        try
+        {
+            processor->setStateInformation(state->getData(), static_cast<int>(state->getSize()));
+        }
+        catch (...)
+        {
+            threw = true;
+        }
+    }
+};
+
 } // namespace
 
 PluginBuild pluginOrPlaceholder(std::unique_ptr<juce::AudioProcessor> loaded,
@@ -69,16 +90,24 @@ PluginBuild pluginOrPlaceholder(std::unique_ptr<juce::AudioProcessor> loaded,
     if (loaded == nullptr)
         return placeholder(missingreason::failedToLoad(loadError));
 
-    // The saved state (knob settings) before prepareToPlay. A plugin that
-    // rejects a stale blob quietly starts at its defaults; one that throws
-    // becomes a placeholder that keeps the blob, so a save doesn't lose it.
+    // The saved state (knob settings) before prepareToPlay, through the crash
+    // guard (M5 U5). A plugin that rejects a stale blob quietly starts at its
+    // defaults; one that throws or crashes becomes a placeholder that keeps the
+    // blob, so a save doesn't lose it.
     if (node.state.getSize() > 0)
     {
-        try
+        SetStateCall call{loaded.get(), &node.state, false};
+        if (const auto fault = platform::guarded(call); fault != platform::Fault::None)
         {
-            loaded->setStateInformation(node.state.getData(), static_cast<int>(node.state.getSize()));
+            // A crash can leave a plugin's locks held, so it's never touched
+            // again, not even to be deleted.
+            if (dynamic_cast<juce::AudioPluginInstance*>(loaded.get()) != nullptr)
+                (void)loaded.release();
+            else
+                loaded.reset();
+            return placeholder(missingreason::crashedLoading(platform::faultName(fault)));
         }
-        catch (...)
+        if (call.threw)
         {
             loaded.reset();
             return placeholder(missingreason::settingsFailed());

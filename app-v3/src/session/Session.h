@@ -102,6 +102,19 @@ public:
         juce::String missingReason;
         bool isMissing() const noexcept { return missingReason.isNotEmpty(); }
 
+        // Whether the plugin died while playing (M5 U5): it crashed (`fault` says
+        // how), or the watchdog stopped it for running too slowly. Its slot
+        // passes audio through; a click on the card brings it back (rearmNode).
+        enum class Death
+        {
+            None,
+            Stalled,
+            Crashed
+        };
+        Death death{Death::None};
+        juce::String fault;
+        bool isDead() const noexcept { return death != Death::None; }
+
         // Canvas position (NaN = unpositioned → SignalCanvas auto-lays-out).
         float x{std::numeric_limits<float>::quiet_NaN()};
         float y{std::numeric_limits<float>::quiet_NaN()};
@@ -164,6 +177,13 @@ public:
     void removeNode(NodeId);
     void moveNode(NodeId, int newIndex);
     void setNodeBypass(NodeId, bool);
+
+    // Bring back a node whose plugin died (M5 U5). A watchdog stop is cleared in
+    // place. A crashed plugin is replaced by a freshly loaded instance with its
+    // settings and wiring, as undoing its removal would (a crash can leave the
+    // old one's locks held, so it's never called again); this isn't an undoable
+    // edit. Same guards as setNodeBypass; a no-op for a node that's alive.
+    void rearmNode(NodeId);
     void setNodeCustomName(NodeId, juce::String);
 
     // ---- Undo support (finish pass U7, EditHistory) ------------------------

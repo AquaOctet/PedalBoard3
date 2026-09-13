@@ -98,3 +98,21 @@ TEST_CASE("CardText: a missing plugin's card says Missing, and why (M5 U3)", "[u
     missing.customName = "Mix EQ";
     REQUIRE(ui::card::titleFor(missing) == "Missing: Mix EQ");
 }
+
+TEST_CASE("CardText: a plugin that died says Crashed or Stopped, and what a click does (M5 U5)", "[ui][card]")
+{
+    using Death = session::Session::NodeSnapshot::Death;
+
+    auto crashed = pluginNode();
+    crashed.death = Death::Crashed;
+    crashed.fault = "access violation";
+    REQUIRE(crashed.isDead());
+    REQUIRE(ui::card::titleFor(crashed) == "Crashed: Pro-Q 3");
+    REQUIRE(ui::card::linesFor(crashed, 0).kind == "Access violation" + ui::card::kDot + "click to reload");
+
+    auto stalled = pluginNode();
+    stalled.death = Death::Stalled;
+    REQUIRE(ui::card::titleFor(stalled) == "Stopped: Pro-Q 3");
+    REQUIRE(ui::card::linesFor(stalled, 0).kind ==
+            "Too slow for the audio block" + ui::card::kDot + "click to restart");
+}

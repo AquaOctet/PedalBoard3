@@ -3,6 +3,7 @@
 #include "CanvasLayout.h"
 #include "ColourScheme.h"
 #include "control/MidiMapping.h"
+#include "engine/BypassableInstance.h"
 #include "engine/PluginHost.h"
 #include "engine/processors/FilePlayerProcessor.h"
 #include "engine/processors/VuMeterProcessor.h"
@@ -121,6 +122,11 @@ void SignalCanvas::changeListenerCallback(juce::ChangeBroadcaster*)
         if (s.bypassed)
             bypassedNodes_.insert(s.id);
 
+    // A crashed plugin is never called again (M5 U5): its editor closes.
+    for (const auto& s : snaps)
+        if (s.death == session::Session::NodeSnapshot::Death::Crashed)
+            closeEditorsFor(s.id);
+
     // Build new cards_ in snap order, reusing existing PluginCards by
     // NodeId so visual state survives reorder/bypass.
     std::unordered_map<NodeId, std::size_t> oldIndex;
@@ -213,6 +219,7 @@ std::unique_ptr<PluginCard> SignalCanvas::makeCard(const PluginCard::NodeSnapsho
         [this](NodeId id) { setSelectedNode(id); },
         // In-place rename goes through the edit history, so it can be undone (U8).
         [this](NodeId id, juce::String name) { ctx_.editHistory.setNodeCustomName(id, std::move(name)); },
+        [this](NodeId id) { onCardRearm(id); },
     };
     auto card = std::make_unique<PluginCard>(s, std::move(cb));
     // A built-in processor's control row (M6 U5): Output Toggle's switch, and
@@ -524,6 +531,14 @@ void SignalCanvas::onCardRemove(NodeId id)
     ctx_.editHistory.removeNode(id);
 }
 
+void SignalCanvas::onCardRearm(NodeId id)
+{
+    // A crashed plugin comes back as a fresh instance (M5 U5); its windows close
+    // first, as for a remove.
+    closeEditorsFor(id);
+    ctx_.session.rearmNode(id);
+}
+
 void SignalCanvas::closeEditorsFor(NodeId id)
 {
     // CALLER-MANAGED EDITOR LIFECYCLE (D1b / AC-UI-P): close any open
@@ -810,6 +825,14 @@ void SignalCanvas::timerCallback()
     // after clearPatch publishes Building).
     const bool idle = ctx_.session.getState() == session::Session::State::Idle;
     const auto now = juce::Time::getMillisecondCounterHiRes();
+
+    // A plugin died on the audio thread (M5 U5), which sends no change message:
+    // look at the cards again so its card says so.
+    if (idle && engine::BypassableInstance::deathCount() != lastDeathCount_)
+    {
+        lastDeathCount_ = engine::BypassableInstance::deathCount();
+        changeListenerCallback(&ctx_.session);
+    }
     for (auto& card : cards_)
     {
         const auto id = card->getNodeId();

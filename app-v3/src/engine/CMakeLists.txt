@@ -103,3 +103,14 @@ pb3_apply_strict_warnings(pb3_engine_core
     processors/VuMeterProcessor.cpp
     processors/MissingPluginProcessor.cpp
 )
+
+# The crash guard's platform half (M5 U5, plan KD1): structured exception
+# handling on Windows, signals on Linux, and no guard on macOS.
+target_sources(pb3_engine_core PRIVATE ../platform/CrashGuard.h)
+if(WIN32)
+    target_sources(pb3_engine_core PRIVATE ../platform/CrashGuard_windows.cpp)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_sources(pb3_engine_core PRIVATE ../platform/CrashGuard_posix.cpp)
+else()
+    target_sources(pb3_engine_core PRIVATE ../platform/CrashGuard_none.cpp)
+endif()
