@@ -83,3 +83,18 @@ TEST_CASE("CardText: the Looper's status is REC, PLAY or a dash", "[ui][card]")
     REQUIRE(looperStatus(false, true, false) == juce::String(juce::CharPointer_UTF8("\xe2\x80\x94")));
     REQUIRE(looperStatus(false, false, true) == juce::String(juce::CharPointer_UTF8("\xe2\x80\x94")));
 }
+
+TEST_CASE("CardText: a missing plugin's card says Missing, and why (M5 U3)", "[ui][card]")
+{
+    REQUIRE(ui::card::titleFor(pluginNode()) == "Pro-Q 3");
+
+    auto missing = pluginNode();
+    missing.missingReason = "Not found: install it, or scan for plugins";
+    REQUIRE(missing.isMissing());
+    REQUIRE(ui::card::titleFor(missing) == "Missing: Pro-Q 3");
+    REQUIRE(ui::card::linesFor(missing, 0).kind == missing.missingReason);
+    REQUIRE(ui::card::linesFor(missing, 0).meta == "VST3" + ui::card::kDot + "FabFilter");
+
+    missing.customName = "Mix EQ";
+    REQUIRE(ui::card::titleFor(missing) == "Missing: Mix EQ");
+}

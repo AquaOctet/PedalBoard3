@@ -98,6 +98,10 @@ public:
         juce::String format;       // PluginDescription::pluginFormatName
         juce::String vendor;       // PluginDescription::manufacturerName
 
+        // Why the plugin is a pass-through placeholder (M5 U3); empty when it loaded.
+        juce::String missingReason;
+        bool isMissing() const noexcept { return missingReason.isNotEmpty(); }
+
         // Canvas position (NaN = unpositioned → SignalCanvas auto-lays-out).
         float x{std::numeric_limits<float>::quiet_NaN()};
         float y{std::numeric_limits<float>::quiet_NaN()};

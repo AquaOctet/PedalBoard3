@@ -157,12 +157,14 @@ void PluginCard::setMeterLevels(float left, float right)
 void PluginCard::refreshButtons()
 {
     // BYP lights amber while bypassed. ED is for plugins (built-ins have no
-    // editor); M is for everything but the VU Meter, which has nothing to map.
+    // editor, nor does a missing plugin); M is for everything but the VU Meter,
+    // which has nothing to map.
     bypassButton_.setColour(juce::TextButton::buttonColourId,
                             snapshot_.bypassed ? tokens::accentWarning.withAlpha(0.18f) : tokens::bgSecondary);
     bypassButton_.setColour(juce::TextButton::textColourOffId,
                             snapshot_.bypassed ? tokens::accentWarning : tokens::fgPrimary);
-    editButton_.setVisible(!snapshot_.builtIn || hasProcessorEditor(snapshot_.internalType));
+    editButton_.setVisible(!snapshot_.isMissing() &&
+                           (!snapshot_.builtIn || hasProcessorEditor(snapshot_.internalType)));
     mappingsButton_.setVisible(!isVuMeter());
     removeButton_.setVisible(hovered_);
 }
@@ -215,13 +217,16 @@ void PluginCard::paint(juce::Graphics& g)
         for (int row = 0; row < 3; ++row)
             g.fillEllipse(10.0f + 4.0f * static_cast<float>(col), 11.0f + 4.5f * static_cast<float>(row), 2.0f, 2.0f);
 
-    // The name, struck through while bypassed (hidden while it's being edited).
+    // The name, struck through while bypassed (hidden while it's being edited),
+    // and red with "Missing: " while the plugin is a placeholder (M5 U3).
     if (renameEditor_ == nullptr)
     {
-        const auto name = displayName();
+        const auto name = card::titleFor(snapshot_);
         const auto font = nameFont();
         g.setFont(font);
-        g.setColour(snapshot_.bypassed ? tokens::fgMuted : tokens::fgPrimary);
+        g.setColour(snapshot_.isMissing() ? tokens::accentDestructive
+                    : snapshot_.bypassed  ? tokens::fgMuted
+                                          : tokens::fgPrimary);
         g.drawText(name, nameArea_, juce::Justification::centredLeft, true);
         if (snapshot_.bypassed)
         {

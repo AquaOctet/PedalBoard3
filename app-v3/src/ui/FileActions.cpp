@@ -182,10 +182,14 @@ void FileActions::openFile(const juce::File& file)
 
 void FileActions::loadIntoDocument(session::PatchBank bank, const juce::File& file)
 {
-    // Every slot is one switch away from live, so unsafe nodes go before any
-    // patch can (see session::dropUnsafeNodes). Editors close through
-    // BankDocument::beforeSwap before the swap destroys the live instances,
-    // and TransportBar clears Test Tone when the swap re-enables live capture.
+    // Every slot is one switch away from live, so before any patch can go live
+    // its plugins are found in the scanned list by ID (M5 U3: one that isn't
+    // there becomes a pass-through placeholder whose card says Missing), then
+    // what can't be built at all goes (see session::dropUnsafeNodes). Editors
+    // close through BankDocument::beforeSwap before the swap destroys the live
+    // instances, and TransportBar clears Test Tone when the swap re-enables live
+    // capture.
+    session::resolvePluginNodes(bank, ctx_.pluginHost);
     session::dropUnsafeNodes(bank, ctx_.pluginHost);
     ctx_.bankDocument.loadBank(std::move(bank), file);
 }

@@ -38,6 +38,16 @@ struct PatchNode
     juce::PluginDescription desc;
     juce::String internalType;
 
+    // A path from an older board's <IDENTITY file=...> (M5 U3, plan KD3). It only
+    // picks between equal matches in PluginHost::resolve; it's never opened, and
+    // never saved.
+    juce::String fileHint;
+
+    // Why this plugin is a pass-through placeholder, or empty when it loads (M5
+    // U3, plan KD4): set by resolvePluginNodes, or by the build when the plugin
+    // fails to load. Never saved.
+    juce::String missingReason;
+
     bool bypass{false};
     juce::String customName;
 
@@ -144,13 +154,13 @@ enum class PatchValidation
 // before handing a deserialised patch to Session.
 PatchValidation validatePatch(const Patch&) noexcept;
 
-// Concatenate every PatchNode's pluginFormatName + fileOrIdentifier
+// Concatenate every PatchNode's format, unique id and name (a built-in's type)
 // into a stable identity string suitable for hashing into the
 // crash-loop marker. Order-sensitive (matches the user's chain shape).
 juce::String patchIdentityString(const Patch&);
 
 // Patch <-> XML. Produces a <PATCH> element carrying NODES (each with an
-// <IDENTITY> and, when non-empty, a base64 <STATE>), CONNECTIONS, and — when
+// <IDENTITY>, by ID and never a path (M5 U3), and, when non-empty, a base64 <STATE>), CONNECTIONS, and — when
 // any exist — a <MAPPINGS> child of <MIDI_MAP>/<OSC_MAP> entries (Phase 4).
 // Shared by Preferences (auto-restore) and PdlSerializer (.pdl files) so
 // both round-trip plugin state and control bindings identically. patchFromXml
@@ -158,11 +168,11 @@ juce::String patchIdentityString(const Patch&);
 // older files with no <MAPPINGS> load cleanly (empty mapping tables). A single
 // <MIDI_MAP> with an unknown source kind is dropped, not fatal — the rest of the
 // patch still loads. Returns nullptr only if the element is not a recognised
-// patch root or an <IDENTITY> fails to parse. Neither validates topology — call
+// patch root. Neither validates topology — call
 // validatePatch() afterwards.
 std::unique_ptr<juce::XmlElement> patchToXml(const Patch&);
-// patchFromXml refuses a patch over the limits above, or with a damaged
-// plugin identity or saved settings, and says why in `error`.
+// patchFromXml refuses a patch over the limits above, or with damaged saved
+// settings, and says why in `error`.
 std::unique_ptr<Patch> patchFromXml(const juce::XmlElement&, juce::String* error = nullptr);
 
 // The <MAPPINGS> element patchToXml/patchFromXml use, for any other owner of

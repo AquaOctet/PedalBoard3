@@ -992,3 +992,57 @@ TEST_CASE("Session: setTempo and setTimeSignature change the patch and the trans
     REQUIRE(s.getStateVersion() == settled);
     REQUIRE(s.getActivePatch().timeSigNumerator == 3);
 }
+
+TEST_CASE("Session: a plugin that isn't scanned loads as Missing, and its settings save back unchanged (M5 U3)",
+          "[session][missing]")
+{
+    engine::AudioEngine eng;
+    eng.initialise();
+    engine::PluginHost host;
+    session::Session s(eng, host); // production BuildFn
+
+    session::PatchNode level;
+    level.id = 1;
+    level.kind = session::NodeKind::Internal;
+    level.internalType = "LevelProcessor";
+    session::PatchNode gone;
+    gone.id = 2;
+    gone.desc.name = "Gone";
+    gone.desc.pluginFormatName = "VST3";
+    gone.desc.uniqueId = 0x600d;
+    const char bytes[] = {'\0', '\x01', 'o', 'l', 'd', '\x7f'};
+    gone.state.append(bytes, sizeof(bytes));
+
+    session::PatchBank bank;
+    bank.patches[0].nodes = {level, gone};
+    bank.patches[0].connections = session::linearChainConnections(bank.patches[0].nodes);
+    REQUIRE(session::resolvePluginNodes(bank, host) == 1);
+
+    s.replacePatch(bank.patches[0]);
+    pumpUntilIdle(s);
+    REQUIRE(s.getLastError().isEmpty());
+    REQUIRE(s.getNodeCount() == 2);
+    REQUIRE(s.getNodeSnapshots()[1].isMissing());
+    REQUIRE(s.getNodeSnapshots()[1].missingReason == session::missingreason::notFound());
+
+    // Saved back byte for byte, through the file format too.
+    const auto saved = s.getActivePatchWithState();
+    REQUIRE(saved.nodes[1].state == gone.state);
+    const auto reread = session::patchFromXml(*session::patchToXml(saved));
+    REQUIRE(reread != nullptr);
+    REQUIRE(reread->nodes[1].state == gone.state);
+    REQUIRE(reread->nodes[1].desc.uniqueId == 0x600d);
+
+    // Removed and put back (undo), it's still the placeholder with its settings.
+    const auto node = s.getNodeWithState(2);
+    REQUIRE(node.has_value());
+    const auto connections = s.getActivePatch().connections;
+    s.removeNode(2);
+    REQUIRE(s.getNodeCount() == 1);
+    s.restoreNode(*node, 1, connections);
+    pumpUntilIdle(s);
+    REQUIRE(s.getLastError().isEmpty());
+    REQUIRE(s.getNodeCount() == 2);
+    REQUIRE(s.getNodeSnapshots()[1].isMissing());
+    REQUIRE(s.getActivePatchWithState().nodes[1].state == gone.state);
+}

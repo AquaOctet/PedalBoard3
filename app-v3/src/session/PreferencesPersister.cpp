@@ -40,7 +40,8 @@ bool samePatch(const Patch& a, const Patch& b) noexcept
             return false;
         if (a.nodes[i].desc.pluginFormatName != b.nodes[i].desc.pluginFormatName)
             return false;
-        if (a.nodes[i].desc.fileOrIdentifier != b.nodes[i].desc.fileOrIdentifier)
+        // By ID and name (M5 U3): a plugin's path isn't part of a board.
+        if (a.nodes[i].desc.uniqueId != b.nodes[i].desc.uniqueId || a.nodes[i].desc.name != b.nodes[i].desc.name)
             return false;
         if (a.nodes[i].bypass != b.nodes[i].bypass)
             return false;

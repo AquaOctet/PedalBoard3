@@ -200,7 +200,7 @@ TEST_CASE("Patch: patchIdentityString is order-sensitive + stable", "[session][p
     p2.nodes.push_back(makeNode(100, "B"));
 
     // Same identity string regardless of NodeId values (identity is by
-    // pluginFormatName + fileOrIdentifier).
+    // format, unique id and name).
     REQUIRE(session::patchIdentityString(p1) == session::patchIdentityString(p2));
 
     session::Patch p3;
@@ -642,4 +642,57 @@ TEST_CASE("validatePatch: a 10,000-plugin chain passes without recursion, and a 
 
     p.connections.push_back({static_cast<session::NodeId>(session::kMaxNodesPerPatch), 0, 1, 0}); // back to the start
     REQUIRE(session::validatePatch(p) == session::PatchValidation::Cycle);
+}
+
+TEST_CASE("Patch: a plugin is saved by ID, with no path (M5 U3)", "[session][patch][xml][identity]")
+{
+    session::Patch p;
+    auto n = makeNode(1, "Comp");
+    n.desc.manufacturerName = "Acme";
+    n.desc.version = "1.2";
+    n.desc.category = "Fx|Dynamics";
+    n.desc.uniqueId = 0x1a2b3c4d;
+    n.desc.deprecatedUid = 0x55;
+    p.nodes.push_back(n);
+
+    const auto xml = session::patchToXml(p);
+    const auto* identity = xml->getChildByName("NODES")->getChildByName("NODE")->getChildByName("IDENTITY");
+    REQUIRE(identity != nullptr);
+    REQUIRE_FALSE(identity->hasAttribute("file"));
+    REQUIRE_FALSE(xml->toString().contains("/fake/"));
+
+    const auto rt = session::patchFromXml(*xml);
+    REQUIRE(rt != nullptr);
+    const auto& d = rt->nodes[0].desc;
+    REQUIRE(d.pluginFormatName == "VST3");
+    REQUIRE(d.name == "Comp");
+    REQUIRE(d.manufacturerName == "Acme");
+    REQUIRE(d.version == "1.2");
+    REQUIRE(d.category == "Fx|Dynamics");
+    REQUIRE(d.uniqueId == 0x1a2b3c4d);
+    REQUIRE(d.deprecatedUid == 0x55);
+    REQUIRE(d.fileOrIdentifier.isEmpty());
+    REQUIRE(rt->nodes[0].fileHint.isEmpty());
+}
+
+TEST_CASE("Patch: <IDENTITY> reads only its allowlist, and a path is at most a hint (M5 U3)",
+          "[session][patch][xml][identity][security]")
+{
+    const auto xml = juce::parseXML("<PATCH name=\"x\"><NODES><NODE id=\"1\">"
+                                    "<IDENTITY format=\"VST3\" name=\"C:\\Evil\\x.dll\" manufacturer=\"/bin/sh\""
+                                    " category=\"https://evil.example/x\" version=\"1.0\" uniqueId=\"beef\""
+                                    " file=\"/old/place/EQ.vst3\" descriptiveName=\"/etc/passwd\" fileTime=\"1\"/>"
+                                    "</NODE></NODES><CONNECTIONS/></PATCH>");
+    REQUIRE(xml != nullptr);
+    const auto p = session::patchFromXml(*xml);
+    REQUIRE(p != nullptr);
+    const auto& node = p->nodes[0];
+    REQUIRE(node.desc.name.isEmpty());
+    REQUIRE(node.desc.manufacturerName.isEmpty());
+    REQUIRE(node.desc.category.isEmpty());
+    REQUIRE(node.desc.descriptiveName.isEmpty());
+    REQUIRE(node.desc.version == "1.0");
+    REQUIRE(node.desc.uniqueId == 0xbeef);
+    REQUIRE(node.desc.fileOrIdentifier.isEmpty());
+    REQUIRE(node.fileHint == "/old/place/EQ.vst3");
 }

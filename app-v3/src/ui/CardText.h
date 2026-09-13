@@ -21,10 +21,21 @@ struct Lines
     juce::String meta; // "VST3 · FabFilter", or the mapping count in place of the vendor
 };
 
+// The card's title: its custom name, else the plugin's; "Missing: <name>" while
+// the plugin is a pass-through placeholder (M5 U3).
+inline juce::String titleFor(const session::Session::NodeSnapshot& node)
+{
+    const auto name = node.customName.isNotEmpty() ? node.customName : node.name;
+    return node.isMissing() ? "Missing: " + name : name;
+}
+
 inline Lines linesFor(const session::Session::NodeSnapshot& node, int mappingCount)
 {
     Lines lines;
-    lines.kind = node.builtIn ? juce::String("Built-in") : browser::chipForCategory(node.category);
+    if (node.isMissing())
+        lines.kind = node.missingReason; // why, and how to fix it (M5 U3)
+    else
+        lines.kind = node.builtIn ? juce::String("Built-in") : browser::chipForCategory(node.category);
     if (node.bypassed)
         lines.kind += kDot + "bypassed";
 

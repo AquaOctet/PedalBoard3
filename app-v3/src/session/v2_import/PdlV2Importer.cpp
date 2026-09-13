@@ -34,7 +34,7 @@ juce::PluginDescription descFromV2Plugin(const juce::XmlElement& pluginEl)
     d.pluginFormatName = pluginEl.getStringAttribute("format"); // e.g. "VST" (VST2)
     d.category = pluginEl.getStringAttribute("category");
     d.version = pluginEl.getStringAttribute("version");
-    d.fileOrIdentifier = pluginEl.getStringAttribute("file");
+    // The v2 path is never kept (M5 U3): FileActions finds the plugin by name.
     d.isInstrument = pluginEl.getIntAttribute("isInstrument", 0) != 0;
     d.numInputChannels = pluginEl.getIntAttribute("numInputs", 2);
     d.numOutputChannels = pluginEl.getIntAttribute("numOutputs", 2);

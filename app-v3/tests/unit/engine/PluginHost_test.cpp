@@ -230,6 +230,66 @@ TEST_CASE("PluginHost: isDescriptorSafeForChain gates instruments and blackliste
     REQUIRE_FALSE(host.isDescriptorSafeForChain(juce::PluginDescription{}));
 }
 
+TEST_CASE("PluginHost: resolve finds a board's plugin by format and ID, never by path (M5 U3)",
+          "[engine][plugin-host][restore]")
+{
+    engine::PluginHost host;
+    const auto eq = makeFakePluginDesc("FakeEQ", /*isInstrument*/ false);
+    host.getKnownPluginList().addType(eq);
+    host.getKnownPluginList().addType(makeFakePluginDesc("FakeVerb", /*isInstrument*/ false));
+
+    // By ID alone: a board has no path.
+    juce::PluginDescription saved;
+    saved.pluginFormatName = "VST3";
+    saved.uniqueId = eq.uniqueId;
+    const auto byId = host.resolve(saved);
+    REQUIRE(byId.has_value());
+    REQUIRE(byId->fileOrIdentifier == eq.fileOrIdentifier);
+
+    // By name and vendor when the ID changed (an update).
+    juce::PluginDescription updated;
+    updated.pluginFormatName = "VST3";
+    updated.name = "FakeEQ";
+    updated.manufacturerName = eq.manufacturerName;
+    updated.uniqueId = 42;
+    const auto byName = host.resolve(updated);
+    REQUIRE(byName.has_value());
+    REQUIRE(byName->name == "FakeEQ");
+
+    // Another format, or a plugin that isn't scanned: not found.
+    saved.pluginFormatName = "AudioUnit";
+    REQUIRE_FALSE(host.resolve(saved).has_value());
+    juce::PluginDescription gone;
+    gone.pluginFormatName = "VST3";
+    gone.name = "Gone";
+    gone.uniqueId = 7;
+    REQUIRE_FALSE(host.resolve(gone).has_value());
+
+    // A path alone finds nothing.
+    juce::PluginDescription pathOnly;
+    pathOnly.pluginFormatName = "VST3";
+    REQUIRE_FALSE(host.resolve(pathOnly, eq.fileOrIdentifier).has_value());
+}
+
+TEST_CASE("PluginHost: resolve uses an older board's path only to pick between equal matches",
+          "[engine][plugin-host][restore]")
+{
+    engine::PluginHost host;
+    auto first = makeFakePluginDesc("Twin", /*isInstrument*/ false);
+    first.fileOrIdentifier = "/a/Twin.vst3";
+    auto second = first;
+    second.fileOrIdentifier = "/b/Twin.vst3";
+    host.getKnownPluginList().addType(first);
+    host.getKnownPluginList().addType(second);
+
+    juce::PluginDescription saved;
+    saved.pluginFormatName = "VST3";
+    saved.name = "Twin";
+    saved.uniqueId = first.uniqueId;
+    REQUIRE(host.resolve(saved, "/b/Twin.vst3")->fileOrIdentifier == "/b/Twin.vst3");
+    REQUIRE(host.resolve(saved, "/a/Twin.vst3")->fileOrIdentifier == "/a/Twin.vst3");
+}
+
 TEST_CASE("PluginHost: getKnownEffects filters out PluginDescription::isInstrument", "[engine][plugin-host][effects]")
 {
     engine::PluginHost host;
