@@ -299,9 +299,8 @@ TEST_CASE("PluginHost: getKnownEffects filters out PluginDescription::isInstrume
     list.addType(makeFakePluginDesc("FakeSynth", /*isInstrument*/ true));
     list.addType(makeFakePluginDesc("FakeDelay", /*isInstrument*/ false));
 
-    // Three entries pre-listener: KnownPluginList::sendChangeMessage is async
-    // and tests don't pump a MessageManager loop, so the instrument-filter
-    // listener hasn't fired yet. getKnownEffects still filters at read time.
+    // All three stay in the known list (M5 U6: instruments are kept);
+    // getKnownEffects filters them at read time.
     const auto all = host.getKnownPlugins();
     REQUIRE(all.size() == 3);
 
@@ -314,49 +313,23 @@ TEST_CASE("PluginHost: getKnownEffects filters out PluginDescription::isInstrume
     }
 }
 
-TEST_CASE("PluginHost: ChangeListener strips instruments and blacklists their files", "[engine][plugin-host][effects]")
+TEST_CASE("PluginHost: instruments stay in the known list, out of the effect lists and off the blacklist (M5 U6)",
+          "[engine][plugin-host][effects]")
 {
     engine::PluginHost host;
 
     auto& list = host.getKnownPluginList();
     list.addType(makeFakePluginDesc("FakeReverb", /*isInstrument*/ false));
     list.addType(makeFakePluginDesc("FakeSynth", /*isInstrument*/ true));
-    list.addType(makeFakePluginDesc("FakeDelay", /*isInstrument*/ false));
+    list.sendSynchronousChangeMessage(); // what every scan path does
 
-    // Drive the listener synchronously. In production, the listener fires on
-    // the message loop tick after KnownPluginList::sendChangeMessage; here
-    // we bypass the loop. This is what the production app does on every
-    // scan path (subprocess scanner, juce::PluginListComponent's internal
-    // Scan button, scanDirectory, scanDefaultPaths, loadKnownList).
-    list.sendSynchronousChangeMessage();
+    // Kept, not swept into the blacklist as though it had crashed (plan KD8).
+    REQUIRE(host.getKnownPlugins().size() == 2);
+    REQUIRE(list.getBlacklistedFiles().isEmpty());
 
-    const auto remaining = host.getKnownPlugins();
-    REQUIRE(remaining.size() == 2);
-    for (const auto& d : remaining)
-        REQUIRE_FALSE(d.isInstrument);
-
-    REQUIRE(list.getBlacklistedFiles().contains("/fake/FakeSynth.vst3"));
-    REQUIRE_FALSE(list.getBlacklistedFiles().contains("/fake/FakeReverb.vst3"));
-    REQUIRE_FALSE(list.getBlacklistedFiles().contains("/fake/FakeDelay.vst3"));
-}
-
-TEST_CASE("PluginHost: ChangeListener is idempotent across repeated triggers", "[engine][plugin-host][effects]")
-{
-    engine::PluginHost host;
-
-    auto& list = host.getKnownPluginList();
-    list.addType(makeFakePluginDesc("Synth1", /*isInstrument*/ true));
-    list.addType(makeFakePluginDesc("Effect1", /*isInstrument*/ false));
-
-    list.sendSynchronousChangeMessage();
-    REQUIRE(host.getKnownPlugins().size() == 1);
-    REQUIRE(list.getBlacklistedFiles().contains("/fake/Synth1.vst3"));
-
-    // Firing the listener again with no instruments left must be a no-op
-    // -- not loop, not double-blacklist, not throw.
-    list.sendSynchronousChangeMessage();
-    REQUIRE(host.getKnownPlugins().size() == 1);
-    REQUIRE(list.getBlacklistedFiles().size() == 1);
+    // The pickers and the chain still leave it out.
+    REQUIRE(host.getKnownEffects().size() == 1);
+    REQUIRE_FALSE(host.isDescriptorSafeForChain(makeFakePluginDesc("FakeSynth", /*isInstrument*/ true)));
 }
 
 // -----------------------------------------------------------------------

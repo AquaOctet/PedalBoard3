@@ -11,7 +11,7 @@
 //
 // This binary is the subprocess. Usage:
 //
-//   pb3-scanner-helper <plugin-file-path>
+//   pb3-scanner-helper <plugin-file-path> [<result-file>]
 //
 // Behaviour:
 //   - Registers every JUCE-known plugin format (VST3 always, AudioUnit
@@ -20,13 +20,16 @@
 //     findAllTypesForFile(path) (engine/ScanInMessageLoop.h): on the
 //     message thread, except an AUv3, which JUCE only scans off it with a
 //     message loop running (#3).
-//   - Writes the resulting PluginDescriptions to stdout as a concatenated
-//     XML stream wrapped in <PB3_SCAN_RESULT>...</PB3_SCAN_RESULT>.
+//   - Writes the resulting PluginDescriptions as one line of XML wrapped in
+//     <PB3_SCAN_RESULT>...</PB3_SCAN_RESULT>, then the completion sentinel,
+//     to <result-file> (M5 U6, plan KD8: the parent starts the helper with no
+//     pipes, so nothing it or a plugin prints can block it). Without a result
+//     file, both go to stdout, for running it by hand.
 //   - Exits 0 on a clean scan (even if no descriptors were found —
 //     "this file isn't a recognisable plugin" is not a crash).
 //   - If the plugin crashes during scan, the OS terminates this helper
 //     with SIGSEGV / SIGABRT / SIGILL / etc. The parent observes the
-//     non-zero exit and treats the path as crashed (adds to blacklist).
+//     crash (a non-zero exit, or no sentinel) and blacklists the path.
 //
 // This file deliberately uses JUCE_CONSOLE_APPLICATION_MAIN so we don't
 // pull in any GUI dependency. Helper builds as a console binary that
@@ -40,6 +43,7 @@
 
 #include <cstdio>
 #include <iostream>
+#include <string>
 
 namespace
 {
@@ -49,9 +53,9 @@ constexpr int kExitUsage = 64; // EX_USAGE per sysexits.h
 
 int main(int argc, char** argv)
 {
-    if (argc != 2)
+    if (argc != 2 && argc != 3)
     {
-        std::fputs("Usage: pb3-scanner-helper <plugin-file-path>\n", stderr);
+        std::fputs("Usage: pb3-scanner-helper <plugin-file-path> [<result-file>]\n", stderr);
         return kExitUsage;
     }
 
@@ -61,7 +65,9 @@ int main(int argc, char** argv)
         std::fputs("pb3-scanner-helper: empty plugin path\n", stderr);
         return kExitUsage;
     }
+    const juce::String resultPath = argc == 3 ? juce::String(juce::CharPointer_UTF8(argv[2])) : juce::String();
 
+    std::string serialised;
     {
         // This thread is the message thread. For an AUv3 the scan runs a
         // message loop on it (engine/ScanInMessageLoop.h): an AUv3 is created
@@ -79,7 +85,7 @@ int main(int argc, char** argv)
         // findAllTypesForFile is the call that may crash inside the plugin's
         // own constructor (Current.vst3's MKURequestManager pure-virtual call,
         // etc). If it crashes, the OS kills this process with a signal, and
-        // the parent sees it in the exit code.
+        // the parent sees it.
         juce::OwnedArray<juce::PluginDescription> descriptions;
         pedalboard3::engine::scanFileInMessageLoop(formats.getFormats(), pluginPath, descriptions);
 
@@ -89,11 +95,7 @@ int main(int argc, char** argv)
             if (auto descXml = desc->createXml())
                 root.addChildElement(descXml.release());
         }
-
-        // Print the XML to stdout. The parent reads this stream verbatim
-        // and parses with juce::parseXML.
-        const auto serialised = root.toString(juce::XmlElement::TextFormat{}.singleLine());
-        std::cout << serialised.toStdString() << std::endl;
+        serialised = root.toString(juce::XmlElement::TextFormat{}.singleLine()).toStdString();
 
         // Block closes here: ScopedJuceInitialiser_GUI tears JUCE down, and
         // a plugin's lingering worker threads / static destructors often
@@ -103,9 +105,14 @@ int main(int argc, char** argv)
     }
 
     // Completion sentinel — the parent (PluginScanner::parseHelperOutput)
-    // refuses to trust the result without it, even on exit code 0. Printed
+    // refuses to trust the result without it, even on exit code 0. Written
     // only after JUCE teardown survived. Shared definition (no drift).
-    std::cout << pedalboard3::engine::kScanOkSentinel << std::endl;
+    const auto text = serialised + "\n" + pedalboard3::engine::kScanOkSentinel + "\n";
+    if (resultPath.isEmpty())
+        std::cout << text << std::flush;
+    else if (!juce::File(resultPath)
+                  .replaceWithText(juce::String::fromUTF8(text.data(), static_cast<int>(text.size()))))
+        return kExitUsage; // no result: the parent counts it as a crash, having nothing to trust
 
     return kExitOk;
 }

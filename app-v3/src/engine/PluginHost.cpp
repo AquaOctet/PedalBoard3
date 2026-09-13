@@ -15,48 +15,9 @@ namespace pedalboard3::engine
 PluginHost::PluginHost()
 {
     formats_.addDefaultFormats();
-
-    // Wire the instrument-filter listener BEFORE any code path can mutate
-    // knownList_. App::initialise calls loadKnownList right after PluginHost
-    // construction; that fires a change message and we sweep any saved
-    // instruments out of the persisted list on the very first launch after
-    // upgrade.
-    knownList_.addChangeListener(this);
 }
 
-PluginHost::~PluginHost()
-{
-    knownList_.removeChangeListener(this);
-}
-
-void PluginHost::changeListenerCallback(juce::ChangeBroadcaster* source)
-{
-    if (source != &knownList_ || sweepingInstruments_)
-        return;
-
-    const juce::ScopedWriteLock sl(listLock_);
-    sweepingInstruments_ = true;
-
-    // Snapshot getTypes() (returns juce::Array<PluginDescription> by value)
-    // so iteration stays stable while removeType mutates the live list.
-    // removeType matches by uniqueId; copying descriptors by value is cheap.
-    for (const auto& desc : knownList_.getTypes())
-    {
-        if (!desc.isInstrument)
-            continue;
-
-        knownList_.removeType(desc);
-
-        // Blacklist the file so future scans (juce::PluginDirectoryScanner
-        // honours the blacklist) skip it entirely. addToBlacklist is a
-        // no-op if the path is already present; the !contains guard is
-        // belt-and-braces and avoids an extra change-message round trip.
-        if (!knownList_.getBlacklistedFiles().contains(desc.fileOrIdentifier))
-            knownList_.addToBlacklist(desc.fileOrIdentifier);
-    }
-
-    sweepingInstruments_ = false;
-}
+PluginHost::~PluginHost() = default;
 
 int PluginHost::getNumFormats() const noexcept
 {
@@ -300,6 +261,11 @@ juce::File PluginHost::getCrashedPluginsFile() const
     auto appDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("Pedalboard3");
     appDir.createDirectory();
     return appDir.getChildFile("crashed_plugins.xml");
+}
+
+juce::File PluginHost::getScanInFlightFile() const
+{
+    return getCrashedPluginsFile().getSiblingFile("scan_in_flight.txt");
 }
 
 bool PluginHost::applyKnownProblemBlacklist()

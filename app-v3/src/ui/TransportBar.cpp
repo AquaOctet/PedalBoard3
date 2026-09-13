@@ -518,17 +518,8 @@ void TransportBar::openPluginList()
         }
     }
 
-    // Instrument removal + blacklist now happens centrally in PluginHost's
-    // ChangeListener (see PluginHost::changeListenerCallback). It fires on
-    // every KnownPluginList mutation regardless of source — our subprocess
-    // scanner, juce::PluginDirectoryScanner used internally by JUCE's
-    // PluginListComponent, scanDirectory, or loadKnownList. By the time
-    // this dialog opens, isInstrument descriptors have already been
-    // stripped and their files blacklisted, so the dialog renders a
-    // clean list and the dialog's own Scan button benefits from the
-    // listener too (any new instrument JUCE adds during in-dialog
-    // scanning gets removed and blacklisted on the very next message
-    // loop tick).
+    // Instruments stay in the known list (M5 U6, plan KD8): the dialog shows
+    // them, and the effect pickers leave them out (PluginHost::getKnownEffects).
 
     if (blacklistChanged)
     {
@@ -585,6 +576,9 @@ public:
           blacklistSnapshot_(std::move(blacklistSnapshot)), onDone_(std::move(onDone))
     {
         setStatusMessage("Enumerating plugin search paths...");
+        // A host that dies mid-scan leaves this naming the plugin it was on; the
+        // next scan skips it once instead of blacklisting it (M5 U6, plan KD8).
+        scanner_.setInFlightMarker(ctx_.pluginHost.getScanInFlightFile());
     }
 
     void run() override
@@ -628,7 +622,29 @@ public:
         if (userPressedCancel)
             summary = "Scan cancelled. Partial results saved.\n\n";
         summary += "Plugins found: " + juce::String(added_) + "\n";
-        summary += "Plugins skipped (blacklist): " + juce::String(blacklist.size());
+
+        // Why the rest ended as they did (M5 U6, plan KD8).
+        using Outcome = engine::PluginScanner::Outcome;
+        const auto countOf = [this](Outcome outcome)
+        {
+            int n = 0;
+            for (const auto& result : results_)
+                if (result.outcome == outcome)
+                    ++n;
+            return n;
+        };
+        const std::pair<Outcome, const char*> reasons[] = {
+            {Outcome::Instrument, "Instruments (kept, left out of the effect lists)"},
+            {Outcome::Crashed, "Crashed while scanning (blacklisted)"},
+            {Outcome::TimedOut, "Timed out (blacklisted)"},
+            {Outcome::NotAPlugin, "Not a plugin (blacklisted)"},
+            {Outcome::SkippedLastTime, "Skipped: the last scan stopped on it (tried again next time)"},
+            {Outcome::Cancelled, "Cancelled (tried again next time)"},
+        };
+        for (const auto& [outcome, label] : reasons)
+            if (const int n = countOf(outcome); n > 0)
+                summary += juce::String(label) + ": " + juce::String(n) + "\n";
+        summary += "On the blacklist: " + juce::String(blacklist.size());
 
         const auto opts = juce::MessageBoxOptions{}
                               .withIconType(juce::MessageBoxIconType::InfoIcon)
