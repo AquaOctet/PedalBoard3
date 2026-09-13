@@ -123,20 +123,36 @@ public:
                 // internal factory; plugins through createInstance.
                 std::unique_ptr<juce::AudioProcessor> proc;
                 if (addReq->kind == NodeKind::Internal)
+                {
                     proc = session_.host_.createInternalInstance(
                         addReq->internalType, cfg.sampleRate, cfg.blockSize, ar.errorOut);
+                    // restoreNode: the node's saved state before prepareToPlay.
+                    if (proc != nullptr && ar.restore.has_value() && ar.restore->state.getSize() > 0)
+                        proc->setStateInformation(ar.restore->state.getData(),
+                                                  static_cast<int>(ar.restore->state.getSize()));
+                }
+                else if (ar.restore.has_value())
+                {
+                    // restoreNode for a plugin (M5 U3): one that's missing comes
+                    // back as its pass-through placeholder, and so does one that
+                    // now fails to load or to take its saved state.
+                    juce::String loadError;
+                    if (ar.restore->missingReason.isEmpty())
+                        proc = session_.host_.createInstance(addReq->desc, cfg.sampleRate, cfg.blockSize, loadError);
+                    auto built = pluginOrPlaceholder(std::move(proc), loadError, *ar.restore);
+                    proc = std::move(built.processor);
+                    ar.restore->missingReason = std::move(built.missingReason);
+                }
                 else
+                {
                     proc = session_.host_.createInstance(addReq->desc, cfg.sampleRate, cfg.blockSize, ar.errorOut);
+                }
 
                 if (proc != nullptr)
                 {
-                    // restoreNode: the node's saved state before prepareToPlay,
-                    // then its bypass and MIDI channel, as buildPreparedGraph does.
-                    if (ar.restore.has_value() && ar.restore->state.getSize() > 0)
-                        proc->setStateInformation(ar.restore->state.getData(),
-                                                  static_cast<int>(ar.restore->state.getSize()));
-                    // A new node's starting state (a dropped file), likewise before
-                    // prepareToPlay.
+                    // A new node's starting state (a dropped file), before
+                    // prepareToPlay; a restored node's bypass and MIDI channel
+                    // follow, as buildPreparedGraph does.
                     if (!ar.restore.has_value() && ar.initialState.getSize() > 0)
                         proc->setStateInformation(ar.initialState.getData(),
                                                   static_cast<int>(ar.initialState.getSize()));
@@ -631,6 +647,9 @@ Patch Session::getActivePatchWithState() const
     // missing entry (e.g. mid-build) just leaves that node's state empty.
     for (auto& node : snapshot.nodes)
     {
+        // A missing plugin's settings are the bytes it loaded with (M5 U3).
+        if (node.missingReason.isNotEmpty())
+            continue;
         auto it = nodes_.find(node.id);
         if (it != nodes_.end() && it->second.hosted != nullptr)
         {
@@ -652,6 +671,8 @@ std::optional<PatchNode> Session::getNodeWithState(NodeId id) const
     if (found == nullptr)
         return std::nullopt;
     PatchNode node = *found;
+    if (node.missingReason.isNotEmpty())
+        return node; // a missing plugin: the bytes it loaded with (M5 U3)
 
     // The cached pointers belong to the graph Session committed; after an
     // out-of-band swap (Test Tone) they dangle, so the node comes back without
@@ -725,6 +746,7 @@ std::vector<Session::NodeSnapshot> Session::getNodeSnapshots() const
         s.bypassed = n.bypass;
         s.customName = n.customName;
         s.midiChannel = n.midiChannel;
+        s.missingReason = n.missingReason;
         s.builtIn = n.kind == NodeKind::Internal;
         if (s.builtIn)
         {
@@ -1134,6 +1156,10 @@ void Session::commitLoadPatch(LoadPatchResult&& result)
     {
         std::lock_guard<std::mutex> lk(statusMutex_);
         activePatch_ = std::move(result.patch);
+        // The plugins the build stood a placeholder in for (M5 U3): their cards say why.
+        for (auto& node : activePatch_.nodes)
+            if (const auto it = result.prepared.missing.find(node.id); it != result.prepared.missing.end())
+                node.missingReason = it->second;
         nodes_ = std::move(result.prepared.nodes);
         liveGraph_ = currentRuntimeGraph();
         for (const auto& entry : nodes_)

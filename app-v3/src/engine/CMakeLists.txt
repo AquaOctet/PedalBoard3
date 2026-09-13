@@ -56,6 +56,8 @@ add_library(pb3_engine_core STATIC
     processors/TestToneProcessor.h
     processors/VuMeterProcessor.cpp
     processors/VuMeterProcessor.h
+    processors/MissingPluginProcessor.cpp
+    processors/MissingPluginProcessor.h
 )
 
 target_include_directories(pb3_engine_core PUBLIC
@@ -99,4 +101,5 @@ pb3_apply_strict_warnings(pb3_engine_core
     processors/OutputSanitiser.cpp
     processors/TestToneProcessor.cpp
     processors/VuMeterProcessor.cpp
+    processors/MissingPluginProcessor.cpp
 )

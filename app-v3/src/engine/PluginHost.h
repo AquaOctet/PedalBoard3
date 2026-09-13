@@ -5,6 +5,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include <memory>
+#include <optional>
 
 namespace pedalboard3::engine
 {
@@ -122,6 +123,14 @@ public:
     // directly — would otherwise construct such a plugin unguarded and crash
     // the host on launch. Message-thread only.
     bool isDescriptorSafeForChain(const juce::PluginDescription& desc) const;
+
+    // Find a board's plugin in the scanned list (M5 U3, plan KD3): by format and
+    // ID (the unique id, or the older one), else by name and vendor. `fileHint`, a
+    // path from an older board, only picks between equal matches; it's never
+    // opened. Returns the scanned description (whose path createInstance uses), or
+    // nullopt when the plugin isn't in the list. Message-thread only.
+    std::optional<juce::PluginDescription> resolve(const juce::PluginDescription& saved,
+                                                   const juce::String& fileHint = {}) const;
 
     // Create a single plugin instance. Returns nullptr and fills `errorOut`
     // on any failure (plugin missing, format unregistered, plugin ctor

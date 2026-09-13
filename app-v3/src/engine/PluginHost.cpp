@@ -198,6 +198,48 @@ bool PluginHost::isDescriptorSafeForChain(const juce::PluginDescription& desc) c
     return true;
 }
 
+std::optional<juce::PluginDescription> PluginHost::resolve(const juce::PluginDescription& saved,
+                                                           const juce::String& fileHint) const
+{
+    const auto sameId = [&saved](const juce::PluginDescription& d)
+    {
+        return (saved.uniqueId != 0 && d.uniqueId == saved.uniqueId) ||
+               (saved.deprecatedUid != 0 && d.deprecatedUid == saved.deprecatedUid);
+    };
+    const auto sameName = [&saved](const juce::PluginDescription& d)
+    {
+        return saved.name.isNotEmpty() && d.name == saved.name &&
+               (saved.manufacturerName.isEmpty() || d.manufacturerName == saved.manufacturerName);
+    };
+
+    // The best match wins: the ID counts most, then the name, and the path hint
+    // only breaks a tie. Neither the ID nor the name matching: not this plugin.
+    const juce::ScopedReadLock sl(listLock_);
+    const auto types = knownList_.getTypes();
+    int best = -1;
+    int bestScore = 0;
+    for (int i = 0; i < types.size(); ++i)
+    {
+        const auto& d = types.getReference(i);
+        if (saved.pluginFormatName.isNotEmpty() && d.pluginFormatName != saved.pluginFormatName)
+            continue;
+        const bool id = sameId(d);
+        const bool name = sameName(d);
+        if (!id && !name)
+            continue;
+        const bool path = fileHint.isNotEmpty() && d.fileOrIdentifier == fileHint;
+        const int score = (id ? 4 : 0) + (name ? 2 : 0) + (path ? 1 : 0);
+        if (score > bestScore)
+        {
+            best = i;
+            bestScore = score;
+        }
+    }
+    if (best < 0)
+        return std::nullopt;
+    return types.getReference(best);
+}
+
 std::unique_ptr<juce::AudioPluginInstance> PluginHost::createInstance(const juce::PluginDescription& desc,
                                                                       double sampleRate,
                                                                       int blockSize,

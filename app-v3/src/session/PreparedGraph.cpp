@@ -2,6 +2,7 @@
 
 #include "engine/BypassableInstance.h"
 #include "engine/PluginHost.h"
+#include "engine/processors/MissingPluginProcessor.h"
 
 #include <algorithm>
 
@@ -41,7 +42,50 @@ AudioGraph::NodeID resolveEndpoint(NodeId patchNodeId,
     return it->second.graphNode->nodeID;
 }
 
+// True if a plugin node names anything to find or to show: a name, an ID, or
+// (from the scanned list) a path.
+bool hasPluginIdentity(const PatchNode& node) noexcept
+{
+    const auto& d = node.desc;
+    return d.name.isNotEmpty() || d.uniqueId != 0 || d.deprecatedUid != 0 || d.fileOrIdentifier.isNotEmpty();
+}
+
 } // namespace
+
+PluginBuild pluginOrPlaceholder(std::unique_ptr<juce::AudioProcessor> loaded,
+                                const juce::String& loadError,
+                                const PatchNode& node)
+{
+    const auto placeholder = [&node](juce::String reason)
+    {
+        PluginBuild built;
+        built.processor = std::make_unique<engine::processors::MissingPluginProcessor>(node.desc, reason, node.state);
+        built.missingReason = std::move(reason);
+        return built;
+    };
+
+    if (node.missingReason.isNotEmpty())
+        return placeholder(node.missingReason);
+    if (loaded == nullptr)
+        return placeholder(missingreason::failedToLoad(loadError));
+
+    // The saved state (knob settings) before prepareToPlay. A plugin that
+    // rejects a stale blob quietly starts at its defaults; one that throws
+    // becomes a placeholder that keeps the blob, so a save doesn't lose it.
+    if (node.state.getSize() > 0)
+    {
+        try
+        {
+            loaded->setStateInformation(node.state.getData(), static_cast<int>(node.state.getSize()));
+        }
+        catch (...)
+        {
+            loaded.reset();
+            return placeholder(missingreason::settingsFailed());
+        }
+    }
+    return {std::move(loaded), {}};
+}
 
 PreparedGraph buildPreparedGraph(
     engine::PluginHost& host, const Patch& patch, double sampleRate, int blockSize, juce::String& errorOut)
@@ -69,28 +113,38 @@ PreparedGraph buildPreparedGraph(
     // Plugin + internal nodes. Both end up wrapped in a BypassableInstance; the
     // only difference is how the processor is constructed (host.createInstance
     // for a scanned plugin vs host.createInternalInstance for a built-in node).
+    // A plugin that's missing or fails to load becomes a pass-through
+    // placeholder, so the rest of the graph still builds (M5 U3, plan KD4).
     for (const auto& patchNode : patch.nodes)
     {
         const auto nodeLabel = (patchNode.kind == NodeKind::Internal) ? patchNode.internalType : patchNode.desc.name;
 
         std::unique_ptr<juce::AudioProcessor> proc;
         if (patchNode.kind == NodeKind::Internal)
-            proc = host.createInternalInstance(patchNode.internalType, sampleRate, blockSize, errorOut);
-        else
-            proc = host.createInstance(patchNode.desc, sampleRate, blockSize, errorOut);
-
-        if (proc == nullptr)
         {
-            errorOut = nodeLabel + ": " + errorOut;
-            return result;
-        }
+            proc = host.createInternalInstance(patchNode.internalType, sampleRate, blockSize, errorOut);
+            if (proc == nullptr)
+            {
+                errorOut = nodeLabel + ": " + errorOut;
+                return result;
+            }
 
-        // Phase 2: restore the saved state (knob settings) before prepareToPlay.
-        // Best-effort — a plugin that rejects a stale blob simply starts at its
-        // defaults; we don't fail the whole load. Internal nodes have no state
-        // today, so the guard skips them.
-        if (patchNode.state.getSize() > 0)
-            proc->setStateInformation(patchNode.state.getData(), static_cast<int>(patchNode.state.getSize()));
+            // Restore the saved state before prepareToPlay. Best-effort — a node
+            // that rejects a stale blob simply starts at its defaults.
+            if (patchNode.state.getSize() > 0)
+                proc->setStateInformation(patchNode.state.getData(), static_cast<int>(patchNode.state.getSize()));
+        }
+        else
+        {
+            // A node already known to be missing is never loaded.
+            juce::String loadError;
+            if (patchNode.missingReason.isEmpty())
+                proc = host.createInstance(patchNode.desc, sampleRate, blockSize, loadError);
+            auto built = pluginOrPlaceholder(std::move(proc), loadError, patchNode);
+            proc = std::move(built.processor);
+            if (built.missingReason.isNotEmpty())
+                result.missing[patchNode.id] = std::move(built.missingReason);
+        }
 
         auto* hostedPtr = proc.get();
         auto wrapped = std::make_unique<engine::BypassableInstance>(std::move(proc));
@@ -172,7 +226,48 @@ bool isNodeSafeForChain(const engine::PluginHost& host, const PatchNode& node)
                 return true;
         return false; // unrecognized internal type — drop rather than abort the build
     }
+    if (!hasPluginIdentity(node))
+        return false; // nothing to find or to show
+    if (node.missingReason.isNotEmpty())
+        return true; // a placeholder loads nothing
     return host.isDescriptorSafeForChain(node.desc);
+}
+
+int resolvePluginNodes(PatchBank& bank, const engine::PluginHost& host)
+{
+    int missing = 0;
+    for (auto& patch : bank.patches)
+    {
+        for (auto& node : patch.nodes)
+        {
+            if (node.kind != NodeKind::Plugin || !hasPluginIdentity(node))
+                continue; // built-ins, and plugin nodes dropUnsafeNodes removes
+
+            node.missingReason.clear();
+            const auto& hint = node.fileHint.isNotEmpty() ? node.fileHint : node.desc.fileOrIdentifier;
+            if (node.desc.isInstrument)
+            {
+                node.missingReason = missingreason::instrument();
+            }
+            else if (const auto found = host.resolve(node.desc, hint))
+            {
+                if (found->isInstrument)
+                    node.missingReason = missingreason::instrument();
+                else if (!host.isDescriptorSafeForChain(*found))
+                    node.missingReason = missingreason::blocked();
+                else
+                    node.desc = *found;
+            }
+            else
+            {
+                node.missingReason = missingreason::notFound();
+            }
+
+            if (node.missingReason.isNotEmpty())
+                ++missing;
+        }
+    }
+    return missing;
 }
 
 int dropUnsafeNodes(PatchBank& bank, const engine::PluginHost& host)

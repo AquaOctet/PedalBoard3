@@ -493,3 +493,14 @@ TEST_CASE("pdl: saving is atomic: a failed save leaves the previous board intact
     REQUIRE(file.loadFileAsString() == before);
     file.deleteFile();
 }
+
+TEST_CASE("pdl: a saved board names its plugins by ID, with no paths (M5 U3)", "[session][pdl][identity]")
+{
+    const auto file = tempPdl("nopath");
+    REQUIRE(session::pdl::writePatch(makeChain(), file).wasOk());
+    const auto text = file.loadFileAsString();
+    REQUIRE(text.contains("<IDENTITY"));
+    REQUIRE_FALSE(text.contains(" file=\""));
+    REQUIRE_FALSE(text.contains("/fake/EQ.vst3"));
+    file.deleteFile();
+}

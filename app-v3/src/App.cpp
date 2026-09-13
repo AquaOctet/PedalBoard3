@@ -210,12 +210,13 @@ void App::restoreActivePatchIfAny()
         return;
     }
 
-    // Cross-check against the plugin host (AC-1.D.3-L), per patch. The restore
-    // path calls createInstance directly, bypassing the instrument sweep +
-    // known-problem floor that only guard the scanner. Drop any node that's an
-    // instrument or blacklisted (known crash-on-construct) so it never reaches
-    // createInstance — not only in the active patch: every slot can become
-    // live with one Program Change.
+    // Cross-check against the plugin host (AC-1.D.3-L), per patch — not only the
+    // active one: every slot can become live with one Program Change. Plugins
+    // are found in the scanned list by ID (M5 U3); one that isn't there, or is
+    // an instrument or blacklisted (known crash-on-construct), becomes a
+    // pass-through placeholder and never reaches createInstance. Then what
+    // can't be built at all is dropped.
+    session::resolvePluginNodes(*saved, *pluginHost);
     session::dropUnsafeNodes(*saved, *pluginHost);
 
     // Arm the crash-loop marker BEFORE handing the active patch to the worker,

@@ -260,11 +260,71 @@ juce::String patchIdentityString(const Patch& p)
         // crash-loop marker.
         if (n.kind == NodeKind::Internal)
             result << "internal::" << n.internalType << "\n";
-        else
-            result << n.desc.pluginFormatName << "::" << n.desc.fileOrIdentifier << "\n";
+        else // by ID and name (M5 U3): a board has no plugin paths
+            result << n.desc.pluginFormatName << "::" << juce::String::toHexString(n.desc.uniqueId)
+                   << "::" << n.desc.name << "\n";
     }
     return result;
 }
+
+namespace
+{
+
+// The longest <IDENTITY> value kept; anything past it is cut.
+constexpr int kMaxIdentityChars = 1024;
+
+// The <IDENTITY> a board carries (M5 U3, plan KD3): what finds the plugin in the
+// scanned list, and what its card shows while it's missing. Never a path.
+void writeIdentity(juce::XmlElement& el, const juce::PluginDescription& d)
+{
+    el.setAttribute("format", d.pluginFormatName);
+    el.setAttribute("name", d.name);
+    el.setAttribute("manufacturer", d.manufacturerName);
+    el.setAttribute("version", d.version);
+    el.setAttribute("category", d.category);
+    el.setAttribute("uniqueId", juce::String::toHexString(d.uniqueId));
+    el.setAttribute("uid", juce::String::toHexString(d.deprecatedUid));
+    el.setAttribute("isInstrument", d.isInstrument);
+    el.setAttribute("numInputs", d.numInputChannels);
+    el.setAttribute("numOutputs", d.numOutputChannels);
+}
+
+// A value that names a file or a URL rather than a plugin.
+bool looksLikePath(const juce::String& value)
+{
+    if (value.startsWithChar('/') || value.startsWithChar('\\') || value.contains("://"))
+        return true;
+    return value.length() >= 3 && juce::CharacterFunctions::isLetter(value[0]) && value[1] == ':' &&
+           (value[2] == '\\' || value[2] == '/');
+}
+
+juce::String identityText(const juce::XmlElement& el, const char* attribute)
+{
+    const auto value = el.getStringAttribute(attribute).substring(0, kMaxIdentityChars);
+    return looksLikePath(value) ? juce::String() : value;
+}
+
+// Reads only what writeIdentity writes; any other attribute is ignored, and a
+// path-like value is dropped. An older board's `file=` becomes the node's
+// fileHint, which is never opened.
+void readIdentity(const juce::XmlElement& el, PatchNode& node)
+{
+    auto& d = node.desc;
+    d.pluginFormatName = identityText(el, "format");
+    d.name = identityText(el, "name");
+    d.descriptiveName = d.name;
+    d.manufacturerName = identityText(el, "manufacturer");
+    d.version = identityText(el, "version");
+    d.category = identityText(el, "category");
+    d.uniqueId = el.getStringAttribute("uniqueId", "0").getHexValue32();
+    d.deprecatedUid = el.getStringAttribute("uid", "0").getHexValue32();
+    d.isInstrument = el.getBoolAttribute("isInstrument", false);
+    d.numInputChannels = juce::jlimit(0, 64, el.getIntAttribute("numInputs"));
+    d.numOutputChannels = juce::jlimit(0, 64, el.getIntAttribute("numOutputs"));
+    node.fileHint = el.getStringAttribute("file").substring(0, kMaxIdentityChars);
+}
+
+} // namespace
 
 std::unique_ptr<juce::XmlElement> patchToXml(const Patch& p)
 {
@@ -300,12 +360,9 @@ std::unique_ptr<juce::XmlElement> patchToXml(const Patch& p)
             nodeEl->setAttribute("kind", "internal");
             nodeEl->setAttribute("type", n.internalType);
         }
-        else if (auto descXml = n.desc.createXml())
+        else
         {
-            // Re-tag from <PLUGIN> to <IDENTITY> so the schema reads
-            // cleanly (master plan §4.5 idiom).
-            descXml->setTagName("IDENTITY");
-            nodeEl->addChildElement(descXml.release());
+            writeIdentity(*nodeEl->createNewChildElement("IDENTITY"), n.desc);
         }
 
         if (n.state.getSize() > 0)
@@ -436,11 +493,7 @@ std::unique_ptr<Patch> patchFromXml(const juce::XmlElement& root, juce::String* 
             }
             else if (auto* identityEl = nodeEl->getChildByName("IDENTITY"))
             {
-                // loadFromXml expects a <PLUGIN> root.
-                juce::XmlElement asPlugin(*identityEl);
-                asPlugin.setTagName("PLUGIN");
-                if (!n.desc.loadFromXml(asPlugin))
-                    return fail("a plugin's identity is damaged");
+                readIdentity(*identityEl, n);
             }
 
             if (auto* stateEl = nodeEl->getChildByName("STATE"))
