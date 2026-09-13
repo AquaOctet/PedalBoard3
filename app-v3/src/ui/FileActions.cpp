@@ -53,6 +53,7 @@ struct LoadedBank
 {
     std::unique_ptr<session::PatchBank> bank;
     bool imported{false}; // a Pedalboard2 file: the board is untitled until saved as .pdl v3
+    bool readOnly{false}; // saved by a newer major version (M5 U4)
     juce::StringArray warnings;
     juce::String error;
 };
@@ -106,6 +107,7 @@ LoadedBank loadOpenedBank(const juce::File& file, engine::PluginHost& host)
     auto loaded = session::pdl::readBank(file);
     out.bank = std::move(loaded.bank);
     out.error = loaded.error;
+    out.readOnly = loaded.readOnly;
     return out;
 }
 } // namespace
@@ -169,7 +171,7 @@ void FileActions::openFile(const juce::File& file)
     }
 
     // A Pedalboard2 import stays untitled until it is saved as a v3 .pdl.
-    loadIntoDocument(std::move(*loaded.bank), loaded.imported ? juce::File{} : file);
+    loadIntoDocument(std::move(*loaded.bank), loaded.imported ? juce::File{} : file, loaded.readOnly);
     rememberRecent(file);
 
     // Surface import notes (Pedalboard2 conversion: dropped state, skipped
@@ -180,7 +182,7 @@ void FileActions::openFile(const juce::File& file)
                     "Imported with notes:\n\n - " + loaded.warnings.joinIntoString("\n - "));
 }
 
-void FileActions::loadIntoDocument(session::PatchBank bank, const juce::File& file)
+void FileActions::loadIntoDocument(session::PatchBank bank, const juce::File& file, bool readOnly)
 {
     // Every slot is one switch away from live, so before any patch can go live
     // its plugins are found in the scanned list by ID (M5 U3: one that isn't
@@ -191,13 +193,15 @@ void FileActions::loadIntoDocument(session::PatchBank bank, const juce::File& fi
     // capture.
     session::resolvePluginNodes(bank, ctx_.pluginHost);
     session::dropUnsafeNodes(bank, ctx_.pluginHost);
-    ctx_.bankDocument.loadBank(std::move(bank), file);
+    ctx_.bankDocument.loadBank(std::move(bank), file, readOnly);
 }
 
 void FileActions::save(std::function<void(bool saved)> done)
 {
+    // A board a newer version wrote is never saved over (M5 U4): Save goes to
+    // Save As, which warns first.
     const auto file = ctx_.bankDocument.currentFile();
-    if (file == juce::File())
+    if (file == juce::File() || ctx_.bankDocument.isReadOnly())
     {
         saveAs(std::move(done));
         return;
@@ -206,6 +210,37 @@ void FileActions::save(std::function<void(bool saved)> done)
 }
 
 void FileActions::saveAs(std::function<void(bool saved)> done)
+{
+    if (!ctx_.bankDocument.isReadOnly())
+    {
+        chooseSaveFile(std::move(done));
+        return;
+    }
+
+    // A board a newer version wrote (M5 U4, plan KD7): this version can't keep
+    // what it doesn't understand, so say so before writing a copy.
+    juce::WeakReference<FileActions> weak(this);
+    juce::AlertWindow::showAsync(
+        juce::MessageBoxOptions{}
+            .withIconType(juce::MessageBoxIconType::WarningIcon)
+            .withTitle("Save a copy?")
+            .withMessage("This board was saved by a newer version of Pedalboard 3. The copy is saved in this "
+                         "version's format, which can't hold everything the newer version understands, so some of "
+                         "its settings may not come through. The original file isn't changed.")
+            .withButton("Save a Copy")
+            .withButton("Cancel"),
+        [weak, done](int result)
+        {
+            if (weak == nullptr)
+                return;
+            if (result == 1)
+                weak->chooseSaveFile(done);
+            else if (done)
+                done(false);
+        });
+}
+
+void FileActions::chooseSaveFile(std::function<void(bool saved)> done)
 {
     const auto current = ctx_.bankDocument.currentFile();
     const auto start = current != juce::File() ? current : documentsFolder().getChildFile("Untitled.pdl");

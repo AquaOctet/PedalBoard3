@@ -731,7 +731,7 @@ juce::PopupMenu TransportBar::makeFileMenu(juce::ApplicationCommandManager* menu
     if (menuBarCommands != nullptr && saveCommand != nullptr)
         menu.addCommandItem(menuBarCommands, saveCommand->juceCommandId, "Save");
     else
-        menu.addItem("Save", [this] { files_.save(); });
+        menu.addItem("Save", !ctx_.bankDocument.isReadOnly(), false, [this] { files_.save(); }); // M5 U4
     menu.addItem("Save As...", [this] { files_.saveAs(); });
     menu.addSeparator();
     menu.addItem("Save as Default", [this] { files_.saveAsDefault(); });

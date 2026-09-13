@@ -229,7 +229,9 @@ void App::restoreActivePatchIfAny()
     // Finish pass KD7: the restored bank keeps its file (quick save still works)
     // and, after a crash or a quit that kept edits, its unsaved marker.
     if (!fromDefault)
-        bankDocument->restoreIdentity(preferences->getActiveBankFile(), preferences->getActiveBankModified());
+        bankDocument->restoreIdentity(preferences->getActiveBankFile(),
+                                      preferences->getActiveBankModified(),
+                                      preferences->getActiveBankReadOnly());
 }
 
 } // namespace pedalboard3

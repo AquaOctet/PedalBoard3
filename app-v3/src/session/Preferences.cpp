@@ -14,6 +14,7 @@ constexpr auto kActivePatchKey = "activePatch";
 constexpr auto kActiveBankKey = "activeBank";
 constexpr auto kActiveBankFileKey = "activeBankFile";
 constexpr auto kActiveBankModifiedKey = "activeBankModified";
+constexpr auto kActiveBankReadOnlyKey = "activeBankReadOnly";
 constexpr auto kAppMappingsKey = "appMappings";
 constexpr auto kKeyMappingsKey = "keyMappings";
 constexpr auto kWindowStateKey = "windowState";
@@ -209,15 +210,17 @@ void Preferences::clearActiveBank()
         store->removeValue(kActivePatchKey);
         store->removeValue(kActiveBankFileKey);
         store->removeValue(kActiveBankModifiedKey);
+        store->removeValue(kActiveBankReadOnlyKey);
     }
 }
 
-void Preferences::setActiveBankIdentity(const juce::File& file, bool modified)
+void Preferences::setActiveBankIdentity(const juce::File& file, bool modified, bool readOnly)
 {
     if (auto* store = props_.getUserSettings())
     {
         store->setValue(kActiveBankFileKey, file == juce::File() ? juce::String() : file.getFullPathName());
         store->setValue(kActiveBankModifiedKey, modified);
+        store->setValue(kActiveBankReadOnlyKey, readOnly);
     }
 }
 
@@ -236,6 +239,13 @@ bool Preferences::getActiveBankModified()
 {
     if (auto* store = props_.getUserSettings())
         return store->getBoolValue(kActiveBankModifiedKey, false);
+    return false;
+}
+
+bool Preferences::getActiveBankReadOnly()
+{
+    if (auto* store = props_.getUserSettings())
+        return store->getBoolValue(kActiveBankReadOnlyKey, false);
     return false;
 }
 

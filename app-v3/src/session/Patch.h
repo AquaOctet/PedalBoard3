@@ -3,6 +3,7 @@
 #include "control/MidiMapping.h"
 #include "control/OscMapping.h"
 #include "NodeId.h"
+#include "UnknownXml.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_core/juce_core.h>
@@ -47,6 +48,10 @@ struct PatchNode
     // U3, plan KD4): set by resolvePluginNodes, or by the build when the plugin
     // fails to load. Never saved.
     juce::String missingReason;
+
+    // What a newer version of the app wrote on this <NODE> that this one doesn't
+    // know, written back on save (M5 U4, plan KD7).
+    UnknownXml unknown;
 
     bool bypass{false};
     juce::String customName;
@@ -119,6 +124,13 @@ struct Patch
     int timeSigNumerator{4};
     int timeSigDenominator{4};
 
+    // What a newer version of the app wrote that this one doesn't know, written
+    // back on save (M5 U4, plan KD7): on the <PATCH> itself, and on its
+    // <MAPPINGS>, where a mapping of a kind this version doesn't know is kept
+    // whole instead of dropped or coerced.
+    UnknownXml unknown;
+    UnknownXml unknownMappings;
+
     // max(existing node.id) + 1, or 1 if empty. Never reuses an id
     // observed in this Patch's lifetime, even post-remove.
     NodeId nextNodeId() const noexcept;
@@ -165,9 +177,9 @@ juce::String patchIdentityString(const Patch&);
 // Shared by Preferences (auto-restore) and PdlSerializer (.pdl files) so
 // both round-trip plugin state and control bindings identically. patchFromXml
 // also accepts the legacy <ACTIVE_PATCH> tag written by pre-Phase-2 builds, and
-// older files with no <MAPPINGS> load cleanly (empty mapping tables). A single
-// <MIDI_MAP> with an unknown source kind is dropped, not fatal — the rest of the
-// patch still loads. Returns nullptr only if the element is not a recognised
+// older files with no <MAPPINGS> load cleanly (empty mapping tables). A mapping of a
+// kind this version doesn't know is kept verbatim (M5 U4), as is anything else
+// a newer version wrote on the patch and its nodes. Returns nullptr only if the element is not a recognised
 // patch root. Neither validates topology — call
 // validatePatch() afterwards.
 std::unique_ptr<juce::XmlElement> patchToXml(const Patch&);
@@ -177,15 +189,19 @@ std::unique_ptr<Patch> patchFromXml(const juce::XmlElement&, juce::String* error
 
 // The <MAPPINGS> element patchToXml/patchFromXml use, for any other owner of
 // mapping tables (session::AppMappings). appendMappingsXml adds a <MAPPINGS>
-// child to `parent` (nothing when both tables are empty); readMappingsXml
-// appends what `parent`'s <MAPPINGS> child holds (nothing when absent; a MIDI
-// mapping with an unknown source kind is skipped).
+// child to `parent` (nothing when there's nothing to write); readMappingsXml
+// appends what `parent`'s <MAPPINGS> child holds (nothing when absent). A
+// mapping of a kind this version doesn't know, and anything else unknown on
+// <MAPPINGS>, goes to `unknownOut` (M5 U4), or is skipped without one; `kept`
+// writes such things back.
 void appendMappingsXml(juce::XmlElement& parent,
                        const std::vector<control::MidiMapping>& midi,
-                       const std::vector<control::OscMapping>& osc);
+                       const std::vector<control::OscMapping>& osc,
+                       const UnknownXml* kept = nullptr);
 void readMappingsXml(const juce::XmlElement& parent,
                      std::vector<control::MidiMapping>& midi,
-                     std::vector<control::OscMapping>& osc);
+                     std::vector<control::OscMapping>& osc,
+                     UnknownXml* unknownOut = nullptr);
 
 // Build the canonical linear-chain connection set for `nodes`: stereo audio
 // + MIDI threaded graphIO -> node[0] -> ... -> node[N-1] -> graphIO. For an

@@ -42,7 +42,7 @@ BankDocument::~BankDocument()
     session_.removeChangeListener(this);
 }
 
-void BankDocument::loadBank(PatchBank bank, juce::File file)
+void BankDocument::loadBank(PatchBank bank, juce::File file, bool readOnly)
 {
     if (bank.patches.empty())
         bank = PatchBank{};
@@ -52,6 +52,7 @@ void BankDocument::loadBank(PatchBank bank, juce::File file)
     ++loadCount_;
     bank_ = std::move(bank);
     currentFile_ = std::move(file);
+    readOnly_ = readOnly;
     savedSignature_ = signatureOf(bank_);
     restoredModified_ = false;
     stateEdited_ = false;
@@ -183,6 +184,7 @@ void BankDocument::issueReplace()
 void BankDocument::markSaved(const juce::File& file)
 {
     currentFile_ = file;
+    readOnly_ = false; // Save As wrote a copy in this version's format
     savedSignature_ = contentSignature();
     restoredModified_ = false;
     stateEdited_ = false;
@@ -190,9 +192,10 @@ void BankDocument::markSaved(const juce::File& file)
     sendChangeMessage();
 }
 
-void BankDocument::restoreIdentity(const juce::File& file, bool modified)
+void BankDocument::restoreIdentity(const juce::File& file, bool modified, bool readOnly)
 {
     currentFile_ = file;
+    readOnly_ = readOnly;
     restoredModified_ = modified;
     refreshModified();
     sendChangeMessage();

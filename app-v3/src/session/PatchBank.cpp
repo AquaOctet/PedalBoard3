@@ -73,6 +73,29 @@ void PatchBank::previous() noexcept
     activeIndex = (activeIndex + size() - 1) % size();
 }
 
+namespace
+{
+
+// Carries the file root's unknowns inside <BANK> for the Preferences copy.
+constexpr auto kFileRootTag = "PEDALBOARD";
+
+juce::StringArray knownBankAttributes()
+{
+    juce::StringArray known{"activeIndex"};
+    for (const auto feature : kAllFeatures)
+        known.add(featureKey(feature));
+    return known;
+}
+
+} // namespace
+
+void readBankUnknowns(PatchBank& bank, const juce::XmlElement& bankElement)
+{
+    bank.unknown = UnknownXml::collect(bankElement, knownBankAttributes(), {"PATCH", kFileRootTag});
+    if (auto* fileRoot = bankElement.getChildByName(kFileRootTag))
+        bank.fileUnknown = UnknownXml::collect(*fileRoot, {}, {});
+}
+
 void writeFeatureAttributes(const PatchBank& bank, juce::XmlElement& bankElement)
 {
     for (const auto feature : kAllFeatures)
@@ -86,7 +109,7 @@ void readFeatureAttributes(PatchBank& bank, const juce::XmlElement& bankElement)
         bank.setFeature(feature, bankElement.getBoolAttribute(featureKey(feature), true));
 }
 
-std::unique_ptr<juce::XmlElement> bankToXml(const PatchBank& bank)
+std::unique_ptr<juce::XmlElement> bankToXml(const PatchBank& bank, bool withFileRoot)
 {
     auto el = std::make_unique<juce::XmlElement>("BANK");
     el->setAttribute("activeIndex", bank.isValidIndex(bank.activeIndex) ? bank.activeIndex : 0);
@@ -98,6 +121,9 @@ std::unique_ptr<juce::XmlElement> bankToXml(const PatchBank& bank)
             return nullptr;
         el->addChildElement(patchXml.release());
     }
+    bank.unknown.writeTo(*el); // what a newer version wrote on the bank (M5 U4)
+    if (withFileRoot && !bank.fileUnknown.isEmpty())
+        bank.fileUnknown.writeTo(*el->createNewChildElement(kFileRootTag));
     return el;
 }
 
@@ -121,6 +147,7 @@ std::unique_ptr<PatchBank> bankFromXml(const juce::XmlElement& el)
     const int active = el.getIntAttribute("activeIndex", 0);
     bank->activeIndex = bank->isValidIndex(active) ? active : 0;
     readFeatureAttributes(*bank, el);
+    readBankUnknowns(*bank, el);
     return bank;
 }
 

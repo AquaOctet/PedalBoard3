@@ -20,6 +20,8 @@ add_library(pb3_session_core STATIC
     Patch.h
     PatchBank.cpp
     PatchBank.h
+    UnknownXml.cpp
+    UnknownXml.h
     BoardFiles.h
     FeatureGate.h
     FeatureNodeGate.h
@@ -100,6 +102,7 @@ pb3_apply_strict_warnings(pb3_session_core
     PreferencesPersister.cpp
     Patch.cpp
     PatchBank.cpp
+    UnknownXml.cpp
     BankDocument.cpp
     FeatureGate.cpp
     FeatureNodeGate.cpp

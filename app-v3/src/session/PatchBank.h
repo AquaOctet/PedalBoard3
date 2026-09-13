@@ -33,6 +33,12 @@ struct PatchBank
     // the board turns one off. Saved as <BANK> attributes, only when off.
     std::array<bool, kFeatureCount> features{true, true, true, true, true};
 
+    // What a newer version of the app wrote that this one doesn't know, written
+    // back on save (M5 U4, plan KD7): on the <BANK>, and on the file's
+    // <PEDALBOARD> root.
+    UnknownXml unknown;
+    UnknownXml fileUnknown;
+
     bool featureOn(Feature feature) const noexcept { return features[indexOf(feature)]; }
     void setFeature(Feature feature, bool on) noexcept { features[indexOf(feature)] = on; }
 
@@ -75,7 +81,12 @@ struct PatchBank
 // (auto-restore) and available to any other store. bankFromXml returns
 // nullptr if the element is not a <BANK>, holds no <PATCH>, or any patch
 // fails to parse or validatePatch; an out-of-range activeIndex clamps to 0.
-std::unique_ptr<juce::XmlElement> bankToXml(const PatchBank&);
+//
+// What a newer version wrote is kept both ways (M5 U4). The file root's
+// unknowns ride in a <PEDALBOARD> child of <BANK>, so the Preferences copy
+// keeps them too; the .pdl writer passes withFileRoot = false and puts them on
+// its own root.
+std::unique_ptr<juce::XmlElement> bankToXml(const PatchBank&, bool withFileRoot = true);
 std::unique_ptr<PatchBank> bankFromXml(const juce::XmlElement&);
 
 // The board's feature switches as <BANK> attributes (optional-features U1):
@@ -83,5 +94,9 @@ std::unique_ptr<PatchBank> bankFromXml(const juce::XmlElement&);
 // the .pdl writer and reader all use these.
 void writeFeatureAttributes(const PatchBank& bank, juce::XmlElement& bankElement);
 void readFeatureAttributes(PatchBank& bank, const juce::XmlElement& bankElement);
+
+// What a newer version wrote on a <BANK> (M5 U4): its unknown attributes and
+// children, and the file root's carried in a <PEDALBOARD> child (see bankToXml).
+void readBankUnknowns(PatchBank& bank, const juce::XmlElement& bankElement);
 
 } // namespace pedalboard3::session

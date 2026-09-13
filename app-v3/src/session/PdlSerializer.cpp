@@ -11,22 +11,18 @@ juce::Result writeBank(const PatchBank& bank, const juce::File& file)
     if (bank.patches.empty())
         return juce::Result::fail("Cannot save an empty patch bank");
 
+    // The one <BANK> writer, shared with Preferences and the unsaved-changes
+    // signature, so the file and both of those always agree.
+    auto bankEl = bankToXml(bank, /*withFileRoot*/ false);
+    if (bankEl == nullptr)
+        return juce::Result::fail("Failed to serialise the patch bank");
+
     juce::XmlElement root("PEDALBOARD");
     root.setAttribute("schemaMajor", kSchemaMajor);
     root.setAttribute("schemaMinor", kSchemaMinor);
     root.setAttribute("appVersion", PB3_APP_VERSION);
-
-    auto* bankEl = root.createNewChildElement("BANK");
-    bankEl->setAttribute("activeIndex", bank.isValidIndex(bank.activeIndex) ? bank.activeIndex : 0);
-    writeFeatureAttributes(bank, *bankEl); // the board's feature switches (optional-features U1)
-
-    for (const auto& patch : bank.patches)
-    {
-        auto patchXml = patchToXml(patch);
-        if (patchXml == nullptr)
-            return juce::Result::fail("Failed to serialise patch \"" + patch.name + "\"");
-        bankEl->addChildElement(patchXml.release());
-    }
+    root.addChildElement(bankEl.release());
+    bank.fileUnknown.writeTo(root); // what a newer version wrote on the root (M5 U4)
 
     // Atomic and durable (M5 U2, AC-FS-6): a crash or power cut mid-save leaves
     // the old file or the new one, never a torn one.
@@ -46,7 +42,10 @@ juce::Result writePatch(const Patch& patch, const juce::File& file)
     return writeBank(bank, file);
 }
 
-BankLoadResult readBank(const juce::File& file)
+namespace
+{
+
+BankLoadResult readBankFile(const juce::File& file)
 {
     BankLoadResult result;
 
@@ -71,16 +70,15 @@ BankLoadResult readBank(const juce::File& file)
         result.error = "Patch file is missing its schema version";
         return result;
     }
-    if (major > kSchemaMajor)
-    {
-        result.error = "This patch was saved by a newer version of Pedalboard 3";
-        return result;
-    }
+    // A newer major version's board opens read-only instead of being refused
+    // (M5 U4, plan KD7): this version reads what it can and never saves over it.
+    result.readOnly = major > kSchemaMajor;
 
     // schemaMinor >= 4: <BANK> holding the patches. schemaMinor <= 3: a bare
     // <PATCH> under the root, read as a one-patch bank.
     auto bank = std::make_unique<PatchBank>();
     bank->patches.clear();
+    bank->fileUnknown = UnknownXml::collect(*root, {"schemaMajor", "schemaMinor", "appVersion"}, {"BANK", "PATCH"});
 
     const juce::XmlElement* container = root->getChildByName("BANK");
     int activeIndex = 0;
@@ -88,6 +86,7 @@ BankLoadResult readBank(const juce::File& file)
     {
         activeIndex = container->getIntAttribute("activeIndex", 0);
         readFeatureAttributes(*bank, *container); // the board's feature switches (optional-features U1)
+        readBankUnknowns(*bank, *container);      // and what a newer version wrote there (M5 U4)
     }
     else
     {
@@ -132,6 +131,17 @@ BankLoadResult readBank(const juce::File& file)
 
     bank->activeIndex = bank->isValidIndex(activeIndex) ? activeIndex : 0;
     result.bank = std::move(bank);
+    return result;
+}
+
+} // namespace
+
+BankLoadResult readBank(const juce::File& file)
+{
+    auto result = readBankFile(file);
+    if (result.bank == nullptr && result.readOnly)
+        result.error =
+            "It was saved by a newer version of Pedalboard 3, which this version can't read: " + result.error;
     return result;
 }
 
