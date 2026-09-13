@@ -39,11 +39,11 @@ struct InternalNodeType
 // duration; readers block briefly during a scan. The audio thread never
 // touches this object directly — it calls into live plugin instances
 // that PluginHost returned.
-class PluginHost : private juce::ChangeListener
+class PluginHost
 {
 public:
     PluginHost();
-    ~PluginHost() override;
+    ~PluginHost();
 
     // How many AudioPluginFormat subclasses are currently registered.
     // After construction this is always > 0 on every supported platform.
@@ -111,15 +111,17 @@ public:
     //
     // The Plugin List dialog still shows every scanned plugin (effects
     // and instruments) so the user can see what's installed; the
-    // filter only applies at the "Add to chain" path.
+    // filter only applies at the "Add to chain" path. Instruments stay in
+    // the known list (M5 U6, plan KD8) rather than being blacklisted as
+    // though they had crashed.
     juce::Array<juce::PluginDescription> getKnownEffects() const;
 
     // True if `desc` is safe to construct into a live chain. False for
     // instruments (v3.0 is effects-only) and for descriptors whose file is
     // blacklisted (known crash-on-construct, e.g. Current.vst3). Used by
     // App's saved-patch restore and the .pdl loader to drop nodes BEFORE
-    // createInstance: the instrument sweep and known-problem floor only guard
-    // the scan path, so the restore/load path — which calls createInstance
+    // createInstance: the known-problem floor only guards the scan path, so
+    // the restore/load path — which calls createInstance
     // directly — would otherwise construct such a plugin unguarded and crash
     // the host on launch. Message-thread only.
     bool isDescriptorSafeForChain(const juce::PluginDescription& desc) const;
@@ -180,6 +182,10 @@ public:
     // PluginDirectoryScanner / PluginListComponent.
     juce::File getCrashedPluginsFile() const;
 
+    // Where the out-of-process scanner keeps its scan-in-flight marker (M5 U6,
+    // plan KD8): beside the crash list.
+    juce::File getScanInFlightFile() const;
+
     // Walk the default VST3 search paths, find every bundle whose
     // basename matches an entry in engine/KnownProblemPlugins.h, and
     // pre-add it to KnownPluginList's blacklist. Plugins on that list
@@ -200,26 +206,10 @@ public:
     bool applyKnownProblemBlacklist();
 
 private:
-    // ChangeListener — fires on every KnownPluginList mutation. Acts as a
-    // catch-all instrument filter: any isInstrument descriptor that lands
-    // in the list (from our subprocess scanner, JUCE's in-process scanner
-    // inside PluginListComponent, scanDirectory, or loadKnownList from
-    // saved XML) gets removed and its file added to the blacklist so
-    // subsequent scans skip it. v3.0 ships as effects-only (master plan
-    // §4.2.D); v3.1 will lift this filter and start hosting instruments.
-    void changeListenerCallback(juce::ChangeBroadcaster* source) override;
-
     DiskThread diskThread_; // first, so it outlives nothing that uses it: processors go with Session
     juce::AudioPluginFormatManager formats_;
     juce::KnownPluginList knownList_;
     mutable juce::ReadWriteLock listLock_;
-
-    // Re-entrancy guard for the instrument-filter listener. KnownPluginList's
-    // change message is async (juce::AsyncUpdater) so the flag is mostly
-    // belt-and-braces, but it also avoids redundant sweeps when our own
-    // removeType + addToBlacklist calls echo a follow-up change message
-    // back through us.
-    bool sweepingInstruments_{false};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginHost)
 };

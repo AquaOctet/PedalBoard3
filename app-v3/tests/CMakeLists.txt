@@ -123,4 +123,19 @@ if(TARGET pb3-scanner-helper)
     )
 endif()
 
+# A stand-in scanner helper for PluginScanner's tests (M5 U6): plain C++ with no
+# JUCE, so its cases run on a headless runner. It hangs, crashes, floods its
+# output or reports an instrument on demand, and it's found the same way as the
+# real helper above, through a locator file.
+add_executable(pb3-fake-scanner-helper support/FakeScannerHelper.cpp)
+target_include_directories(pb3-fake-scanner-helper PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+add_dependencies(pb3_smoke_tests pb3-fake-scanner-helper)
+file(GENERATE
+    OUTPUT  "${CMAKE_CURRENT_BINARY_DIR}/fake_scanner_helper_path.txt"
+    CONTENT "$<TARGET_FILE:pb3-fake-scanner-helper>"
+)
+target_compile_definitions(pb3_smoke_tests PRIVATE
+    "PB3_TEST_FAKE_SCANNER_HELPER_LOCATOR=\"${CMAKE_CURRENT_BINARY_DIR}/fake_scanner_helper_path.txt\""
+)
+
 catch_discover_tests(pb3_smoke_tests)
