@@ -88,11 +88,15 @@ void setFlag(void* flag)
     *static_cast<bool*>(flag) = true;
 }
 
+// Both operands volatile: with a constant numerator of 1, GCC turns 1 / x into a
+// comparison (the answer can only be 1, -1 or 0) and never divides, so nothing
+// traps.
+volatile int numerator = 1;
 volatile int zeroDivisor = 0;
 
 [[maybe_unused]] void divideByZero(void*)
 {
-    volatile int result = 1 / zeroDivisor;
+    volatile int result = numerator / zeroDivisor;
     (void)result;
 }
 
