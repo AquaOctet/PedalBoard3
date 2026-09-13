@@ -135,6 +135,7 @@ private:
     void onCardBypassToggle(NodeId);
     void onCardEdit(NodeId);
     void onCardRemove(NodeId);
+    void onCardRearm(NodeId); // a dead plugin's card was clicked (M5 U5)
     // Close one node's editor and mappings windows, before it goes away.
     void closeEditorsFor(NodeId);
     void onCardMoved(NodeId, juce::Point<int> newPos);
@@ -171,6 +172,9 @@ private:
     // Last Session patch generation seen; a change means a whole-patch swap
     // replaced every processor, so all editors close (ids may be reused).
     std::uint64_t lastPatchGeneration_{0};
+
+    // BypassableInstance::deathCount() when the cards last looked (M5 U5).
+    std::uint64_t lastDeathCount_{0};
 
     juce::Rectangle<int> inputCardBounds_;
     juce::Rectangle<int> outputCardBounds_;

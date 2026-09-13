@@ -435,6 +435,44 @@ void Session::setNodeBypass(NodeId id, bool shouldBypass)
     bumpVersionAndNotify();
 }
 
+void Session::rearmNode(NodeId id)
+{
+    if (getState() != State::Idle)
+        return;
+
+    PatchNode node;
+    int index = -1;
+    std::vector<PatchConnection> connections;
+    {
+        std::lock_guard<std::mutex> lk(statusMutex_);
+        if (auto* current = currentRuntimeGraph(); current == nullptr || current != liveGraph_)
+            return;
+
+        const auto it = nodes_.find(id);
+        if (it == nodes_.end() || it->second.bypass == nullptr || !it->second.bypass->isDead())
+            return;
+        if (!it->second.bypass->hasCrashed())
+        {
+            // The watchdog stopped it; nothing is broken, so it simply runs again.
+            it->second.bypass->clearDeath();
+            bumpVersionAndNotify();
+            return;
+        }
+
+        const auto* found = activePatch_.findNode(id);
+        if (found == nullptr)
+            return;
+        node = *found; // its settings as loaded: the crashed instance isn't asked
+        index = activePatch_.indexOfNode(id);
+        connections = activePatch_.connections;
+    }
+
+    // The crashed instance goes (its plugin leaked, never called again), and
+    // the node comes back through the add worker with a fresh one.
+    removeNode(id);
+    restoreNode(std::move(node), index, std::move(connections));
+}
+
 void Session::setNodeCustomName(NodeId id, juce::String name)
 {
     std::lock_guard<std::mutex> lk(statusMutex_);
@@ -607,6 +645,26 @@ void waitForAudioQuiescence(engine::AudioGraphRuntime* runtime)
     while (runtime->getGenerationAckedByAudio() < start + 2 && juce::Time::getMillisecondCounterHiRes() < deadlineMs)
         juce::Thread::sleep(1);
 }
+
+// A node's current state, through the crash guard (M5 U5), into a fresh block:
+// getStateInformation appends in many plugins, so capturing onto the old bytes
+// would concatenate. False, leaving `out` as it was, when the plugin has
+// crashed or crashes now, so the node keeps the settings it had.
+bool captureNodeState(const PreparedGraph::NodeRefs& refs, juce::MemoryBlock& out)
+{
+    juce::MemoryBlock captured;
+    if (refs.bypass != nullptr)
+    {
+        if (!refs.bypass->captureState(captured))
+            return false;
+    }
+    else if (refs.hosted != nullptr)
+    {
+        refs.hosted->getStateInformation(captured);
+    }
+    out = std::move(captured);
+    return true;
+}
 } // namespace
 
 Patch Session::getActivePatchWithState() const
@@ -652,13 +710,7 @@ Patch Session::getActivePatchWithState() const
             continue;
         auto it = nodes_.find(node.id);
         if (it != nodes_.end() && it->second.hosted != nullptr)
-        {
-            // Clear any blob carried over from a loaded .pdl first —
-            // getStateInformation appends via MemoryOutputStream in many
-            // plugins, which would otherwise concatenate onto stale bytes.
-            node.state.setSize(0);
-            it->second.hosted->getStateInformation(node.state);
-        }
+            captureNodeState(it->second, node.state); // a crashed plugin keeps its bytes (M5 U5)
     }
 
     return snapshot;
@@ -695,8 +747,7 @@ std::optional<PatchNode> Session::getNodeWithState(NodeId id) const
                                           wrapper->suspendProcessing(false);
                                   }};
 
-    node.state.setSize(0);
-    it->second.hosted->getStateInformation(node.state);
+    captureNodeState(it->second, node.state); // a crashed plugin keeps its bytes (M5 U5)
     return node;
 }
 
@@ -731,6 +782,9 @@ std::vector<Session::NodeSnapshot> Session::getNodeSnapshots() const
     std::lock_guard<std::mutex> lk(statusMutex_);
     std::vector<NodeSnapshot> snaps;
     snaps.reserve(activePatch_.nodes.size());
+    // The wrappers belong to the committed graph; an out-of-band swap (Test
+    // Tone) leaves them dangling, and then nothing is read from them.
+    const bool graphCurrent = liveGraph_ != nullptr && currentRuntimeGraph() == liveGraph_;
     for (const auto& n : activePatch_.nodes)
     {
         NodeSnapshot s;
@@ -747,6 +801,18 @@ std::vector<Session::NodeSnapshot> Session::getNodeSnapshots() const
         s.customName = n.customName;
         s.midiChannel = n.midiChannel;
         s.missingReason = n.missingReason;
+        if (graphCurrent)
+        {
+            // A plugin that died while playing (M5 U5).
+            const auto it = nodes_.find(n.id);
+            if (it != nodes_.end() && it->second.bypass != nullptr && it->second.bypass->isDead())
+            {
+                const bool crashed = it->second.bypass->hasCrashed();
+                s.death = crashed ? NodeSnapshot::Death::Crashed : NodeSnapshot::Death::Stalled;
+                if (crashed)
+                    s.fault = platform::faultName(it->second.bypass->getFault());
+            }
+        }
         s.builtIn = n.kind == NodeKind::Internal;
         if (s.builtIn)
         {
@@ -775,7 +841,14 @@ juce::AudioProcessor* Session::getHostedPlugin(NodeId id) const noexcept
 {
     std::lock_guard<std::mutex> lk(statusMutex_);
     auto it = nodes_.find(id);
-    return it != nodes_.end() ? it->second.hosted : nullptr;
+    if (it == nodes_.end())
+        return nullptr;
+    // A crashed plugin is never called again (M5 U5): no editor, meter or
+    // mapping reaches it. (The wrapper is only read while its graph is live.)
+    const bool graphCurrent = liveGraph_ != nullptr && currentRuntimeGraph() == liveGraph_;
+    if (graphCurrent && it->second.bypass != nullptr && it->second.bypass->hasCrashed())
+        return nullptr;
+    return it->second.hosted;
 }
 
 bool Session::isNodeBypassed(NodeId id) const noexcept

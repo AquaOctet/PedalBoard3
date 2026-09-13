@@ -81,6 +81,10 @@ inline juce::String settingsFailed()
 {
     return "Its saved settings wouldn't load";
 }
+inline juce::String crashedLoading(const juce::String& fault)
+{
+    return "It crashed loading its settings (" + fault + ")";
+}
 } // namespace missingreason
 
 // Worker-thread-safe builder. Iterates `patch.nodes`, instantiates each
@@ -112,7 +116,7 @@ PreparedGraph buildPreparedGraph(
 // `loaded` comes from host.createInstance (nullptr when that failed with
 // `loadError`); the node's saved state is applied to it before prepareToPlay.
 // When the node is missing, the plugin didn't load, or its setStateInformation
-// throws, the result is instead a pass-through
+// throws or crashes (through the crash guard, M5 U5), the result is instead a pass-through
 // engine::processors::MissingPluginProcessor holding the node's identity and
 // saved state verbatim, and `missingReason` says why. Worker-thread safe.
 struct PluginBuild

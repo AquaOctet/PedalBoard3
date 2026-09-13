@@ -1,5 +1,6 @@
 #include "App.h"
 
+#include "platform/CrashGuard.h"
 #include "session/DefaultBank.h"
 
 namespace pedalboard3
@@ -7,6 +8,10 @@ namespace pedalboard3
 
 void App::initialise(const juce::String& /*commandLine*/)
 {
+    // The plugin crash guard's signal handlers (M5 U5; Linux only, a no-op
+    // elsewhere), before any audio or plugin code runs.
+    platform::installCrashGuard();
+
     // Install the Pedalboard 3 LookAndFeel before any Component is built —
     // every dialog launched after this point picks up the new palette.
     lookAndFeel = std::make_unique<ui::Pb3LookAndFeel>();

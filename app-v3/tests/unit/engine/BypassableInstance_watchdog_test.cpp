@@ -1,7 +1,8 @@
 // Tests for pedalboard3::engine::BypassableInstance's block-budget
 // watchdog. 3 consecutive overruns mark the plugin dead; a subsequent
-// healthy block resets the counter. Dead plugins output silence and never
-// invoke the hosted processor. clearDeath brings them back.
+// healthy block resets the counter. Dead plugins pass their input through
+// (M5 U5, plan KD2) and never invoke the hosted processor. clearDeath brings
+// them back.
 //
 // Plan: Appendix A.2; Phase 1.B.1; AC-PL-1.
 
@@ -128,7 +129,7 @@ TEST_CASE("BypassableInstance watchdog: a healthy block resets the consecutive-o
     REQUIRE(h.wrapper->isDead()); // now 3 in a row
 }
 
-TEST_CASE("BypassableInstance watchdog: dead plugin outputs silence and skips hosted processor",
+TEST_CASE("BypassableInstance watchdog: a dead plugin passes its input through and skips the hosted processor",
           "[engine][bypassable][watchdog]")
 {
     auto h = makeHarness();
@@ -141,12 +142,15 @@ TEST_CASE("BypassableInstance watchdog: dead plugin outputs silence and skips ho
     const int callCountAtDeath = h.inner->processBlockCallCount.load();
 
     // Post-death block. SlowProcessor would fill the buffer with 0.5
-    // sentinels if called; silence means the dead-path took over.
+    // sentinels if called; the untouched input means the dead path took over
+    // and passed it through (M5 U5, plan KD2), as if bypassed.
     auto buf = makeTestBuffer(2, kDefaultBlockSize);
-    fillDC(buf, 0.25f); // start non-silent to prove the wrapper clears
+    fillDC(buf, 0.25f);
     renderBlocks(*h.wrapper, buf);
 
-    REQUIRE(isSilent(buf));
+    for (int ch = 0; ch < buf.getNumChannels(); ++ch)
+        for (int n = 0; n < buf.getNumSamples(); ++n)
+            REQUIRE(buf.getSample(ch, n) == 0.25f);
     REQUIRE(h.inner->processBlockCallCount.load() == callCountAtDeath);
 }
 

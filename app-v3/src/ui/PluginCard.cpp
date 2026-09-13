@@ -157,13 +157,13 @@ void PluginCard::setMeterLevels(float left, float right)
 void PluginCard::refreshButtons()
 {
     // BYP lights amber while bypassed. ED is for plugins (built-ins have no
-    // editor, nor does a missing plugin); M is for everything but the VU Meter,
-    // which has nothing to map.
+    // editor, nor does a missing or dead one); M is for everything but the VU
+    // Meter, which has nothing to map.
     bypassButton_.setColour(juce::TextButton::buttonColourId,
                             snapshot_.bypassed ? tokens::accentWarning.withAlpha(0.18f) : tokens::bgSecondary);
     bypassButton_.setColour(juce::TextButton::textColourOffId,
                             snapshot_.bypassed ? tokens::accentWarning : tokens::fgPrimary);
-    editButton_.setVisible(!snapshot_.isMissing() &&
+    editButton_.setVisible(!snapshot_.isMissing() && !snapshot_.isDead() &&
                            (!snapshot_.builtIn || hasProcessorEditor(snapshot_.internalType)));
     mappingsButton_.setVisible(!isVuMeter());
     removeButton_.setVisible(hovered_);
@@ -218,15 +218,15 @@ void PluginCard::paint(juce::Graphics& g)
             g.fillEllipse(10.0f + 4.0f * static_cast<float>(col), 11.0f + 4.5f * static_cast<float>(row), 2.0f, 2.0f);
 
     // The name, struck through while bypassed (hidden while it's being edited),
-    // and red with "Missing: " while the plugin is a placeholder (M5 U3).
+    // and red while the plugin is missing (M5 U3) or dead (M5 U5).
     if (renameEditor_ == nullptr)
     {
         const auto name = card::titleFor(snapshot_);
         const auto font = nameFont();
         g.setFont(font);
-        g.setColour(snapshot_.isMissing() ? tokens::accentDestructive
-                    : snapshot_.bypassed  ? tokens::fgMuted
-                                          : tokens::fgPrimary);
+        g.setColour((snapshot_.isMissing() || snapshot_.isDead()) ? tokens::accentDestructive
+                    : snapshot_.bypassed                          ? tokens::fgMuted
+                                                                  : tokens::fgPrimary);
         g.drawText(name, nameArea_, juce::Justification::centredLeft, true);
         if (snapshot_.bypassed)
         {
@@ -384,9 +384,13 @@ void PluginCard::mouseUp(const juce::MouseEvent&)
         if (callbacks_.onMoved)
             callbacks_.onMoved(snapshot_.id, getPosition());
     }
-    else if (callbacks_.onSelect)
+    else
     {
-        callbacks_.onSelect(snapshot_.id);
+        if (callbacks_.onSelect)
+            callbacks_.onSelect(snapshot_.id);
+        // A click on a card whose plugin died brings it back (M5 U5).
+        if (snapshot_.isDead() && callbacks_.onRearm)
+            callbacks_.onRearm(snapshot_.id);
     }
     didDrag_ = false;
 }

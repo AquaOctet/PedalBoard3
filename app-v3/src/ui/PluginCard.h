@@ -53,6 +53,8 @@ public:
         std::function<void(NodeId)> onSelect;
         // The name was edited in place; empty reverts to the plugin's own name.
         std::function<void(NodeId, juce::String)> onRename;
+        // A click on a card whose plugin died (M5 U5): bring it back.
+        std::function<void(NodeId)> onRearm;
     };
 
     PluginCard(NodeSnapshot initialSnapshot, Callbacks callbacks);
