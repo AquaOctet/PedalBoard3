@@ -182,6 +182,22 @@ public:
     // PluginDirectoryScanner / PluginListComponent.
     juce::File getCrashedPluginsFile() const;
 
+    // The folder the crash list and the scan-in-flight marker live in: the
+    // settings file's (M5 U7, plan KD8), which App sets. Until it's set,
+    // "Pedalboard 3" in the user's application data folder.
+    void setUserDataFolder(juce::File folder);
+
+    // The crash list, read strictly (M5 U7, plan KD8): every line must name a
+    // plugin (an absolute path, or a "Format:identifier" such as an Audio
+    // Unit's), or none of it is used. `error` says why a list was refused;
+    // empty when it was fine or absent.
+    struct CrashList
+    {
+        juce::StringArray paths;
+        juce::String error;
+    };
+    CrashList readCrashList() const;
+
     // Where the out-of-process scanner keeps its scan-in-flight marker (M5 U6,
     // plan KD8): beside the crash list.
     juce::File getScanInFlightFile() const;
@@ -210,6 +226,7 @@ private:
     juce::AudioPluginFormatManager formats_;
     juce::KnownPluginList knownList_;
     mutable juce::ReadWriteLock listLock_;
+    juce::File userDataFolder_; // see setUserDataFolder
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginHost)
 };

@@ -14,13 +14,20 @@ namespace pedalboard3::session
 
 // Per-user settings store backed by juce::ApplicationProperties.
 //
-// One PropertiesFile lives at the OS-conventional path:
-//   macOS   ~/Library/Application Support/Pedalboard 3/Preferences.settings
-//   Linux   ~/.config/Pedalboard 3/Preferences.settings
-//   Windows %APPDATA%\Pedalboard 3\Preferences.settings
+// One PropertiesFile lives at the OS-conventional path (JUCE's
+// PropertiesFile::Options::getDefaultFile):
+//   macOS   ~/Library/Application Support/Pedalboard 3/Pedalboard 3.settings
+//   Linux   ~/Pedalboard 3/Pedalboard 3.settings
+//   Windows %APPDATA%\Pedalboard 3\Pedalboard 3.settings
 //
-// Same parent directory as PluginHost::getCrashedPluginsFile()'s xml so
-// every per-user artefact lives under one folder.
+// App points PluginHost's crash list and scan marker at the same folder
+// (PluginHost::setUserDataFolder), so every per-user file lives in one place.
+//
+// A file that exists but can't be read is moved aside as "<name>.corrupt" and
+// Preferences starts empty, rather than letting the next save overwrite it
+// (M5 U7, plan KD8, master plan AC-SE-24); getSetAsideSettingsFile() tells the
+// app, which says so and offers a plugin rescan. Saves go through the atomic
+// writer, owner-only (0600) on POSIX.
 //
 // Carries:
 //   - "audioDeviceState" — XML from AudioDeviceManager::createStateXml()
@@ -28,19 +35,26 @@ namespace pedalboard3::session
 //   - JUCE plugin blacklist — managed automatically when a PropertiesFile*
 //     is handed to juce::PluginListComponent
 //
-// Not RT-safe. Message-thread only. ApplicationProperties' default
-// behaviour saves dirty values every ~3 seconds; flush() forces an
-// immediate write (called from App::shutdown).
-class Preferences
+// Not RT-safe. Message-thread only. Dirty values are saved about 3 seconds
+// after the last change; flush() forces an immediate write (called from
+// App::shutdown).
+class Preferences : private juce::ChangeListener, private juce::Timer
 {
 public:
     Preferences();
-    ~Preferences();
+    // The settings live in `settingsFile` rather than the user's (tests).
+    explicit Preferences(juce::File settingsFile);
+    ~Preferences() override;
 
     // Hand to JUCE components that take a PropertiesFile* (e.g.
     // juce::AudioDeviceSelectorComponent, juce::PluginListComponent).
     // They read/write keys directly into the same file.
     juce::PropertiesFile* getStore() noexcept;
+
+    // A settings file that couldn't be read when Preferences opened it (M5 U7):
+    // where it was moved aside, "<name>.corrupt". Empty when the file was fine
+    // or absent.
+    juce::File getSetAsideSettingsFile() const noexcept { return setAside_; }
 
     // Saved AudioDeviceManager state, or nullptr on first run. Non-const
     // because juce::ApplicationProperties opens the backing file lazily
@@ -169,15 +183,27 @@ public:
     juce::String getOscMulticastAddress();
     void setOscMulticastAddress(const juce::String& address);
 
-    // Force a synchronous write of any dirty values. Safe to call
-    // multiple times. ApplicationProperties also auto-saves on
-    // destruction, but App::shutdown calls this explicitly so a
-    // listener-driven write that happened seconds before quit is
-    // guaranteed to land on disk.
+    // Write any dirty values now, atomically (a crash mid-save leaves the old
+    // settings whole) and owner-only on POSIX. Safe to call multiple times. The
+    // destructor flushes too, but App::shutdown calls this explicitly so a
+    // listener-driven write that happened seconds before quit is guaranteed to
+    // land on disk.
     void flush();
 
 private:
-    juce::ApplicationProperties props_;
+    void changeListenerCallback(juce::ChangeBroadcaster*) override; // a value changed: save soon
+    void timerCallback() override;                                  // ... now
+
+    juce::File file_;
+    juce::File setAside_;
+
+    // The store. Its own PropertiesFile, not juce::ApplicationProperties, so
+    // Preferences decides how the file is read and written (M5 U7).
+    struct Store
+    {
+        std::unique_ptr<juce::PropertiesFile> file;
+        juce::PropertiesFile* getUserSettings() const noexcept { return file.get(); }
+    } props_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Preferences)
 };

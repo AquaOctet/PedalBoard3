@@ -7,7 +7,8 @@ namespace pedalboard3::session
 
 juce::Result AtomicFileWriter::write(const juce::File& target,
                                      const std::function<bool(juce::OutputStream&)>& body,
-                                     const StepHook& hook)
+                                     const StepHook& hook,
+                                     [[maybe_unused]] bool ownerOnly)
 {
     const auto folder = target.getParentDirectory();
     if (!folder.isDirectory())
@@ -52,6 +53,11 @@ juce::Result AtomicFileWriter::write(const juce::File& target,
         return juce::Result::fail(error);
     }
 
+#if !JUCE_WINDOWS
+    if (ownerOnly)
+        atomicfile::restrictToOwner(temp.getFullPathName().toRawUTF8());
+#endif
+
 #if JUCE_WINDOWS
     const bool replaced = atomicfile::replaceWriteThrough(temp.getFullPathName().toWideCharPointer(),
                                                           target.getFullPathName().toWideCharPointer());
@@ -73,9 +79,16 @@ juce::Result AtomicFileWriter::write(const juce::File& target,
     return juce::Result::ok();
 }
 
-juce::Result AtomicFileWriter::writeText(const juce::File& target, const juce::String& text, const StepHook& hook)
+juce::Result AtomicFileWriter::writeText(const juce::File& target,
+                                         const juce::String& text,
+                                         const StepHook& hook,
+                                         bool ownerOnly)
 {
-    return write(target, [&text](juce::OutputStream& out) { return out.writeText(text, false, false, nullptr); }, hook);
+    return write(
+        target,
+        [&text](juce::OutputStream& out) { return out.writeText(text, false, false, nullptr); },
+        hook,
+        ownerOnly);
 }
 
 } // namespace pedalboard3::session

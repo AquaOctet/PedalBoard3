@@ -7,7 +7,8 @@
 // exercise round-trip semantics on the live store: write XML, read it
 // back, verify content matches. They DO touch the user's real settings
 // directory, so they use a unique top-level XML element name nobody
-// else writes. Cleanup runs at end of each test.
+// else writes. Cleanup runs at end of each test. The M5 U7 cases give
+// Preferences a file of their own (Preferences(File)) instead.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -16,6 +17,10 @@
 #include "session/Preferences.h"
 
 #include <juce_data_structures/juce_data_structures.h>
+
+#if !JUCE_WINDOWS
+#include <sys/stat.h>
+#endif
 
 using namespace pedalboard3;
 
@@ -724,3 +729,87 @@ TEST_CASE("Preferences: a planted file never leaks through an entity in a saved 
     prefs.flush();
     secret.deleteFile();
 }
+
+// ---- A settings file that survives damage (M5 U7) ---------------------------
+
+namespace
+{
+juce::File tempSettingsFile(const juce::String& tag)
+{
+    return juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getChildFile("pb3-settings-" + tag + "-" + juce::String(juce::Time::currentTimeMillis()))
+        .getChildFile("Pedalboard 3.settings");
+}
+} // namespace
+
+TEST_CASE("Preferences: a settings file that can't be read is set aside as .corrupt and reported, not reset silently",
+          "[session][preferences][corrupt]")
+{
+    const auto file = tempSettingsFile("corrupt");
+    REQUIRE(file.getParentDirectory().createDirectory().wasOk());
+    REQUIRE(file.replaceWithText("<PROPERTIES><VALUE name=\"knownPluginList\"")); // cut off mid-write
+
+    {
+        session::Preferences prefs(file);
+        const auto aside = prefs.getSetAsideSettingsFile();
+        REQUIRE(aside.existsAsFile());
+        REQUIRE(aside.getFileName().endsWith(".corrupt"));
+        REQUIRE(aside.loadFileAsString().startsWith("<PROPERTIES><VALUE"));
+        REQUIRE(prefs.getKnownPluginList() == nullptr);
+
+        // Fresh settings save normally, and the damaged file stays set aside.
+        prefs.setOscPort(9123);
+        prefs.flush();
+        REQUIRE(aside.existsAsFile());
+    }
+
+    session::Preferences reopened(file);
+    REQUIRE(reopened.getSetAsideSettingsFile() == juce::File());
+    REQUIRE(reopened.getOscPort() == 9123);
+
+    file.getParentDirectory().deleteRecursively();
+}
+
+TEST_CASE("Preferences: a readable settings file isn't set aside, and what's saved reads back",
+          "[session][preferences]")
+{
+    const auto file = tempSettingsFile("fine");
+    juce::XmlElement list("KNOWNPLUGINS");
+    list.createNewChildElement("PLUGIN")->setAttribute("name", "Kept");
+    {
+        session::Preferences prefs(file); // no file yet: starts empty, nothing set aside
+        REQUIRE(prefs.getSetAsideSettingsFile() == juce::File());
+        prefs.setOscPort(9001);
+        prefs.setKnownPluginList(list);
+        prefs.flush();
+    }
+    REQUIRE(file.existsAsFile());
+
+    session::Preferences again(file);
+    REQUIRE(again.getSetAsideSettingsFile() == juce::File());
+    REQUIRE(again.getOscPort() == 9001);
+    const auto restored = again.getKnownPluginList();
+    REQUIRE(restored != nullptr);
+    REQUIRE(restored->getChildByName("PLUGIN")->getStringAttribute("name") == "Kept");
+
+    file.getParentDirectory().deleteRecursively();
+}
+
+#if !JUCE_WINDOWS
+TEST_CASE("Preferences: written settings are readable by their owner only (POSIX)", "[session][preferences]")
+{
+    const auto file = tempSettingsFile("owner-only");
+    {
+        session::Preferences prefs(file);
+        prefs.setOscPort(9002);
+        prefs.flush();
+    }
+
+    using StatBuffer = struct stat;
+    StatBuffer info{};
+    REQUIRE(::stat(file.getFullPathName().toRawUTF8(), &info) == 0);
+    REQUIRE((info.st_mode & 0777) == 0600);
+
+    file.getParentDirectory().deleteRecursively();
+}
+#endif

@@ -458,3 +458,38 @@ TEST_CASE("PluginHost: getInternalNodeTypes lists the built-in nodes", "[engine]
     REQUIRE(hasMetronome);
     REQUIRE(hasLooper);
 }
+
+TEST_CASE("PluginHost: the crash list is read strictly: a malformed one is reported, not half-read (M5 U7)",
+          "[engine][plugin-host][blacklist]")
+{
+    const auto folder = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                            .getChildFile("pb3-crash-list-" + juce::String(juce::Time::currentTimeMillis()));
+    engine::PluginHost host;
+    host.setUserDataFolder(folder);
+    const auto file = host.getCrashedPluginsFile();
+    REQUIRE(file.getParentDirectory() == folder);
+
+    // None yet: nothing to read, nothing wrong.
+    REQUIRE(host.readCrashList().paths.isEmpty());
+    REQUIRE(host.readCrashList().error.isEmpty());
+
+#if JUCE_WINDOWS
+    const juce::String crashy = "C:\\Plugins\\Crashy.vst3";
+    const juce::String other = "C:\\Plugins\\Other.vst3";
+#else
+    const juce::String crashy = "/plugins/Crashy.vst3";
+    const juce::String other = "/plugins/Other.vst3";
+#endif
+    REQUIRE(file.replaceWithText(crashy + "\n\n" + other + "\nAudioUnit:Effects/aufx,dely,appl\n"));
+    const auto good = host.readCrashList();
+    REQUIRE(good.error.isEmpty());
+    REQUIRE(good.paths.size() == 3);
+
+    // One line that names no plugin: none of it is used.
+    REQUIRE(file.replaceWithText(crashy + "\nnot a plugin\n" + other + "\n"));
+    const auto bad = host.readCrashList();
+    REQUIRE(bad.paths.isEmpty());
+    REQUIRE(bad.error.contains("line 2"));
+
+    folder.deleteRecursively();
+}

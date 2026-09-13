@@ -26,6 +26,9 @@ void App::initialise(const juce::String& /*commandLine*/)
     }
 
     pluginHost = std::make_unique<engine::PluginHost>();
+    // The crash list and the scan marker live beside the settings file (M5 U7).
+    if (auto* store = preferences->getStore())
+        pluginHost->setUserDataFolder(store->getFile().getParentDirectory());
     if (auto savedList = preferences->getKnownPluginList())
         pluginHost->loadKnownList(*savedList);
 
@@ -110,6 +113,10 @@ void App::initialise(const juce::String& /*commandLine*/)
                                *transportCommands,
                                *featureGate});
     mainWindow = std::make_unique<ui::MainWindow>(getApplicationName(), *context);
+    // A settings file that couldn't be read was set aside (M5 U7): say so and
+    // offer a rescan, rather than leave an empty plugin list unexplained.
+    if (const auto setAside = preferences->getSetAsideSettingsFile(); setAside != juce::File())
+        mainWindow->offerRescanAfterReset(setAside);
     // Quit goes through the window's save prompt (finish pass KD4); after Don't
     // Save, shutdown() reverts the persisted session (KD7).
     mainWindow->onQuitConfirmed = [this](bool discardUnsaved)

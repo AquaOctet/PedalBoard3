@@ -32,10 +32,18 @@ public:
     // there would.
     using StepHook = std::function<bool(Step)>;
 
+    // `ownerOnly` (M5 U7, master plan AC-SE-24): on POSIX the file ends up
+    // readable and writable by its owner alone (0600), set on the temp file
+    // before it replaces the target. Windows keeps the folder's permissions (a
+    // user's %APPDATA% is theirs already).
     static juce::Result write(const juce::File& target,
                               const std::function<bool(juce::OutputStream&)>& body,
-                              const StepHook& hook = {});
-    static juce::Result writeText(const juce::File& target, const juce::String& text, const StepHook& hook = {});
+                              const StepHook& hook = {},
+                              bool ownerOnly = false);
+    static juce::Result writeText(const juce::File& target,
+                                  const juce::String& text,
+                                  const StepHook& hook = {},
+                                  bool ownerOnly = false);
 };
 
 } // namespace pedalboard3::session

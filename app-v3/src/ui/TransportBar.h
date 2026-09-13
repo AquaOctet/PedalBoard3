@@ -73,6 +73,10 @@ public:
     void promptRenamePatch();
     void confirmRemovePatch();
 
+    // Plugins > Rescan Plugins: the out-of-process scan and its summary. The
+    // prompt after a settings reset runs it too (M5 U7).
+    void rescanPlugins();
+
     // The File, Settings and Plugins menus, shared by the bar's buttons and the
     // macOS menu bar (#25). With `menuBarCommands` the File menu is the menu
     // bar's: Save runs through the app command, so it shows its shortcut, and
@@ -91,7 +95,6 @@ private:
     bool canAddPlugin() const; // Session Idle and Test Tone off
     void openFileMenu();
     void openPluginList();
-    void rescanPlugins();
     // The Test Tone switch changed (the Settings menu or the Audio Devices
     // dialog): start or stop the tone.
     void valueChanged(juce::Value&) override;

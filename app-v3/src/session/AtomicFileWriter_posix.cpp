@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 namespace pedalboard3::session::atomicfile
@@ -19,6 +20,11 @@ void syncDirectory(const char* folder) noexcept
         return; // the data is already flushed; only the rename's durability is at stake
     ::fsync(fd);
     ::close(fd);
+}
+
+void restrictToOwner(const char* path) noexcept
+{
+    ::chmod(path, S_IRUSR | S_IWUSR);
 }
 
 } // namespace pedalboard3::session::atomicfile

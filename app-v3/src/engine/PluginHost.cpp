@@ -256,11 +256,68 @@ std::unique_ptr<juce::AudioProcessor> PluginHost::createInternalInstance(const j
     return proc;
 }
 
+void PluginHost::setUserDataFolder(juce::File folder)
+{
+    userDataFolder_ = std::move(folder);
+}
+
 juce::File PluginHost::getCrashedPluginsFile() const
 {
-    auto appDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("Pedalboard3");
-    appDir.createDirectory();
-    return appDir.getChildFile("crashed_plugins.xml");
+    auto folder =
+        userDataFolder_ != juce::File()
+            ? userDataFolder_
+            : juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("Pedalboard 3");
+    folder.createDirectory();
+    return folder.getChildFile("crashed_plugins.xml");
+}
+
+PluginHost::CrashList PluginHost::readCrashList() const
+{
+    constexpr juce::int64 kMaxBytes = 1024 * 1024;
+    constexpr int kMaxLineLength = 4096;
+
+    // A plugin as JUCE names it: a file, or an identifier such as an Audio
+    // Unit's "AudioUnit:Effects/aufx,dely,appl".
+    const auto namesAPlugin = [](const juce::String& line)
+    {
+        if (line.length() > kMaxLineLength)
+            return false;
+        for (auto p = line.getCharPointer(); !p.isEmpty(); ++p)
+            if (*p < 0x20)
+                return false;
+        if (juce::File::isAbsolutePath(line))
+            return true;
+        const auto format = line.upToFirstOccurrenceOf(":", false, false);
+        return line.containsChar(':') && format.isNotEmpty() &&
+               format.containsOnly("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789");
+    };
+
+    CrashList list;
+    const auto file = getCrashedPluginsFile();
+    if (!file.existsAsFile())
+        return list;
+    if (file.getSize() > kMaxBytes)
+    {
+        list.error = "it's larger than 1 MB";
+        return list;
+    }
+
+    int lineNumber = 0;
+    for (const auto& line : juce::StringArray::fromLines(file.loadFileAsString()))
+    {
+        ++lineNumber;
+        const auto entry = line.trim();
+        if (entry.isEmpty())
+            continue;
+        if (!namesAPlugin(entry))
+        {
+            list.paths.clear();
+            list.error = "line " + juce::String(lineNumber) + " doesn't name a plugin";
+            return list;
+        }
+        list.paths.addIfNotAlreadyThere(entry);
+    }
+    return list;
 }
 
 juce::File PluginHost::getScanInFlightFile() const
