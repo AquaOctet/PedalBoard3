@@ -56,8 +56,12 @@ bool samePatch(const Patch& a, const Patch& b) noexcept
             return false;
         if (a.nodes[i].hasPosition() && (a.nodes[i].x != b.nodes[i].x || a.nodes[i].y != b.nodes[i].y))
             return false;
+        if (a.nodes[i].unknown != b.nodes[i].unknown) // what a newer version wrote (M5 U4)
+            return false;
     }
     if (a.midiMappings != b.midiMappings || a.oscMappings != b.oscMappings)
+        return false;
+    if (a.unknown != b.unknown || a.unknownMappings != b.unknownMappings)
         return false;
     return a.connections == b.connections;
 }
@@ -67,6 +71,8 @@ bool sameBank(const PatchBank& a, const PatchBank& b) noexcept
     if (a.activeIndex != b.activeIndex || a.patches.size() != b.patches.size())
         return false;
     if (a.features != b.features) // a board switch must persist too
+        return false;
+    if (a.unknown != b.unknown || a.fileUnknown != b.fileUnknown) // what a newer version wrote (M5 U4)
         return false;
     for (size_t i = 0; i < a.patches.size(); ++i)
     {
@@ -163,7 +169,8 @@ void PreferencesPersister::changeListenerCallback(juce::ChangeBroadcaster* sourc
         // Bank-only edits (patch rename / add / remove, a switch) and the file
         // identity: persisted here, since they don't always move Session.
         persistBank();
-        prefs_.setActiveBankIdentity(bankDocument_.currentFile(), bankDocument_.isModified());
+        prefs_.setActiveBankIdentity(
+            bankDocument_.currentFile(), bankDocument_.isModified(), bankDocument_.isReadOnly());
         return;
     }
 

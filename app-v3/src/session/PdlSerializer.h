@@ -20,10 +20,11 @@ namespace pedalboard3::session::pdl
 //     </BANK>
 //   </PEDALBOARD>
 //
-// v3.x readers accept schemaMajor == 3 regardless of schemaMinor. A file
-// with schemaMajor > 3 was written by a newer app and is rejected with a
-// friendly error (Phase 2 MVP: no read-only fallback yet; the AC-FS-7
-// preserve-unknown round-trip is deferred). schemaMinor 1 added the optional
+// v3.x readers accept schemaMajor == 3 regardless of schemaMinor, and keep
+// what a newer minor wrote that they don't know on the root, the bank, each
+// patch, node and <MAPPINGS> (M5 U4, AC-FS-7: see UnknownXml). A file with
+// schemaMajor > 3 was written by a newer app: it opens read-only, as far as
+// this version can read it. schemaMinor 1 added the optional
 // per-patch <MAPPINGS> (MIDI/OSC control bindings); schemaMinor 2 added the
 // per-<NODE> kind="internal" type="..." discriminator for built-in nodes;
 // schemaMinor 3 added optional per-<NODE> x/y canvas positions; schemaMinor 4
@@ -56,6 +57,9 @@ struct BankLoadResult
 {
     std::unique_ptr<PatchBank> bank; // null on failure
     juce::String error;              // empty on success
+    // Saved by a newer major version (M5 U4, plan KD7): open it, but don't save
+    // over it.
+    bool readOnly{false};
 };
 
 struct LoadResult
@@ -70,7 +74,7 @@ struct LoadResult
 // Parse a .pdl into a bank. Every patch is run through validatePatch; an
 // invalid one fails the whole load and names its 1-based position. An
 // out-of-range activeIndex is clamped, not fatal. On any failure — unreadable,
-// not a <PEDALBOARD>, schemaMajor > 3, no patches, malformed patch — returns a
+// not a <PEDALBOARD>, no patches, malformed patch — returns a
 // null bank and a user-presentable error string.
 BankLoadResult readBank(const juce::File& file);
 

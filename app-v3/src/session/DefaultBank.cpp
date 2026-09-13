@@ -38,7 +38,7 @@ void revertPersistedBank(Preferences& prefs, const juce::File& savedFile)
         if (loaded.bank != nullptr)
         {
             prefs.setActiveBank(*loaded.bank);
-            prefs.setActiveBankIdentity(savedFile, false);
+            prefs.setActiveBankIdentity(savedFile, false, loaded.readOnly);
             return;
         }
     }

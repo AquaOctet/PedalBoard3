@@ -120,21 +120,37 @@ TEST_CASE("pdl: a file without <MAPPINGS> reads with empty mapping tables", "[se
     file.deleteFile();
 }
 
-TEST_CASE("pdl: a newer schemaMajor is rejected with a friendly error", "[session][pdl]")
+TEST_CASE("pdl: a board from a newer major version opens read-only (M5 U4)", "[session][pdl][newer]")
 {
     const auto file = tempPdl("newer");
 
     juce::XmlElement root("PEDALBOARD");
     root.setAttribute("schemaMajor", session::pdl::kSchemaMajor + 1);
     root.setAttribute("schemaMinor", 0);
-    auto* patchEl = root.createNewChildElement("PATCH");
+    auto* patchEl = root.createNewChildElement("BANK")->createNewChildElement("PATCH");
+    patchEl->setAttribute("name", "From the future");
     patchEl->createNewChildElement("NODES");
-    patchEl->createNewChildElement("CONNECTIONS");
+    auto* connsEl = patchEl->createNewChildElement("CONNECTIONS");
     REQUIRE(root.writeTo(file));
 
-    auto loaded = session::pdl::readPatch(file);
-    REQUIRE(loaded.patch == nullptr);
-    REQUIRE(loaded.error.isNotEmpty());
+    const auto loaded = session::pdl::readBank(file);
+    REQUIRE(loaded.bank != nullptr);
+    REQUIRE(loaded.error.isEmpty());
+    REQUIRE(loaded.readOnly);
+    REQUIRE(loaded.bank->active().name == "From the future");
+
+    // Saved by this version, it's this version's own file.
+    REQUIRE(session::pdl::writeBank(*loaded.bank, file).wasOk());
+    REQUIRE_FALSE(session::pdl::readBank(file).readOnly);
+
+    // One this version can't make sense of says it came from a newer version.
+    auto* conn = connsEl->createNewChildElement("CONN");
+    conn->setAttribute("src", 5);
+    conn->setAttribute("dst", 0);
+    REQUIRE(root.writeTo(file));
+    const auto broken = session::pdl::readBank(file);
+    REQUIRE(broken.bank == nullptr);
+    REQUIRE(broken.error.contains("newer version"));
 
     file.deleteFile();
 }
@@ -503,4 +519,82 @@ TEST_CASE("pdl: a saved board names its plugins by ID, with no paths (M5 U3)", "
     REQUIRE_FALSE(text.contains(" file=\""));
     REQUIRE_FALSE(text.contains("/fake/EQ.vst3"));
     file.deleteFile();
+}
+
+TEST_CASE("pdl: what a newer version wrote on each level survives a load and save (M5 U4)", "[session][pdl][newer]")
+{
+    const auto file = tempPdl("unknowns");
+    const auto again = tempPdl("unknowns-again");
+    const juce::String text = R"(<?xml version="1.0" encoding="UTF-8"?>
+<PEDALBOARD schemaMajor="3" schemaMinor="99" appVersion="9.9.9" rootExtra="r">
+  <BANK activeIndex="0" bankExtra="b">
+    <PATCH name="P" tempo="120" timeSigNumerator="4" timeSigDenominator="4" patchExtra="p">
+      <NODES>
+        <NODE id="1" bypass="0" customName="" kind="internal" type="LevelProcessor" nodeExtra="n">
+          <NODE_FUTURE depth="3"><INNER a="1"/></NODE_FUTURE>
+        </NODE>
+      </NODES>
+      <CONNECTIONS/>
+      <MAPPINGS mapsExtra="m">
+        <MIDI_MAP kind="cc" channel="1" controller="7"><TARGET kind="pluginParameter" node="1"/></MIDI_MAP>
+        <MIDI_MAP kind="breath" channel="2" controller="2"><TARGET kind="pluginParameter" node="1"/></MIDI_MAP>
+        <OSC_MAP address="/x"><TARGET kind="teleport" node="1"/></OSC_MAP>
+        <GESTURE_MAP finger="3"/>
+      </MAPPINGS>
+      <PATCH_FUTURE colour="teal"/>
+    </PATCH>
+    <BANK_FUTURE setlist="yes"/>
+  </BANK>
+  <ROOT_FUTURE><X/></ROOT_FUTURE>
+</PEDALBOARD>)";
+    REQUIRE(file.replaceWithText(text));
+
+    const auto loaded = session::pdl::readBank(file);
+    REQUIRE(loaded.bank != nullptr);
+    REQUIRE_FALSE(loaded.readOnly);
+    const auto& patch = loaded.bank->active();
+    REQUIRE(patch.midiMappings.size() == 1); // the cc one; a breath source is a newer kind
+    REQUIRE(patch.oscMappings.empty());      // a teleport target is too: kept, not coerced
+
+    REQUIRE(session::pdl::writeBank(*loaded.bank, again).wasOk());
+    const auto written = again.loadFileAsString();
+    for (const char* marker : {"rootExtra=\"r\"",
+                               "<ROOT_FUTURE>",
+                               "bankExtra=\"b\"",
+                               "<BANK_FUTURE",
+                               "patchExtra=\"p\"",
+                               "<PATCH_FUTURE",
+                               "nodeExtra=\"n\"",
+                               "<NODE_FUTURE",
+                               "<INNER",
+                               "mapsExtra=\"m\"",
+                               "kind=\"breath\"",
+                               "kind=\"teleport\"",
+                               "<GESTURE_MAP"})
+    {
+        INFO(marker);
+        REQUIRE(written.contains(marker));
+    }
+
+    const auto reread = session::pdl::readBank(again);
+    REQUIRE(reread.bank != nullptr);
+    REQUIRE(reread.bank->fileUnknown == loaded.bank->fileUnknown);
+    REQUIRE(reread.bank->unknown == loaded.bank->unknown);
+    REQUIRE(reread.bank->active().unknown == patch.unknown);
+    REQUIRE(reread.bank->active().unknownMappings == patch.unknownMappings);
+    REQUIRE(reread.bank->active().nodes[0].unknown == patch.nodes[0].unknown);
+
+    // The Preferences copy (bankToXml) keeps them too, the root's included, and
+    // they go back on the file's root when that copy is saved.
+    const auto viaPrefs = session::bankFromXml(*session::bankToXml(*loaded.bank));
+    REQUIRE(viaPrefs != nullptr);
+    REQUIRE(viaPrefs->fileUnknown == loaded.bank->fileUnknown);
+    REQUIRE(viaPrefs->unknown == loaded.bank->unknown);
+    REQUIRE(session::pdl::writeBank(*viaPrefs, again).wasOk());
+    const auto rewritten = again.loadFileAsString();
+    REQUIRE(rewritten.contains("<ROOT_FUTURE>"));
+    REQUIRE(rewritten.indexOf("<PEDALBOARD") == rewritten.lastIndexOf("<PEDALBOARD"));
+
+    file.deleteFile();
+    again.deleteFile();
 }

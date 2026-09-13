@@ -112,26 +112,34 @@ void writeTarget(juce::XmlElement& mapEl, const control::MidiTarget& t)
     tgt->setAttribute("commandId", t.commandId);
 }
 
-control::MidiTarget readTarget(const juce::XmlElement& mapEl)
+// Fills `t` (the defaults, PluginParameter and node 0, when <TARGET> is absent).
+// False for a target kind this version doesn't know (M5 U4, plan KD7): the
+// caller keeps that mapping verbatim rather than coercing it to a parameter.
+bool readTarget(const juce::XmlElement& mapEl, control::MidiTarget& t)
 {
-    control::MidiTarget t; // defaults (PluginParameter, node 0) if <TARGET> absent
     if (auto* tgt = mapEl.getChildByName("TARGET"))
     {
-        if (auto kind = control::midiTargetKindFromString(tgt->getStringAttribute("kind")))
-            t.kind = *kind; // unknown target kind keeps the PluginParameter default
+        if (tgt->hasAttribute("kind"))
+        {
+            const auto kind = control::midiTargetKindFromString(tgt->getStringAttribute("kind"));
+            if (!kind)
+                return false;
+            t.kind = *kind;
+        }
         t.node = tgt->getIntAttribute("node", 0);
         t.parameterIndex = tgt->getIntAttribute("parameterIndex", 0);
         t.patchIndex = tgt->getIntAttribute("patchIndex", 0);
         t.commandId = tgt->getStringAttribute("commandId", "");
     }
-    return t;
+    return true;
 }
 
 void appendMappings(juce::XmlElement& root,
                     const std::vector<control::MidiMapping>& midi,
-                    const std::vector<control::OscMapping>& osc)
+                    const std::vector<control::OscMapping>& osc,
+                    const UnknownXml* kept)
 {
-    if (midi.empty() && osc.empty())
+    if (midi.empty() && osc.empty() && (kept == nullptr || kept->isEmpty()))
         return; // omit <MAPPINGS> entirely when there is nothing to persist
 
     auto* mapsEl = root.createNewChildElement("MAPPINGS");
@@ -159,25 +167,42 @@ void appendMappings(juce::XmlElement& root,
         el->setAttribute("inverted", o.inverted);
         writeTarget(*el, o.target);
     }
+
+    if (kept != nullptr)
+        kept->writeTo(*mapsEl); // what a newer version wrote here (M5 U4)
 }
 
 void readMappings(const juce::XmlElement& root,
                   std::vector<control::MidiMapping>& outMidi,
-                  std::vector<control::OscMapping>& outOsc)
+                  std::vector<control::OscMapping>& outOsc,
+                  UnknownXml* unknownOut)
 {
     auto* mapsEl = root.getChildByName("MAPPINGS");
     if (mapsEl == nullptr)
         return; // no <MAPPINGS> (every pre-Phase-4 file) -> empty tables, no error
 
+    // A newer version's mappings of a kind this one doesn't know, and anything
+    // else it wrote here, are kept whole (M5 U4, plan KD7).
+    if (unknownOut != nullptr)
+        *unknownOut = UnknownXml::collect(*mapsEl, {}, {"MIDI_MAP", "OSC_MAP"});
+    const auto keepWhole = [unknownOut](const juce::XmlElement& el)
+    {
+        if (unknownOut != nullptr)
+            unknownOut->keep(el);
+    };
+
     for (auto* el : mapsEl->getChildIterator())
     {
         if (el->hasTagName("MIDI_MAP"))
         {
-            const auto kind = control::midiSourceKindFromString(el->getStringAttribute("kind"));
-            if (!kind)
-                continue; // drop a single mapping with an unknown source kind
-
             control::MidiMapping m;
+            const auto kind = control::midiSourceKindFromString(el->getStringAttribute("kind"));
+            if (!kind || !readTarget(*el, m.target))
+            {
+                keepWhole(*el);
+                continue;
+            }
+
             m.source.kind = *kind;
             m.source.channel = el->getIntAttribute("channel", 0);
             m.source.controller = el->getIntAttribute("controller", 0);
@@ -185,21 +210,24 @@ void readMappings(const juce::XmlElement& root,
             m.rangeMax = static_cast<float>(el->getDoubleAttribute("rangeMax", 1.0));
             m.inverted = el->getBoolAttribute("inverted", false);
             m.latch = el->getBoolAttribute("latch", false);
-            m.target = readTarget(*el);
             outMidi.push_back(std::move(m));
         }
         else if (el->hasTagName("OSC_MAP"))
         {
             control::OscMapping o;
+            if (!readTarget(*el, o.target))
+            {
+                keepWhole(*el);
+                continue;
+            }
             o.address = el->getStringAttribute("address", "");
             o.argumentIndex = el->getIntAttribute("argumentIndex", 0);
             o.rangeMin = static_cast<float>(el->getDoubleAttribute("rangeMin", 0.0));
             o.rangeMax = static_cast<float>(el->getDoubleAttribute("rangeMax", 1.0));
             o.inverted = el->getBoolAttribute("inverted", false);
-            o.target = readTarget(*el);
             outOsc.push_back(std::move(o));
         }
-        // any other child tag is skipped
+        // any other child tag was collected above (or skipped without unknownOut)
     }
 }
 
@@ -207,16 +235,18 @@ void readMappings(const juce::XmlElement& root,
 
 void appendMappingsXml(juce::XmlElement& parent,
                        const std::vector<control::MidiMapping>& midi,
-                       const std::vector<control::OscMapping>& osc)
+                       const std::vector<control::OscMapping>& osc,
+                       const UnknownXml* kept)
 {
-    appendMappings(parent, midi, osc);
+    appendMappings(parent, midi, osc, kept);
 }
 
 void readMappingsXml(const juce::XmlElement& parent,
                      std::vector<control::MidiMapping>& midi,
-                     std::vector<control::OscMapping>& osc)
+                     std::vector<control::OscMapping>& osc,
+                     UnknownXml* unknownOut)
 {
-    readMappings(parent, midi, osc);
+    readMappings(parent, midi, osc, unknownOut);
 }
 
 PatchValidation validatePatch(const Patch& p) noexcept
@@ -371,6 +401,8 @@ std::unique_ptr<juce::XmlElement> patchToXml(const Patch& p)
             stateEl->setAttribute("encoding", "base64");
             stateEl->addTextElement(n.state.toBase64Encoding());
         }
+
+        n.unknown.writeTo(*nodeEl); // what a newer version wrote on the node (M5 U4)
     }
 
     auto* connsEl = root->createNewChildElement("CONNECTIONS");
@@ -383,7 +415,8 @@ std::unique_ptr<juce::XmlElement> patchToXml(const Patch& p)
         connEl->setAttribute("dstChan", juce::String(c.dstChannel));
     }
 
-    appendMappings(*root, p.midiMappings, p.oscMappings);
+    appendMappings(*root, p.midiMappings, p.oscMappings, &p.unknownMappings);
+    p.unknown.writeTo(*root); // what a newer version wrote on the patch (M5 U4)
 
     return root;
 }
@@ -447,6 +480,9 @@ std::unique_ptr<Patch> patchFromXml(const juce::XmlElement& root, juce::String* 
 
     auto patch = std::make_unique<Patch>();
     patch->name = root.getStringAttribute("name", "Untitled");
+    // What a newer version wrote on the patch, kept for the save (M5 U4, plan KD7).
+    patch->unknown = UnknownXml::collect(
+        root, {"name", "tempo", "timeSigNumerator", "timeSigDenominator"}, {"NODES", "CONNECTIONS", "MAPPINGS"});
 
     // Tempo and time signature (schemaMinor 6): absent or unusable values fall
     // back to 120 BPM in 4/4.
@@ -474,6 +510,11 @@ std::unique_ptr<Patch> patchFromXml(const juce::XmlElement& root, juce::String* 
             n.bypass = nodeEl->getBoolAttribute("bypass");
             n.customName = nodeEl->getStringAttribute("customName");
             n.midiChannel = juce::jlimit(0, 16, nodeEl->getIntAttribute("midiChannel", 0));
+            // What a newer version wrote on the node (M5 U4). <IDENTITY> keeps its
+            // allowlist (M5 U3): nothing unknown there is kept.
+            n.unknown = UnknownXml::collect(*nodeEl,
+                                            {"id", "bypass", "customName", "midiChannel", "x", "y", "kind", "type"},
+                                            {"IDENTITY", "STATE"});
 
             // Canvas position — absent attributes leave x/y as NaN (unpositioned),
             // so pre-position files auto-lay-out. Both must be present to count.
@@ -533,7 +574,7 @@ std::unique_ptr<Patch> patchFromXml(const juce::XmlElement& root, juce::String* 
     if (auto* mappingsEl = root.getChildByName("MAPPINGS"))
         if (const int count = mappingsEl->getNumChildElements(); count > kMaxMappingsPerPatch)
             return overLimit(count, kMaxMappingsPerPatch, "mappings");
-    readMappings(root, patch->midiMappings, patch->oscMappings);
+    readMappings(root, patch->midiMappings, patch->oscMappings, &patch->unknownMappings);
 
     return patch;
 }

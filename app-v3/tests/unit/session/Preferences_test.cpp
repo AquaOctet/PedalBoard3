@@ -548,15 +548,21 @@ TEST_CASE("Preferences: the active bank's file and unsaved flag round-trip and c
     prefs.flush();
     REQUIRE(prefs.getActiveBankFile() == file);
     REQUIRE(prefs.getActiveBankModified());
+    REQUIRE_FALSE(prefs.getActiveBankReadOnly());
+
+    // A board a newer version wrote stays read-only after a relaunch (M5 U4).
+    prefs.setActiveBankIdentity(file, false, /*readOnly*/ true);
+    REQUIRE(prefs.getActiveBankReadOnly());
 
     prefs.setActiveBankIdentity(juce::File(), false);
     REQUIRE(prefs.getActiveBankFile() == juce::File());
     REQUIRE_FALSE(prefs.getActiveBankModified());
 
-    prefs.setActiveBankIdentity(file, true);
+    prefs.setActiveBankIdentity(file, true, true);
     prefs.clearActiveBank();
     REQUIRE(prefs.getActiveBankFile() == juce::File());
     REQUIRE_FALSE(prefs.getActiveBankModified());
+    REQUIRE_FALSE(prefs.getActiveBankReadOnly());
     prefs.flush();
 }
 

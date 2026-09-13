@@ -308,8 +308,8 @@ TEST_CASE("Patch: a patch with no <MAPPINGS> round-trips to empty tables", "[ses
     REQUIRE(session::validatePatch(*rt) == session::PatchValidation::Ok);
 }
 
-TEST_CASE("Patch: unknown MIDI source kind drops that mapping; garbage child skipped",
-          "[session][patch][xml][mappings]")
+TEST_CASE("Patch: a mapping of a kind this version doesn't know is kept verbatim, not dropped or coerced (M5 U4)",
+          "[session][patch][xml][mappings][newer]")
 {
     juce::XmlElement root("PATCH");
     root.setAttribute("name", "X");
@@ -320,16 +320,32 @@ TEST_CASE("Patch: unknown MIDI source kind drops that mapping; garbage child ski
     good->setAttribute("channel", 1);
     good->setAttribute("controller", 7);
 
-    auto* bad = maps->createNewChildElement("MIDI_MAP"); // unknown kind -> dropped
-    bad->setAttribute("kind", "future");
-    bad->setAttribute("controller", 9);
+    auto* futureSource = maps->createNewChildElement("MIDI_MAP"); // a newer version's source kind
+    futureSource->setAttribute("kind", "future");
+    futureSource->setAttribute("controller", 9);
 
-    maps->createNewChildElement("FOO"); // garbage child -> skipped
+    auto* futureTarget = maps->createNewChildElement("OSC_MAP"); // a newer version's target kind
+    futureTarget->setAttribute("address", "/x");
+    futureTarget->createNewChildElement("TARGET")->setAttribute("kind", "future");
 
-    auto rt = session::patchFromXml(root);
+    maps->createNewChildElement("FOO"); // a newer version's element
+
+    const auto rt = session::patchFromXml(root);
     REQUIRE(rt != nullptr);
     REQUIRE(rt->midiMappings.size() == 1);
     REQUIRE(rt->midiMappings[0].source.controller == 7);
+    REQUIRE(rt->oscMappings.empty()); // never coerced to a plugin parameter
+    REQUIRE(rt->unknownMappings.elements.size() == 3);
+
+    // Written back whole, and read back the same.
+    const auto again = session::patchToXml(*rt);
+    const auto* mapsAgain = again->getChildByName("MAPPINGS");
+    REQUIRE(mapsAgain != nullptr);
+    REQUIRE(mapsAgain->getNumChildElements() == 4);
+    const auto text = again->toString();
+    REQUIRE(text.contains("kind=\"future\" controller=\"9\""));
+    REQUIRE(text.contains("<FOO"));
+    REQUIRE(session::patchFromXml(*again)->unknownMappings == rt->unknownMappings);
 }
 
 TEST_CASE("Patch: missing mapping attributes fall back to defaults", "[session][patch][xml][mappings]")

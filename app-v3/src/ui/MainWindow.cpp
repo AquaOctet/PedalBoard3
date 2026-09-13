@@ -28,6 +28,7 @@ namespace
 {
 constexpr int kTransportBarHeight = 48;
 constexpr int kStatusBarHeight = 32;
+constexpr int kReadOnlyBannerHeight = 26;
 constexpr int kInitialWidth = 960;
 constexpr int kInitialHeight = 540;
 } // namespace
@@ -49,6 +50,16 @@ public:
         addAndMakeVisible(transportBar_);
         addAndMakeVisible(viewport_);
         addAndMakeVisible(statusBar_);
+
+        // A board a newer version of the app wrote opens read-only (M5 U4, plan
+        // KD7); this strip under the transport bar says so.
+        readOnlyBanner_.setText("Read-only: this board was saved by a newer version of Pedalboard 3. "
+                                "Use Save As to keep a copy.",
+                                juce::dontSendNotification);
+        readOnlyBanner_.setJustificationType(juce::Justification::centred);
+        readOnlyBanner_.setColour(juce::Label::backgroundColourId, tokens::accentWarning.withAlpha(0.18f));
+        readOnlyBanner_.setColour(juce::Label::textColourId, tokens::accentWarning);
+        addChildComponent(readOnlyBanner_);
 
         viewport_.setViewedComponent(&canvas_, /*deleteComponentWhenNoLongerNeeded*/ false);
         // Both axes scroll now that cards are freely positioned (a card can be
@@ -141,6 +152,15 @@ public:
     TransportBar& transportBar() noexcept { return transportBar_; }
     FileActions& files() noexcept { return files_; }
 
+    // Show or hide the read-only banner (M5 U4).
+    void setReadOnly(bool readOnly)
+    {
+        if (readOnly == readOnlyBanner_.isVisible())
+            return;
+        readOnlyBanner_.setVisible(readOnly);
+        resized();
+    }
+
     // The canvas sits in a Viewport, which scrolls on Page Up / Page Down and
     // would swallow them before they reached the window's key listener; a
     // listener on the viewport sees them first.
@@ -172,7 +192,11 @@ public:
         else if (id == session::appcommands::kPreviousPatch)
             result.addDefaultKeypress(juce::KeyPress::pageUpKey, juce::ModifierKeys());
         else if (id == session::appcommands::kSave)
+        {
             result.addDefaultKeypress('s', juce::ModifierKeys::commandModifier); // Ctrl+S / Cmd+S
+            // A read-only board (M5 U4) isn't saved over; File > Save As keeps a copy.
+            result.setActive(!ctx_.bankDocument.isReadOnly());
+        }
         else if (id == session::appcommands::kPlayPause)
             result.addDefaultKeypress(juce::KeyPress::spaceKey, juce::ModifierKeys()); // M6 KD4
         else if (id == session::appcommands::kReturnToZero)
@@ -199,6 +223,8 @@ public:
         auto bounds = getLocalBounds();
         transportBar_.setBounds(bounds.removeFromTop(kTransportBarHeight));
         statusBar_.setBounds(bounds.removeFromBottom(kStatusBarHeight));
+        if (readOnlyBanner_.isVisible())
+            readOnlyBanner_.setBounds(bounds.removeFromTop(kReadOnlyBannerHeight));
 
         // Bank | canvas | plugin browser. A panel is docked when open on a wide
         // window, and otherwise an icon strip whose toggle slides it open over
@@ -324,7 +350,8 @@ private:
     BoardMappingsPanel mappingsPanel_;
     FeaturePrompt featurePrompt_; // asks when a board uses a feature that's off in Settings
     bool mappingsOpen_{true};
-    bool dropHighlight_{false}; // a .pdl is being dragged over the window
+    bool dropHighlight_{false};  // a .pdl is being dragged over the window
+    juce::Label readOnlyBanner_; // a board a newer version wrote (M5 U4)
 
     void setDropHighlight(bool on)
     {
@@ -413,6 +440,7 @@ void MainWindow::changeListenerCallback(juce::ChangeBroadcaster* source)
     if (source == &ctx_.bankDocument)
     {
         updateTitle();
+        commandManager_.commandStatusChanged(); // Save follows read-only (M5 U4)
         return;
     }
     // Otherwise the key mappings changed (App Mappings window): persist them.
@@ -448,7 +476,9 @@ void MainWindow::requestQuit()
 void MainWindow::updateTitle()
 {
     const auto& doc = ctx_.bankDocument;
-    setName(juce::String(doc.isModified() ? "* " : "") + boardDisplayName(doc.currentFile()) + " - " + appName_);
+    setName(juce::String(doc.isModified() ? "* " : "") + boardDisplayName(doc.currentFile()) +
+            (doc.isReadOnly() ? " (read-only)" : "") + " - " + appName_);
+    root_->setReadOnly(doc.isReadOnly());
 }
 
 void MainWindow::restoreWindowPosition()

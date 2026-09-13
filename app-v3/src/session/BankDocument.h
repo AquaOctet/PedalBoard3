@@ -58,8 +58,9 @@ public:
     // Replace the whole document and make its active patch live. Does not
     // capture the outgoing patch (the old document is discarded). `file` is
     // where the bank came from (empty for an untitled or imported board); the
-    // loaded content is the clean baseline.
-    void loadBank(PatchBank bank, juce::File file = {});
+    // loaded content is the clean baseline. `readOnly` marks a board a newer
+    // major version wrote (M5 U4, plan KD7): Save doesn't write over it.
+    void loadBank(PatchBank bank, juce::File file = {}, bool readOnly = false);
 
     // Re-issue the active slot to Session without capturing first (Test Tone
     // off: the live graph was the tone, the slot is the truth).
@@ -122,14 +123,19 @@ public:
     const juce::File& currentFile() const noexcept { return currentFile_; }
     bool isModified() const noexcept { return modified_; }
 
+    // A board a newer major version of the app wrote (M5 U4): it opens, but Save
+    // goes to Save As, which writes a copy in this version's format. Cleared by
+    // markSaved (that copy) and by the next load.
+    bool isReadOnly() const noexcept { return readOnly_; }
+
     // The current content becomes the clean baseline and `file` the current
     // file (Save / Save As).
     void markSaved(const juce::File& file);
 
     // After a relaunch: the restored bank belongs to `file` and was unsaved
     // (`modified`) when the app last ran. A modified restore stays modified
-    // until the next save or load.
-    void restoreIdentity(const juce::File& file, bool modified);
+    // until the next save or load. A read-only board (`readOnly`) stays read-only.
+    void restoreIdentity(const juce::File& file, bool modified, bool readOnly = false);
 
 private:
     void changeListenerCallback(juce::ChangeBroadcaster* source) override; // Session settled
@@ -153,6 +159,7 @@ private:
     bool modified_{false};
     bool restoredModified_{false};
     bool stateEdited_{false};
+    bool readOnly_{false};
     std::uint64_t loadCount_{0};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BankDocument)

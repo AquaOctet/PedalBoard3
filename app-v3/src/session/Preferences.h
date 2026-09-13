@@ -94,10 +94,13 @@ public:
     // The file the persisted bank belongs to (empty = untitled) and whether it
     // had unsaved changes when last persisted (finish pass KD7): a relaunch
     // restores both, so quick save still knows its file and a crash does not
-    // hide unsaved work. Cleared by clearActiveBank.
-    void setActiveBankIdentity(const juce::File& file, bool modified);
+    // hide unsaved work. Cleared by clearActiveBank. `readOnly`: the board was
+    // written by a newer major version (M5 U4), and stays read-only after a
+    // relaunch.
+    void setActiveBankIdentity(const juce::File& file, bool modified, bool readOnly = false);
     juce::File getActiveBankFile();
     bool getActiveBankModified();
+    bool getActiveBankReadOnly();
 
     // App-level MIDI/OSC mappings (roadmap M4 U3): the <APP_MAPPINGS> XML that
     // session::AppMappings writes. nullptr on first run.

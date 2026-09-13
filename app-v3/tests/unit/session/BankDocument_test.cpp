@@ -534,3 +534,22 @@ TEST_CASE("dropUnsafeNodes: drops unrecognized built-ins from every patch and re
     REQUIRE(bank.patches[0].connections == session::linearChainConnections(bank.patches[0].nodes));
     REQUIRE(bank.patches[1].nodes.size() == 1);
 }
+
+TEST_CASE("BankDocument: a board from a newer version stays read-only until Save As writes a copy (M5 U4)",
+          "[session][bank][newer]")
+{
+    Fixture f;
+    f.doc.loadBank(threeBank(), tempBankFile("newer.pdl"), /*readOnly*/ true);
+    f.settle();
+    REQUIRE(f.doc.isReadOnly());
+
+    // A copy saved by this version is this version's own board.
+    f.doc.markSaved(tempBankFile("copy.pdl"));
+    REQUIRE_FALSE(f.doc.isReadOnly());
+
+    // After a relaunch it's still read-only, and the next load clears it.
+    f.doc.restoreIdentity(tempBankFile("newer.pdl"), false, /*readOnly*/ true);
+    REQUIRE(f.doc.isReadOnly());
+    f.doc.loadBank(threeBank(), tempBankFile("set.pdl"));
+    REQUIRE_FALSE(f.doc.isReadOnly());
+}

@@ -37,7 +37,9 @@ public:
     void open();
 
     // Write to the current file, or ask for one when the board is untitled.
-    // `done` gets whether the bank was written (false on cancel or error).
+    // `done` gets whether the bank was written (false on cancel or error). A
+    // board a newer version wrote (read-only, M5 U4) is never saved over: Save
+    // goes to Save As, which warns before writing a copy.
     void save(std::function<void(bool saved)> done = {});
     void saveAs(std::function<void(bool saved)> done = {});
 
@@ -66,7 +68,8 @@ public:
 private:
     void chooseFileToOpen();
     void openFile(const juce::File& file);
-    void loadIntoDocument(session::PatchBank bank, const juce::File& file);
+    void loadIntoDocument(session::PatchBank bank, const juce::File& file, bool readOnly = false);
+    void chooseSaveFile(std::function<void(bool saved)> done);
     void writeTo(const juce::File& file, const std::function<void(bool)>& done);
     void promptThenOpen(const juce::File& file, const juce::String& beforeWhat);
     void rememberRecent(const juce::File& file);
