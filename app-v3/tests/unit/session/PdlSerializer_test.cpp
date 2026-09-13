@@ -380,3 +380,116 @@ TEST_CASE("pdl: an empty <BANK> is rejected", "[session][pdl][bank]")
 
     file.deleteFile();
 }
+
+// ---- M5 U1 / U2 and the board's feature switches ------------------------------
+
+TEST_CASE("pdl: a board's feature switches round-trip through the file", "[session][pdl][features]")
+{
+    const auto file = tempPdl("features");
+    session::PatchBank bank;
+    bank.patches = {makeChain()};
+    bank.setFeature(session::Feature::Looper, false);
+    bank.setFeature(session::Feature::Tempo, false);
+    REQUIRE(session::pdl::writeBank(bank, file).wasOk());
+
+    const auto loaded = session::pdl::readBank(file);
+    REQUIRE(loaded.bank != nullptr);
+    for (const auto feature : session::kAllFeatures)
+        REQUIRE(loaded.bank->featureOn(feature) ==
+                (feature != session::Feature::Looper && feature != session::Feature::Tempo));
+    file.deleteFile();
+}
+
+TEST_CASE("pdl: a board that declares an entity is refused, and the planted file is never read",
+          "[session][pdl][security]")
+{
+    const auto secret =
+        juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("pb3_secret", ".txt");
+    REQUIRE(secret.replaceWithText("PB3-PLANTED-SECRET-MARKER"));
+    const auto file = tempPdl("xxe");
+    file.replaceWithText("<?xml version=\"1.0\"?><!DOCTYPE PEDALBOARD [<!ENTITY x SYSTEM \"" +
+                         secret.getFullPathName() +
+                         "\">]><PEDALBOARD schemaMajor=\"3\" schemaMinor=\"7\">"
+                         "<BANK><PATCH name=\"&x;\"><NODES/><CONNECTIONS/></PATCH></BANK></PEDALBOARD>");
+
+    const auto loaded = session::pdl::readBank(file);
+    REQUIRE(loaded.bank == nullptr);
+    REQUIRE(loaded.error.containsIgnoreCase("DTD"));
+    REQUIRE_FALSE(loaded.error.contains("PB3-PLANTED-SECRET-MARKER"));
+    file.deleteFile();
+    secret.deleteFile();
+}
+
+TEST_CASE("pdl: a truncated or damaged board gives a clear error", "[session][pdl][security]")
+{
+    const auto file = tempPdl("truncated");
+    REQUIRE(session::pdl::writePatch(makeChain(), file).wasOk());
+    const auto whole = file.loadFileAsString();
+    file.replaceWithText(whole.substring(0, whole.length() / 2));
+    auto loaded = session::pdl::readBank(file);
+    REQUIRE(loaded.bank == nullptr);
+    REQUIRE(loaded.error.isNotEmpty());
+
+    const char garbage[] = {'\x7f', '\x00', '\x13', '\x37', 'P', 'K'};
+    file.replaceWithData(garbage, sizeof(garbage));
+    loaded = session::pdl::readBank(file);
+    REQUIRE(loaded.bank == nullptr);
+    REQUIRE(loaded.error.isNotEmpty());
+    file.deleteFile();
+}
+
+TEST_CASE("pdl: a patch over the plugin limit is refused, naming the limit", "[session][pdl][security]")
+{
+    const auto file = tempPdl("toomany");
+    juce::String xml = "<PEDALBOARD schemaMajor=\"3\" schemaMinor=\"7\"><BANK><PATCH name=\"Big\"><NODES>";
+    for (int i = 1; i <= session::kMaxNodesPerPatch + 1; ++i)
+        xml << "<NODE id=\"" << i << "\" kind=\"internal\" type=\"LevelProcessor\"/>";
+    xml << "</NODES><CONNECTIONS/></PATCH></BANK></PEDALBOARD>";
+    file.replaceWithText(xml);
+
+    const auto loaded = session::pdl::readBank(file);
+    REQUIRE(loaded.bank == nullptr);
+    REQUIRE(loaded.error.contains(juce::String(session::kMaxNodesPerPatch)));
+    file.deleteFile();
+}
+
+TEST_CASE("pdl: a plugin's saved settings over the limit, or damaged, are refused", "[session][pdl][security]")
+{
+    const auto patchWithState = [](const juce::String& encoded)
+    {
+        juce::XmlElement patch("PATCH");
+        auto* node = patch.createNewChildElement("NODES")->createNewChildElement("NODE");
+        node->setAttribute("id", 1);
+        node->setAttribute("kind", "internal");
+        node->setAttribute("type", "LevelProcessor");
+        auto* state = node->createNewChildElement("STATE");
+        state->setAttribute("encoding", "base64");
+        state->addTextElement(encoded);
+        return patch;
+    };
+
+    juce::String why;
+    const auto huge = juce::String::repeatedString("A", static_cast<int>(session::kMaxStateBytes / 3 * 4 + 1024));
+    REQUIRE(session::patchFromXml(patchWithState(huge), &why) == nullptr);
+    REQUIRE(why.contains("MB"));
+
+    why.clear();
+    REQUIRE(session::patchFromXml(patchWithState("not-base64!!"), &why) == nullptr);
+    REQUIRE(why.contains("damaged"));
+
+    juce::MemoryBlock fine("settings", 8);
+    REQUIRE(session::patchFromXml(patchWithState(fine.toBase64Encoding())) != nullptr);
+}
+
+TEST_CASE("pdl: saving is atomic: a failed save leaves the previous board intact", "[session][pdl][files]")
+{
+    const auto file = tempPdl("atomic");
+    REQUIRE(session::pdl::writePatch(makeChain(), file).wasOk());
+    const auto before = file.loadFileAsString();
+
+    session::PatchBank empty;
+    empty.patches.clear();
+    REQUIRE(session::pdl::writeBank(empty, file).failed()); // refused before writing
+    REQUIRE(file.loadFileAsString() == before);
+    file.deleteFile();
+}

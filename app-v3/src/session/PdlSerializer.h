@@ -64,6 +64,9 @@ struct LoadResult
     juce::String error;           // empty on success
 };
 
+// Board files are read into memory and parsed with no DTDs or entities, up to
+// 32 MB, and every patch within the limits in Patch.h (M5 U1, AC-SE-7/8). The
+// error says which rule a refused file broke.
 // Parse a .pdl into a bank. Every patch is run through validatePatch; an
 // invalid one fails the whole load and names its 1-based position. An
 // out-of-range activeIndex is clamped, not fatal. On any failure — unreadable,

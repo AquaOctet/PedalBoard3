@@ -23,7 +23,9 @@ execution: code
 
 ### Summary
 
-Order the remaining v1.0.0 work into eight milestones: land the canvas MR, fix the crash-hunt bugs, wire the already-built MIDI/OSC control layer to live devices, add multi-patch banks, build the mappings UI, publish a public beta, finish the parity tail (transport + internal processors + hardening), then run Phase 6 release engineering with auto-update deferred to v1.0.1.
+Order the remaining v1.0.0 work into eight milestones: land the canvas MR, fix the crash-hunt bugs, wire the already-built MIDI/OSC control layer to live devices, add multi-patch banks, build the mappings UI, finish the parity tail (transport + internal processors), harden it (crash guard + `.pdl`), publish a public beta, then run Phase 6 release engineering with auto-update deferred to v1.0.1.
+
+> **Reordered 2026-09-13 (user decision).** The public beta was first planned right after the mappings UI (as M5), before the parity tail. It now comes after the parity tail and hardening, right before the v1.0.0 release. The milestones were renumbered to match: hardening is **M5** and the public beta is **M7**. M6 (the parity tail) had already shipped.
 
 ### Problem Frame
 
@@ -35,10 +37,10 @@ Two facts shape the ordering. First, the entire Phase 4 control layer (MIDI/OSC 
 
 - **Stability before features.** The crash-hunt backlog (issues #6, #7, #8) lands immediately after MR !38 merges. A live-performance host that can die on quit-during-scan or save-during-audio is disqualified regardless of feature count, and these bugs get harder to isolate once the control layer adds threads and sockets.
 - **Control-layer wiring is the first feature milestone.** Phase 4 logic exists and is tested; only device/socket integration is missing. It unlocks the product's literal definition (MIDI/OSC control of every parameter) for the cost of an integration layer.
-- **A public beta ships after the live-performer core (M2–M4), before full parity.** "Close to public release" and "full Pedalboard2 parity" are months apart; a beta from CI artifacts gets real users and crash reports onto the strongest parts of the app while the parity tail is finished. Unsigned, manual-download beta is acceptable.
+- **A public beta ships after the live-performer core (M2–M4), before full parity.** "Close to public release" and "full Pedalboard2 parity" are months apart; a beta from CI artifacts gets real users and crash reports onto the strongest parts of the app while the parity tail is finished. Unsigned, manual-download beta is acceptable. *Superseded 2026-09-13:* the parity tail shipped first, so the beta waits for hardening too. It is now M7, right before the v1.0.0 release, so its users meet a host that survives a crashing plugin and a damaged file.
 - **Auto-update defers to v1.0.1.** The master plan's own risk table (R16) names this fallback; taking it removes the update-key risk from the first release window and shrinks Phase 6 to signing + packaging + crash reporting.
 - **The public release versions as v1.0.0, not v3.0.0.** Pedalboard 3 is the product name; its version lineage starts fresh at 1.0. This supersedes the master plan's `v3.0.0` tag naming wherever it appears (release tag, beta pre-releases, the auto-update follow-up becoming v1.0.1).
-- **The beta distributes via GitLab Releases** on the existing project, attaching CI artifacts — no new infrastructure before M5.
+- **The beta distributes via GitLab Releases** on the existing project, attaching CI artifacts — no new infrastructure before the beta (M7).
 
 ### Milestone order
 
@@ -48,9 +50,9 @@ flowchart TB
   M1 --> M2[M2 Wire MIDI/OSC control layer]
   M2 --> M3[M3 Multi-patch banks + PC switch]
   M3 --> M4[M4 Mappings UI]
-  M4 --> M5[M5 Public beta]
-  M5 --> M6[M6 Parity tail: transport + processors]
-  M6 --> M7[M7 Hardening: crash guard + .pdl]
+  M4 --> M6[M6 Parity tail: transport + processors]
+  M6 --> M5[M5 Hardening: crash guard + .pdl]
+  M5 --> M7[M7 Public beta]
   M7 --> M8[M8 Phase 6 release -> v1.0.0]
 ```
 
@@ -65,7 +67,7 @@ flowchart TB
 - R2. Issue #7 is fixed: Session threading/lifetime and the save-time audio race no longer permit a crash or corrupt save while audio is running.
 - R3. Issue #8 is fixed: quitting during a plugin rescan shuts the scan thread down cleanly.
 - R4. Issue #6 is fixed: scanner crash detection does not rely on exit codes (covers issue #2), and blacklist reads are robust.
-- R5. Issue #3 (AUv3 plugins silently skipped, macOS) is either fixed or explicitly documented as a known beta limitation before M5.
+- R5. Issue #3 (AUv3 plugins silently skipped, macOS) is either fixed or explicitly documented as a known beta limitation before the beta (M7). *(Fixed in !71.)*
 
 **M2 — Live control (wire Phase 4)**
 
@@ -84,7 +86,7 @@ flowchart TB
 - R12. A per-plugin mappings dialog manages MIDI and OSC mappings (add/delete, target parameter, CC/address, latch/toggle, range bounds, learn).
 - R13. App-level commands (at minimum next/previous patch) are mappable to key, MIDI, and OSC triggers, and persist across restarts.
 
-**M5 — Public beta**
+**M7 — Public beta** *(first planned as M5; moved after hardening 2026-09-13)*
 
 - R14. A `v1.0.0-beta.1` pre-release is published as a GitLab Release on the existing project from CI release artifacts on all three platforms, with release notes stating known limitations and how to report crashes. Signing and installers are not required at this milestone.
 
@@ -94,7 +96,7 @@ flowchart TB
 - R16. Remaining internal processors are user-addable via the existing internal-node add-path: File Player, Audio Recorder, Looper, Metronome, Output Toggle, MIDI Output; the VU Meter gets its meter UI.
 - R17. Remaining parity and plan items tracked by the master plan's acceptance criteria (PDC, undo/redo, presets, window persistence, theming import, tray, event log, drag-and-drop) are triaged against those criteria; anything cut from v1.0.0 is recorded as a scope change to the master plan, not silently dropped.
 
-**M7 — Hardening**
+**M5 — Hardening** *(first planned as M7; moved ahead of the beta 2026-09-13)*
 
 - R18. SEH/signal crash guard around plugin processing (AC-PL-1): a plugin segfault does not kill the host.
 - R19. `.pdl` durability and security hardening: fsync-complete atomic save, XXE-safe parsing, size/identity limits, forward-compatible preservation of unknown elements (AC-FS-6/7/9, AC-SE-5..8).
@@ -109,13 +111,13 @@ flowchart TB
 
 - This plan does not re-scope the master plan; the v1.0.0 feature bar stands. Cuts, if any become necessary, go through R17's explicit triage.
 - Auto-update (Sparkle/WinSparkle/AppImageUpdate) is deferred to v1.0.1 by decision, not omission.
-- Scanner backlog items beyond R4/R5 (issue #5: zombie reap, scan-resume, persist-all; issue #4: helper signing) ride with M7/M8 rather than blocking earlier milestones.
+- Scanner backlog items beyond R4/R5 (issue #5: zombie reap, scan-resume, persist-all; issue #4: helper signing) ride with M5 (hardening) and M8 rather than blocking earlier milestones.
 - CLAP validation (AC-NEW-5) stays where the master plan put it and is not pulled forward by this plan.
 
 ### Dependencies / Assumptions
 
 - A human with a desktop (macOS or Windows QA box) is available for M0 verification and for the hardware checks in M2/M3 (real MIDI controller, TouchOSC).
-- macOS and Windows CI jobs currently carry `allow_failure: true` ("stabilising"); the assumption is they flip to required before M5 so the beta is built from enforced-green pipelines.
+- macOS and Windows CI jobs currently carry `allow_failure: true` ("stabilising"); the assumption is they flip to required before the beta (M7) so it is built from enforced-green pipelines.
 - Signing identities (Apple Developer account for notarization, Windows Authenticode certificate) do not exist today; they will be acquired before M8 planning starts. Self-hosted runners, if used, are provisioned on the same timeline.
 - Success criteria for the release remain the master plan's (crash-free live-performance hours, first-month downloads); this plan adds none.
 

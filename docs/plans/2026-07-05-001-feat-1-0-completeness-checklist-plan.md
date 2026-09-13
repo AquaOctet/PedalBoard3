@@ -94,7 +94,7 @@ Requirement IDs (R1–R13) below are local to this checklist. References to the 
 
 ### Dependencies / Assumptions
 
-- The 1.0-blocking finish pass (R1, R2, R4, R5, R6, R11, R12, R13) is largely independent of M2–M4 and should land as a dedicated milestone **before the M5 public beta**, so the first public impression already reads as shipped. It must not fold into M6 — M6 lands *after* the beta, which would ship the beta without the polish the success criteria require.
+- The 1.0-blocking finish pass (R1, R2, R4, R5, R6, R11, R12, R13) is largely independent of M2–M4 and should land as a dedicated milestone **before the public beta**, so the first public impression already reads as shipped. It must not fold into M6 — M6 lands *after* the beta, which would ship the beta without the polish the success criteria require. *(2026-09-13: the beta is now M7, after M6 and hardening; the finish pass shipped before either.)*
 - R12 (shallow undo) is the one item in this set genuinely sized like a small subsystem rather than pure UI polish — it needs a command/history model for three operation types, not just a screen. Size it accordingly in finish-pass planning; it is still far smaller than the full 50-step system deferred to 1.x.
 - R11 and R13 share a prerequisite — tracking whether the active patch has a known file path and unsaved changes — that doesn't exist in `Session` today. Plan them as one unit of work rather than two.
 - R10 (GPLv3 distribution compliance) is owned by M8 / release engineering, not the finish pass — it gates the packaged, distributed build.

@@ -1,4 +1,5 @@
 #include "FileActions.h"
+#include "session/SafeXml.h"
 
 #include "engine/PluginHost.h"
 #include "session/BankDocument.h"
@@ -65,7 +66,9 @@ LoadedBank loadOpenedBank(const juce::File& file, engine::PluginHost& host)
 {
     LoadedBank out;
 
-    auto xml = juce::parseXML(file);
+    // Parsed under the same rules as a v3 board (M5 U1): capped, no DTDs or entities.
+    const auto parsed = session::safexml::parseFile(file);
+    const auto& xml = parsed.xml;
     if (xml != nullptr && session::v2::isPedalboard2Patch(*xml))
     {
         auto imp = session::v2::importPedalboard2Bank(*xml);
