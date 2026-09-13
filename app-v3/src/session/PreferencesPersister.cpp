@@ -1,4 +1,5 @@
 #include "PreferencesPersister.h"
+#include "AtomicFileWriter.h"
 
 #include "AppMappings.h"
 #include "BankDocument.h"
@@ -92,7 +93,7 @@ void writeRestoreInFlightMarker(Preferences& prefs, const juce::String& fileOrId
     if (f == juce::File{})
         return;
     f.getParentDirectory().createDirectory();
-    f.replaceWithText(fileOrIdentifier);
+    AtomicFileWriter::writeText(f, fileOrIdentifier); // M5 U2: never a torn marker
 }
 
 void clearRestoreInFlightMarker(Preferences& prefs)

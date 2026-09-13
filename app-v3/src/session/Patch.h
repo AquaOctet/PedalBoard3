@@ -124,6 +124,13 @@ struct Patch
 // concrete reason is logged so the user has a forensics trail when a
 // settings file becomes corrupt or a future-Phase-3 file is loaded by
 // an older binary.
+// The limits every patch read from a file obeys (M5 U1, master plan AC-SE-8).
+inline constexpr int kMaxNodesPerPatch = 10000;
+inline constexpr int kMaxConnectionsPerPatch = 50000;
+inline constexpr int kMaxMappingsPerPatch = 1000;
+inline constexpr juce::int64 kMaxStateBytes = 16 * 1024 * 1024; // one plugin's saved settings
+inline constexpr int kMaxPatchesPerBank = 1000;
+
 enum class PatchValidation
 {
     Ok,
@@ -154,7 +161,9 @@ juce::String patchIdentityString(const Patch&);
 // patch root or an <IDENTITY> fails to parse. Neither validates topology — call
 // validatePatch() afterwards.
 std::unique_ptr<juce::XmlElement> patchToXml(const Patch&);
-std::unique_ptr<Patch> patchFromXml(const juce::XmlElement&);
+// patchFromXml refuses a patch over the limits above, or with a damaged
+// plugin identity or saved settings, and says why in `error`.
+std::unique_ptr<Patch> patchFromXml(const juce::XmlElement&, juce::String* error = nullptr);
 
 // The <MAPPINGS> element patchToXml/patchFromXml use, for any other owner of
 // mapping tables (session::AppMappings). appendMappingsXml adds a <MAPPINGS>

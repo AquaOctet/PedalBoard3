@@ -73,13 +73,24 @@ void PatchBank::previous() noexcept
     activeIndex = (activeIndex + size() - 1) % size();
 }
 
+void writeFeatureAttributes(const PatchBank& bank, juce::XmlElement& bankElement)
+{
+    for (const auto feature : kAllFeatures)
+        if (!bank.featureOn(feature))
+            bankElement.setAttribute(featureKey(feature), "0");
+}
+
+void readFeatureAttributes(PatchBank& bank, const juce::XmlElement& bankElement)
+{
+    for (const auto feature : kAllFeatures)
+        bank.setFeature(feature, bankElement.getBoolAttribute(featureKey(feature), true));
+}
+
 std::unique_ptr<juce::XmlElement> bankToXml(const PatchBank& bank)
 {
     auto el = std::make_unique<juce::XmlElement>("BANK");
     el->setAttribute("activeIndex", bank.isValidIndex(bank.activeIndex) ? bank.activeIndex : 0);
-    for (const auto feature : kAllFeatures)
-        if (!bank.featureOn(feature))
-            el->setAttribute(featureKey(feature), "0");
+    writeFeatureAttributes(bank, *el);
     for (const auto& patch : bank.patches)
     {
         auto patchXml = patchToXml(patch);
@@ -109,8 +120,7 @@ std::unique_ptr<PatchBank> bankFromXml(const juce::XmlElement& el)
 
     const int active = el.getIntAttribute("activeIndex", 0);
     bank->activeIndex = bank->isValidIndex(active) ? active : 0;
-    for (const auto feature : kAllFeatures)
-        bank->setFeature(feature, el.getBoolAttribute(featureKey(feature), true));
+    readFeatureAttributes(*bank, el);
     return bank;
 }
 

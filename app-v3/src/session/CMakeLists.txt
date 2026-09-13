@@ -45,6 +45,11 @@ add_library(pb3_session_core STATIC
     TransportCommands.h
     PdlSerializer.cpp
     PdlSerializer.h
+    SafeXml.cpp
+    SafeXml.h
+    AtomicFileWriter.cpp
+    AtomicFileWriter.h
+    AtomicFileWriterPlatform.h
     v2_import/PdlV2Importer.cpp
     v2_import/PdlV2Importer.h
     ControlParameterApplier.cpp
@@ -106,9 +111,18 @@ pb3_apply_strict_warnings(pb3_session_core
     AppCommands.cpp
     TransportCommands.cpp
     PdlSerializer.cpp
+    SafeXml.cpp
+    AtomicFileWriter.cpp
     v2_import/PdlV2Importer.cpp
     ControlParameterApplier.cpp
     ControlHub.cpp
     ControlWiring.cpp
     AppMappings.cpp
 )
+
+# AtomicFileWriter's platform half (M5 U2), apart from JUCE's headers.
+if(WIN32)
+    target_sources(pb3_session_core PRIVATE AtomicFileWriter_windows.cpp)
+else()
+    target_sources(pb3_session_core PRIVATE AtomicFileWriter_posix.cpp)
+endif()

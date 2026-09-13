@@ -701,3 +701,26 @@ TEST_CASE("Preferences: the MMC switch round-trips", "[session][preferences][mmc
     prefs.setMmcTransport(previous);
     prefs.flush();
 }
+
+TEST_CASE("Preferences: a planted file never leaks through an entity in a saved description (M5 U1)",
+          "[session][preferences][security]")
+{
+    session::Preferences prefs;
+    const auto secret =
+        juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("pb3_secret", ".txt");
+    REQUIRE(secret.replaceWithText("PB3-PLANTED-SECRET-MARKER"));
+    const juce::String malicious = "<!DOCTYPE foo [<!ENTITY x SYSTEM \"" + secret.getFullPathName() +
+                                   "\">]>"
+                                   "<PLUGIN name=\"&x;\" format=\"VST3\" file=\"&x;\"/>";
+    prefs.getStore()->setValue("activePluginDescription", malicious);
+    prefs.flush();
+
+    if (auto desc = prefs.getActivePluginDescription())
+    {
+        REQUIRE_FALSE(desc->name.contains("PB3-PLANTED-SECRET-MARKER"));
+        REQUIRE_FALSE(desc->fileOrIdentifier.contains("PB3-PLANTED-SECRET-MARKER"));
+    }
+    prefs.clearActivePluginDescription();
+    prefs.flush();
+    secret.deleteFile();
+}

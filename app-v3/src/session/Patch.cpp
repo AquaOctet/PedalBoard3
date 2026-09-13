@@ -3,6 +3,10 @@
 #include "engine/TransportMath.h"
 
 #include <cmath>
+#include <cstdint>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
 #include <algorithm>
 #include <unordered_set>
@@ -46,31 +50,51 @@ int Patch::indexOfNode(NodeId id) const noexcept
 namespace
 {
 
-// Recursive DFS cycle detector over the directed connection graph.
-// `graphIO` (== 0) is treated as an external endpoint and never visited.
-bool hasCycleFrom(NodeId start,
-                  const std::vector<PatchConnection>& connections,
-                  std::unordered_set<NodeId>& visiting,
-                  std::unordered_set<NodeId>& done) noexcept
+// Iterative DFS cycle detector over the directed connection graph (M5 U1: no
+// patch can overflow the stack). `graphIO` (== 0) is an external endpoint and
+// never visited.
+bool hasCycle(const Patch& p)
 {
-    if (start == graphIO)
-        return false;
-    if (done.count(start) != 0)
-        return false;
-    if (visiting.count(start) != 0)
-        return true;
+    std::unordered_map<NodeId, std::vector<NodeId>> next;
+    for (const auto& c : p.connections)
+        if (c.src != graphIO && c.dst != graphIO)
+            next[c.src].push_back(c.dst);
 
-    visiting.insert(start);
-    for (const auto& c : connections)
+    enum class Mark : std::uint8_t
     {
-        if (c.src == start && c.dst != graphIO)
+        None,
+        Visiting,
+        Done,
+    };
+    std::unordered_map<NodeId, Mark> mark;
+    std::vector<std::pair<NodeId, std::size_t>> stack; // a node, and the next of its successors to visit
+    for (const auto& n : p.nodes)
+    {
+        if (mark[n.id] != Mark::None)
+            continue;
+        mark[n.id] = Mark::Visiting;
+        stack.emplace_back(n.id, 0);
+        while (!stack.empty())
         {
-            if (hasCycleFrom(c.dst, connections, visiting, done))
+            const NodeId node = stack.back().first;
+            const auto it = next.find(node);
+            if (it == next.end() || stack.back().second >= it->second.size())
+            {
+                mark[node] = Mark::Done;
+                stack.pop_back();
+                continue;
+            }
+            const NodeId successor = it->second[stack.back().second++];
+            const Mark seen = mark[successor];
+            if (seen == Mark::Visiting)
                 return true;
+            if (seen == Mark::None)
+            {
+                mark[successor] = Mark::Visiting;
+                stack.emplace_back(successor, 0);
+            }
         }
     }
-    visiting.erase(start);
-    done.insert(start);
     return false;
 }
 
@@ -212,19 +236,16 @@ PatchValidation validatePatch(const Patch& p) noexcept
     {
         if (c.srcChannel < 0 || c.dstChannel < 0)
             return PatchValidation::InvalidChannel;
-        if (c.src != graphIO && p.findNode(c.src) == nullptr)
+        if (c.src != graphIO && seen.count(c.src) == 0)
             return PatchValidation::DanglingConnection;
-        if (c.dst != graphIO && p.findNode(c.dst) == nullptr)
+        if (c.dst != graphIO && seen.count(c.dst) == 0)
             return PatchValidation::DanglingConnection;
     }
 
     // Cycle check on the node-only subgraph (graphIO is an endpoint, not
     // part of any cycle).
-    std::unordered_set<NodeId> visiting;
-    std::unordered_set<NodeId> done;
-    for (const auto& n : p.nodes)
-        if (hasCycleFrom(n.id, p.connections, visiting, done))
-            return PatchValidation::Cycle;
+    if (hasCycle(p))
+        return PatchValidation::Cycle;
 
     return PatchValidation::Ok;
 }
@@ -344,8 +365,24 @@ std::vector<PatchConnection> linearChainConnections(const std::vector<PatchNode>
     return conns;
 }
 
-std::unique_ptr<Patch> patchFromXml(const juce::XmlElement& root)
+std::unique_ptr<Patch> patchFromXml(const juce::XmlElement& root, juce::String* error)
 {
+    const auto fail = [error](const juce::String& why) -> std::unique_ptr<Patch>
+    {
+        if (error != nullptr)
+            *error = why;
+        return nullptr;
+    };
+    const auto overLimit = [&fail](int count, int limit, const juce::String& what)
+    { return fail("it has " + juce::String(count) + " " + what + "; the limit is " + juce::String(limit)); };
+    const auto countChildren = [](const juce::XmlElement& parent, const char* tag)
+    {
+        int count = 0;
+        for ([[maybe_unused]] auto* child : parent.getChildWithTagNameIterator(tag))
+            ++count;
+        return count;
+    };
+
     // Accept the current <PATCH> tag and the legacy <ACTIVE_PATCH> tag
     // that pre-Phase-2 builds wrote into Preferences.
     if (!root.hasTagName("PATCH") && !root.hasTagName("ACTIVE_PATCH"))
@@ -368,6 +405,8 @@ std::unique_ptr<Patch> patchFromXml(const juce::XmlElement& root)
 
     if (auto* nodesEl = root.getChildByName("NODES"))
     {
+        if (const int count = countChildren(*nodesEl, "NODE"); count > kMaxNodesPerPatch)
+            return overLimit(count, kMaxNodesPerPatch, "plugins");
         for (auto* nodeEl : nodesEl->getChildIterator())
         {
             if (!nodeEl->hasTagName("NODE"))
@@ -401,11 +440,20 @@ std::unique_ptr<Patch> patchFromXml(const juce::XmlElement& root)
                 juce::XmlElement asPlugin(*identityEl);
                 asPlugin.setTagName("PLUGIN");
                 if (!n.desc.loadFromXml(asPlugin))
-                    return nullptr;
+                    return fail("a plugin's identity is damaged");
             }
 
             if (auto* stateEl = nodeEl->getChildByName("STATE"))
-                n.state.fromBase64Encoding(stateEl->getAllSubText());
+            {
+                // Checked before decoding (M5 U1, AC-SE-8): at most kMaxStateBytes,
+                // and a damaged blob is an error rather than half a plugin's settings.
+                const auto encoded = stateEl->getAllSubText().trim();
+                if (static_cast<juce::int64>(encoded.length()) > kMaxStateBytes / 3 * 4 + 64)
+                    return fail("a plugin's saved settings are larger than " +
+                                juce::String(kMaxStateBytes / (1024 * 1024)) + " MB");
+                if (encoded.isNotEmpty() && !n.state.fromBase64Encoding(encoded))
+                    return fail("a plugin's saved settings are damaged");
+            }
 
             patch->nodes.push_back(std::move(n));
         }
@@ -413,6 +461,8 @@ std::unique_ptr<Patch> patchFromXml(const juce::XmlElement& root)
 
     if (auto* connsEl = root.getChildByName("CONNECTIONS"))
     {
+        if (const int count = countChildren(*connsEl, "CONN"); count > kMaxConnectionsPerPatch)
+            return overLimit(count, kMaxConnectionsPerPatch, "connections");
         for (auto* connEl : connsEl->getChildIterator())
         {
             if (!connEl->hasTagName("CONN"))
@@ -427,6 +477,9 @@ std::unique_ptr<Patch> patchFromXml(const juce::XmlElement& root)
         }
     }
 
+    if (auto* mappingsEl = root.getChildByName("MAPPINGS"))
+        if (const int count = mappingsEl->getNumChildElements(); count > kMaxMappingsPerPatch)
+            return overLimit(count, kMaxMappingsPerPatch, "mappings");
     readMappings(root, patch->midiMappings, patch->oscMappings);
 
     return patch;

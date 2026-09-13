@@ -78,4 +78,10 @@ struct PatchBank
 std::unique_ptr<juce::XmlElement> bankToXml(const PatchBank&);
 std::unique_ptr<PatchBank> bankFromXml(const juce::XmlElement&);
 
+// The board's feature switches as <BANK> attributes (optional-features U1):
+// written only when off, read as on when absent. bankToXml / bankFromXml and
+// the .pdl writer and reader all use these.
+void writeFeatureAttributes(const PatchBank& bank, juce::XmlElement& bankElement);
+void readFeatureAttributes(PatchBank& bank, const juce::XmlElement& bankElement);
+
 } // namespace pedalboard3::session

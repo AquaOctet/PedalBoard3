@@ -624,3 +624,22 @@ TEST_CASE("Patch: without a tempo a patch is 120 BPM in 4/4, and bad values fall
     REQUIRE(fixed->timeSigNumerator == 4);
     REQUIRE(fixed->timeSigDenominator == 4);
 }
+
+TEST_CASE("validatePatch: a 10,000-plugin chain passes without recursion, and a cycle at its end is found",
+          "[session][patch][security]")
+{
+    session::Patch p;
+    for (int i = 1; i <= session::kMaxNodesPerPatch; ++i)
+    {
+        session::PatchNode n;
+        n.id = static_cast<session::NodeId>(i);
+        n.kind = session::NodeKind::Internal;
+        n.internalType = "LevelProcessor";
+        p.nodes.push_back(n);
+    }
+    p.connections = session::linearChainConnections(p.nodes);
+    REQUIRE(session::validatePatch(p) == session::PatchValidation::Ok);
+
+    p.connections.push_back({static_cast<session::NodeId>(session::kMaxNodesPerPatch), 0, 1, 0}); // back to the start
+    REQUIRE(session::validatePatch(p) == session::PatchValidation::Cycle);
+}

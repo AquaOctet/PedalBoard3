@@ -1,5 +1,8 @@
 #include "PdlSerializer.h"
 
+#include "AtomicFileWriter.h"
+#include "SafeXml.h"
+
 namespace pedalboard3::session::pdl
 {
 
@@ -15,6 +18,7 @@ juce::Result writeBank(const PatchBank& bank, const juce::File& file)
 
     auto* bankEl = root.createNewChildElement("BANK");
     bankEl->setAttribute("activeIndex", bank.isValidIndex(bank.activeIndex) ? bank.activeIndex : 0);
+    writeFeatureAttributes(bank, *bankEl); // the board's feature switches (optional-features U1)
 
     for (const auto& patch : bank.patches)
     {
@@ -24,26 +28,14 @@ juce::Result writeBank(const PatchBank& bank, const juce::File& file)
         bankEl->addChildElement(patchXml.release());
     }
 
-    const auto parent = file.getParentDirectory();
-    if (!parent.exists())
-    {
-        const auto created = parent.createDirectory();
-        if (created.failed())
-            return created;
-    }
-
-    // Atomic write: render to a temp file in the same directory, then move
-    // it over the target so a crash mid-write can't truncate an existing
-    // .pdl. (A full fsync/dir-fsync AtomicFileWriter per master plan §A.5
-    // is a follow-up; juce::TemporaryFile gives us same-dir temp + rename.)
-    juce::TemporaryFile temp(file);
-    if (!root.writeTo(temp.getFile()))
-        return juce::Result::fail("Could not write to " + file.getFullPathName());
-
-    if (!temp.overwriteTargetFileWithTemporary())
-        return juce::Result::fail("Could not replace " + file.getFullPathName());
-
-    return juce::Result::ok();
+    // Atomic and durable (M5 U2, AC-FS-6): a crash or power cut mid-save leaves
+    // the old file or the new one, never a torn one.
+    return AtomicFileWriter::write(file,
+                                   [&root](juce::OutputStream& out)
+                                   {
+                                       root.writeTo(out);
+                                       return true;
+                                   });
 }
 
 juce::Result writePatch(const Patch& patch, const juce::File& file)
@@ -58,14 +50,16 @@ BankLoadResult readBank(const juce::File& file)
 {
     BankLoadResult result;
 
-    if (!file.existsAsFile())
+    // Read into memory, capped, with no DTDs or entities (M5 U1, AC-SE-7/8):
+    // nothing outside the file can be read, and no file can exhaust memory.
+    auto parsed = safexml::parseFile(file);
+    if (parsed.xml == nullptr)
     {
-        result.error = "File not found: " + file.getFullPathName();
+        result.error = parsed.error;
         return result;
     }
-
-    auto root = juce::parseXML(file);
-    if (root == nullptr || !root->hasTagName("PEDALBOARD"))
+    const auto& root = parsed.xml;
+    if (!root->hasTagName("PEDALBOARD"))
     {
         result.error = "Not a Pedalboard 3 patch file";
         return result;
@@ -91,18 +85,34 @@ BankLoadResult readBank(const juce::File& file)
     const juce::XmlElement* container = root->getChildByName("BANK");
     int activeIndex = 0;
     if (container != nullptr)
+    {
         activeIndex = container->getIntAttribute("activeIndex", 0);
+        readFeatureAttributes(*bank, *container); // the board's feature switches (optional-features U1)
+    }
     else
+    {
         container = root.get();
+    }
+
+    int patchCount = 0;
+    for ([[maybe_unused]] auto* patchEl : container->getChildWithTagNameIterator("PATCH"))
+        ++patchCount;
+    if (patchCount > kMaxPatchesPerBank)
+    {
+        result.error = "The file holds " + juce::String(patchCount) + " patches. Pedalboard 3 opens up to " +
+                       juce::String(kMaxPatchesPerBank) + ".";
+        return result;
+    }
 
     for (auto* patchEl : container->getChildWithTagNameIterator("PATCH"))
     {
         const int position = static_cast<int>(bank->patches.size()) + 1;
 
-        auto patch = patchFromXml(*patchEl);
+        juce::String why;
+        auto patch = patchFromXml(*patchEl, &why);
         if (patch == nullptr)
         {
-            result.error = "Patch " + juce::String(position) + " is malformed";
+            result.error = "Patch " + juce::String(position) + " is malformed" + (why.isNotEmpty() ? ": " + why : "");
             return result;
         }
         if (validatePatch(*patch) != PatchValidation::Ok)
