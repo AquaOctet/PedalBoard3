@@ -19,11 +19,6 @@ namespace pedalboard3::ui
 namespace
 {
 
-juce::File documentsFolder()
-{
-    return juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("Pedalboard 3");
-}
-
 void showMessage(const juce::String& title, const juce::String& message)
 {
     alert::show(alert::message(title, message));
@@ -146,7 +141,7 @@ void FileActions::open()
 
 void FileActions::chooseFileToOpen()
 {
-    chooser_ = std::make_unique<juce::FileChooser>("Open Pedalboard", documentsFolder(), "*.pdl");
+    chooser_ = std::make_unique<juce::FileChooser>("Open Pedalboard", session::boardfiles::patchesFolder(), "*.pdl");
     juce::WeakReference<FileActions> weak(this);
     chooser_->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
                           [weak](const juce::FileChooser& fc)
@@ -237,7 +232,8 @@ void FileActions::saveAs(std::function<void(bool saved)> done)
 void FileActions::chooseSaveFile(std::function<void(bool saved)> done)
 {
     const auto current = ctx_.bankDocument.currentFile();
-    const auto start = current != juce::File() ? current : documentsFolder().getChildFile("Untitled.pdl");
+    const auto start =
+        current != juce::File() ? current : session::boardfiles::patchesFolder().getChildFile("Untitled.pdl");
     chooser_ = std::make_unique<juce::FileChooser>("Save Pedalboard", start, "*.pdl");
 
     const auto flags = juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles |

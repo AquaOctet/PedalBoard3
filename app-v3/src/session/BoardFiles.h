@@ -68,6 +68,16 @@ inline juce::StringArray removeRecent(const juce::StringArray& paths, const juce
     return out;
 }
 
+// Where boards are saved by default: Documents\Pedalboard 3\Patches (the user's
+// choice, 2026-09-14). The app makes it on first run, and File > Open and Save As
+// start there. Recordings keep their own folder beside it (engine/Recordings.h).
+inline juce::File patchesFolder()
+{
+    return juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+        .getChildFile("Pedalboard 3")
+        .getChildFile("Patches");
+}
+
 // An Open Recent item: the board's name, then its folder, so two "Live.pdl" in
 // different folders can be told apart.
 inline juce::String menuLabel(const juce::File& file)

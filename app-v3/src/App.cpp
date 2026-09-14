@@ -1,6 +1,7 @@
 #include "App.h"
 
 #include "platform/CrashGuard.h"
+#include "session/BoardFiles.h"
 #include "session/DefaultBank.h"
 
 namespace pedalboard3
@@ -18,6 +19,10 @@ void App::initialise(const juce::String& /*commandLine*/)
     juce::LookAndFeel::setDefaultLookAndFeel(lookAndFeel.get());
 
     preferences = std::make_unique<session::Preferences>();
+
+    // Where boards are saved by default (Documents\Pedalboard 3\Patches), made on
+    // first run so File > Open and Save As always have somewhere to start.
+    session::boardfiles::patchesFolder().createDirectory();
 
     engine = std::make_unique<engine::AudioEngine>();
     auto savedDeviceState = preferences->getAudioDeviceState();
