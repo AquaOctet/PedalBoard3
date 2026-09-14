@@ -47,6 +47,18 @@ void DialogFrame::closeButtonPressed()
         setVisible(false);
 }
 
+void DialogFrame::childrenChanged()
+{
+    juce::DocumentWindow::childrenChanged();
+    // JUCE sends a LookAndFeel change on setLookAndFeel, not when a component
+    // gets a new parent (juce_Component.cpp).
+    if (auto* content = getContentComponent(); content != nullptr && content != lastContent_.getComponent())
+    {
+        lastContent_ = content;
+        content->sendLookAndFeelChange();
+    }
+}
+
 bool DialogFrame::keyPressed(const juce::KeyPress& key)
 {
     if (key == juce::KeyPress::escapeKey)

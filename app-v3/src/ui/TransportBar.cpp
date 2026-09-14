@@ -565,6 +565,9 @@ void TransportBar::openPluginList()
                                                                      ctx_.pluginHost.getCrashedPluginsFile(),
                                                                      ctx_.preferences.getStore(),
                                                                      /*allowAsyncScanning*/ false);
+    // The mockup's rows and caption header (UI chrome U7); JUCE's are 20 and 22.
+    listComponent->getTableListBox().setRowHeight(28);
+    listComponent->getTableListBox().setHeaderHeight(28);
     listComponent->setSize(720, 520);
 
     DialogFrame::launchModal("Plugin List", std::move(listComponent), true);

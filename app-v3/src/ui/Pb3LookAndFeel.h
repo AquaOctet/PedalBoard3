@@ -218,6 +218,28 @@ public:
     void drawTabbedButtonBarBackground(juce::TabbedButtonBar&, juce::Graphics&) override;
     void drawTabAreaBehindFrontButton(juce::TabbedButtonBar&, juce::Graphics&, int w, int h) override;
 
+    // Tables, lists and trees (UI chrome U7): uppercase caption headers over a
+    // 1 px rule, rows on the dialog body, keys as small mono fields, and a
+    // chevron for a tree's open and closed items.
+    void drawTableHeaderBackground(juce::Graphics&, juce::TableHeaderComponent&) override;
+    void drawTableHeaderColumn(juce::Graphics&,
+                               juce::TableHeaderComponent&,
+                               const juce::String& columnName,
+                               int columnId,
+                               int width,
+                               int height,
+                               bool isMouseOver,
+                               bool isMouseDown,
+                               int columnFlags) override;
+    void drawKeymapChangeButton(
+        juce::Graphics&, int width, int height, juce::Button&, const juce::String& keyDescription) override;
+    void drawTreeviewPlusMinusBox(juce::Graphics&,
+                                  const juce::Rectangle<float>& area,
+                                  juce::Colour backgroundColour,
+                                  bool isOpen,
+                                  bool isMouseOver) override;
+    bool areLinesDrawnForTreeView(juce::TreeView&) override;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Pb3DialogLookAndFeel)
 };
 

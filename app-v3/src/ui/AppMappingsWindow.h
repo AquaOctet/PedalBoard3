@@ -6,9 +6,14 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <functional>
+#include <memory>
 
 namespace pedalboard3::ui
 {
+
+// The App Mappings window's content on its own: its Keyboard and MIDI / OSC
+// tabs (the UI snapshots tool renders it: UI chrome U7).
+std::unique_ptr<juce::Component> makeAppMappingsContent(AppContext& ctx, juce::KeyPressMappingSet& keyMappings);
 
 // App Mappings window (roadmap M4 U5, plan
 // docs/plans/2026-09-11-002-feat-mappings-ui-plan.md, KD2 / KD3 / KTD6): one
@@ -22,8 +27,8 @@ namespace pedalboard3::ui
 //              PreferencesPersister.
 //
 // In the dialog frame (UI chrome U4). MainWindow owns at most one and drops it
-// from `onClose`, the EditorWindow
-// contract. Closing the window cancels a learn it armed.
+// from `onClose`, the EditorWindow contract. Closing the window cancels a learn
+// it armed.
 class AppMappingsWindow : public DialogFrame
 {
 public:
