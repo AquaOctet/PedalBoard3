@@ -1,7 +1,7 @@
 ---
 title: Persist audio-device choice + scanned plugin list across launches
 type: feat
-status: active
+status: completed
 date: 2026-04-26
 ---
 

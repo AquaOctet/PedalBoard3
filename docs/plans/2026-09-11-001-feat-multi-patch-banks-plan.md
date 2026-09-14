@@ -1,6 +1,7 @@
 ---
 title: Multi-Patch Banks and Program Change Switching (M3) - Plan
 type: feat
+status: completed
 date: 2026-09-11
 topic: multi-patch-banks
 artifact_contract: ce-unified-plan/v1

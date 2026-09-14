@@ -1,6 +1,7 @@
 ---
 title: Finish Pass Core (file workflow, window memory, undo) - Plan
 type: feat
+status: completed
 date: 2026-09-11
 topic: finish-pass-core
 artifact_contract: ce-unified-plan/v1

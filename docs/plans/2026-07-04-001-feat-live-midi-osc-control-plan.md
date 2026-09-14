@@ -1,6 +1,7 @@
 ---
 title: Live MIDI/OSC Control (M2) - Plan
 type: feat
+status: completed
 date: 2026-07-04
 topic: live-midi-osc-control
 artifact_contract: ce-unified-plan/v1

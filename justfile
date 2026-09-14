@@ -51,7 +51,8 @@ rtsan:
     cmake --preset linux-rtsan -S {{app_dir}}
     cmake --build build/linux-rtsan
 
-# Fast configure with no JUCE/CLAP/Catch2 — used by lint CI.
+# Fast configure with no JUCE/CLAP/Catch2 (the lint-only preset). CI's lint job
+# doesn't use it: it runs `just format-check`.
 lint-configure:
     cmake --preset lint-only -S {{app_dir}}
 
@@ -83,7 +84,7 @@ format-check:
 
 # ---------- Run ----------
 
-# Launch the built hello-world app from the host's dev preset.
+# Launch the built app from the host's dev preset.
 # On macOS this uses `open` to launch the .app bundle (so window focus and
 # LSUIElement-style behaviour work). On Linux it directly execs the binary.
 run:

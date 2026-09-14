@@ -1,6 +1,7 @@
 ---
 title: Road to v1.0.0 Release - Plan
 type: feat
+status: active
 date: 2026-07-02
 topic: road-to-1-0-release
 artifact_contract: ce-unified-plan/v1

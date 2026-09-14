@@ -1,6 +1,7 @@
 ---
 title: UI chrome — menus, dialogs, alerts and Audio Settings
 type: feat
+status: completed
 date: 2026-09-13
 topic: ui-chrome
 artifact_contract: ce-unified-plan/v1

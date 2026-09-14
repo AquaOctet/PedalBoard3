@@ -1,7 +1,7 @@
 ---
 title: "feat: UI integration with Vercel mockup design (Phase 1.D.3 Unit 6 → Phase 3 staging)"
 type: feat
-status: active
+status: completed
 date: 2026-04-28
 origin: docs/plans/2026-04-12-001-feat-pedalboard-3-rewrite-plan.md
 ---
