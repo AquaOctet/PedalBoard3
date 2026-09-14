@@ -63,6 +63,9 @@ add_library(pb3_app_core STATIC
     ui/CpuMeter.h
     ui/Alert.cpp
     ui/Alert.h
+    ui/AudioSettingsModel.h
+    ui/AudioSettingsPanel.cpp
+    ui/AudioSettingsPanel.h
     ui/DialogFrame.cpp
     ui/DialogFrame.h
     ui/EditorWindow.cpp
@@ -157,6 +160,7 @@ pb3_apply_strict_warnings(pb3_app_core
     ui/BoardMappingsPanel.cpp
     ui/CpuMeter.cpp
     ui/Alert.cpp
+    ui/AudioSettingsPanel.cpp
     ui/DialogFrame.cpp
     ui/EditorWindow.cpp
     ui/FileActions.cpp

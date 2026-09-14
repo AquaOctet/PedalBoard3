@@ -1,6 +1,7 @@
 #include "SettingsWindow.h"
 
 #include "AppContext.h"
+#include "AudioSettingsPanel.h"
 #include "ColourScheme.h"
 #include "control/OscMapping.h" // control::isOscMulticastAddress
 #include "control/OscServer.h"
@@ -46,53 +47,6 @@ void launch(juce::Component* content, const juce::String& title)
 {
     DialogFrame::launchModal(title, std::unique_ptr<juce::Component>(content), false);
 }
-
-// ---- Audio Devices ------------------------------------------------------------
-
-class AudioDevicesPanel : public juce::Component
-{
-public:
-    AudioDevicesPanel(AppContext& ctx, juce::Value& testTone)
-        : device_(*ctx.audioEngine.getDeviceManager(),
-                  0,
-                  2,
-                  0,
-                  2,
-                  /*showMidiInputOptions*/ false, // MIDI Settings has those
-                  /*showMidiOutputSelector*/ false,
-                  /*showChannelsAsStereoPairs*/ true,
-                  /*hideAdvancedOptionsWithButton*/ false)
-    {
-        addAndMakeVisible(device_);
-
-        styleCaption(toneHeader_, "TEST TONE");
-        toneButton_.getToggleStateValue().referTo(testTone); // shared with the Settings menu
-        toneButton_.setTooltip("Play a 440 Hz tone straight to the output, bypassing the chain");
-        styleHint(toneHint_, "Checks the output device without the board. Switching patch turns it off.");
-        for (auto* c : std::initializer_list<juce::Component*>{&toneHeader_, &toneButton_, &toneHint_})
-            addAndMakeVisible(c);
-
-        setSize(520, 510);
-    }
-
-    void resized() override
-    {
-        auto area = getLocalBounds();
-        device_.setBounds(area.removeFromTop(420));
-        auto tone = area.reduced(kPad, 6);
-        toneHeader_.setBounds(tone.removeFromTop(22));
-        toneButton_.setBounds(tone.removeFromTop(kRowHeight).removeFromLeft(160));
-        toneHint_.setBounds(tone.removeFromTop(22));
-    }
-
-private:
-    juce::AudioDeviceSelectorComponent device_;
-    juce::Label toneHeader_;
-    juce::ToggleButton toneButton_{"Test Tone"};
-    juce::Label toneHint_;
-
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioDevicesPanel)
-};
 
 // ---- MIDI Settings --------------------------------------------------------------
 
@@ -374,7 +328,8 @@ private:
 
 std::unique_ptr<juce::Component> makeAudioDevicesPanel(AppContext& ctx, juce::Value& testTone)
 {
-    return std::make_unique<AudioDevicesPanel>(ctx, testTone);
+    // Our own panel on the device manager (UI chrome U6), not JUCE's selector.
+    return std::make_unique<AudioSettingsPanel>(*ctx.audioEngine.getDeviceManager(), testTone);
 }
 
 std::unique_ptr<juce::Component> makeMidiSettingsPanel(AppContext& ctx)
