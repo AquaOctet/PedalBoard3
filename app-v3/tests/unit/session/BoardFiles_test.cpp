@@ -83,3 +83,12 @@ TEST_CASE("BoardFiles: audio files a File Player plays are recognised", "[sessio
     REQUIRE_FALSE(boardfiles::isAudioFile(tempDir().getChildFile("notes.txt")));
     REQUIRE(boardfiles::firstAudioFile({tempDir().getChildFile("gone.wav").getFullPathName()}) == juce::File());
 }
+
+TEST_CASE("BoardFiles: boards save to Documents/Pedalboard 3/Patches by default", "[session][boardfiles]")
+{
+    const auto folder = boardfiles::patchesFolder();
+    REQUIRE(folder.getFileName() == "Patches");
+    REQUIRE(folder.getParentDirectory().getFileName() == "Pedalboard 3");
+    REQUIRE(folder.getParentDirectory().getParentDirectory() ==
+            juce::File::getSpecialLocation(juce::File::userDocumentsDirectory));
+}

@@ -19,6 +19,7 @@
 #include "session/AppCommands.h"
 #include "session/AppMappings.h"
 #include "session/BankDocument.h"
+#include "session/BoardFiles.h"
 #include "session/ControlHub.h"
 #include "session/EditHistory.h"
 #include "session/FeatureGate.h"
@@ -123,7 +124,7 @@ void seed(Rig& rig)
         list.addType(d);
     }
 
-    const auto boards = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("Pedalboard 3");
+    const auto boards = session::boardfiles::patchesFolder();
     session::PatchBank bank;
     bank.patches.clear();
     for (const char* name : {"Soundcheck", "Intro Pad", "Verse Clean", "Chorus Wide", "Bridge Fuzz", "Solo Lead"})
