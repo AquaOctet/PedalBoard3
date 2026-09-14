@@ -6,9 +6,9 @@
 # Each also holds the third-party licences and, when there are some, the release
 # notes. The Windows packages are tools/package.ps1.
 #
-# The version is the build's own (pb3-version.txt, written by CMake). In a tag
-# pipeline the tag must be v<version>, and the release notes
-# docs/releases/v<version>.md must exist.
+# The version is the build's own (pb3-version.txt, written by CMake). The
+# release notes docs/releases/v<version>.md go in when they exist;
+# release:gitlab requires them before it publishes.
 #
 # Usage: tools/package.sh <build-dir> [<out-dir>]    e.g. tools/package.sh build/linux-release
 set -euo pipefail
@@ -23,16 +23,6 @@ if [ ! -f "$build/pb3-version.txt" ]; then
 fi
 version="$(tr -d '[:space:]' < "$build/pb3-version.txt")"
 notes="docs/releases/v$version.md"
-if [ -n "${CI_COMMIT_TAG:-}" ]; then
-    if [ "$CI_COMMIT_TAG" != "v$version" ]; then
-        echo "The tag $CI_COMMIT_TAG doesn't match the build's version, $version. Tag v$version, or change the version in app-v3/CMakeLists.txt." >&2
-        exit 1
-    fi
-    if [ ! -f "$notes" ]; then
-        echo "A release needs its notes: $notes is missing." >&2
-        exit 1
-    fi
-fi
 
 bin="$build/src/Pedalboard3_artefacts/RelWithDebInfo"
 case "$(uname -s)" in

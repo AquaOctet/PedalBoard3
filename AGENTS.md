@@ -24,8 +24,10 @@ and `.pdl` format only; do not edit.
   - Every merge request push runs a pipeline: lint, then build and unit tests
     on Linux, Windows and macOS.
   - On main a pipeline runs only when someone starts it by hand (Build >
-    Pipelines > Run pipeline). It holds the release builds as manual jobs; a
-    merge starts no pipeline.
+    Pipelines > Run pipeline). It holds the release jobs, each a manual
+    click: the platform builds, then release:gitlab, which tags the commit
+    and publishes (`docs/releases/README.md`). A merge starts no pipeline,
+    and neither does a pushed tag: releases are made by hand, from main only.
   - Linux runs on shared runners inside the silkOps factory image
     (`ci-cd/juce-linux`). Windows and macOS run on GitLab SaaS runners, with
     `allow_failure`.

@@ -25,18 +25,15 @@
 #     Linux, Windows and macOS);
 #   - main, only when someone starts a pipeline by hand (Build > Pipelines >
 #     Run pipeline, or `glab ci run -b main`). It holds just the release
-#     builds, each still a click of its own, so only the platforms wanted
-#     spend runner minutes. A merge into main starts no pipeline: its MR was
-#     already green;
-#   - a release tag, v<version> (v1.0.0-beta.1, say): the three release builds
-#     run by themselves and package, then release:gitlab makes the GitLab
-#     Release (docs/releases/README.md). Pushing the tag is a maintainer's job.
-# Nothing else (plain branch pushes, other tags) starts one.
+#     jobs, each a click of its own: the platform builds, then release:gitlab,
+#     which tags the commit and publishes (docs/releases/README.md). A merge
+#     into main starts no pipeline: its MR was already green.
+# Nothing else starts one: not a plain branch push, and not a pushed tag.
+# Releases are made by hand, from main only.
 workflow:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE =~ /^(web|api)$/'
-    - if: '$CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$/'
 
 stages:
   - lint
@@ -73,39 +70,18 @@ default:
 .rules-gate: &rules-gate
   - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
 
-# Release jobs build and package one platform each (#88).
-#   - On a release tag they run by themselves and must pass: release:gitlab
-#     waits for all three.
-#   - On main (in a pipeline started by hand) and in merge requests, each is
-#     a manual click, so only the platforms wanted spend runner minutes, and
-#     an MR's packages can be tried before it merges. allow_failure keeps an
-#     un-clicked job from leaving the pipeline "blocked".
-# They live in the `release` stage so a pending manual job never blocks the
-# earlier stages (a manual-pending job in an early stage blocks downstream
+# Release jobs, from main only (#88): each is a manual click in a pipeline
+# someone starts by hand (see workflow). The three platform builds package
+# what they build; release:gitlab, one more click once they've passed,
+# publishes. Nothing releases from a merge request or a pushed tag.
+# allow_failure keeps an un-clicked job from leaving the pipeline "blocked".
+# They live in the last stages so a pending manual job never blocks the
+# earlier ones (a manual-pending job in an early stage blocks downstream
 # stages even with `optional: true` on `needs:`).
 .rules-release: &rules-release
-  - if: '$CI_COMMIT_TAG'
-    allow_failure: false
   - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     when: manual
     allow_failure: true
-  - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-    when: manual
-    allow_failure: true
-
-# On a release tag, the packages go to this project's package registry as
-# pedalboard3/<version> (the tag without its v), where release:gitlab links
-# them. Otherwise they stay job artifacts only.
-.upload-packages-unix: &upload-packages-unix
-  - |
-    if [ -n "${CI_COMMIT_TAG:-}" ]; then
-      for f in packages/*.zip packages/*.tar.gz; do
-        [ -f "$f" ] || continue
-        curl --fail --silent --show-error --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file "$f" \
-          "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/pedalboard3/${CI_COMMIT_TAG#v}/$(basename "$f")"
-        echo "Uploaded $(basename "$f")"
-      done
-    fi
 
 # Build caches: CPM's dependency sources (JUCE, Catch2, ...), shared by every
 # job, and the compiler cache, keyed per job so Debug (build:*) and
@@ -464,9 +440,9 @@ test:macos:unit:
 #     portable zip. The exes carry the MSVC runtime; package.ps1 checks that.
 #   - macOS: a zip of the universal .app, with the helper inside it.
 #   - Linux: a tarball of the app and the helper.
-# .rules-release says when they run. On a release tag each also checks that
-# the tag matches the build's version, and uploads its packages for
-# release:gitlab. Signing and notarisation are still #40.
+# .rules-release says when they run: by hand, on main. Their packages stay
+# job artifacts for two weeks; release:gitlab publishes them. Signing and
+# notarisation are still #40.
 # ===========================================================================
 release:linux:
   extends: build:linux
@@ -477,7 +453,6 @@ release:linux:
   script:
     - !reference [build:linux, script]
     - tools/package.sh build/linux-release packages
-    - *upload-packages-unix
     # The bare version (no v), for release:gitlab's download links.
     - echo "PB3_VERSION=$(tr -d '[:space:]' < build/linux-release/pb3-version.txt)" > release.env
   artifacts:
@@ -496,7 +471,6 @@ release:macos:
   script:
     - !reference [build:macos, script]
     - tools/package.sh build/macos-universal packages
-    - *upload-packages-unix
   artifacts:
     paths: [ packages/*.zip ]
     expire_in: 2 weeks
@@ -524,16 +498,6 @@ release:windows:
       Start-Process -FilePath $isExe -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/DIR=`"$isDir`"" -Wait
       if (-not (Test-Path "$isDir\ISCC.exe")) { throw "Inno Setup didn't install into $isDir." }
       & ./tools/package.ps1 -BuildDir build/windows-ci -OutDir packages -Iscc "$isDir\ISCC.exe"
-    - |
-      # On a release tag: upload, as .upload-packages-unix does.
-      if ($env:CI_COMMIT_TAG) {
-          $version = $env:CI_COMMIT_TAG.Substring(1)
-          foreach ($f in Get-ChildItem -Path packages/* -File -Include *.zip, *-setup.exe) {
-              curl.exe --fail --silent --show-error --header "JOB-TOKEN: $($env:CI_JOB_TOKEN)" --upload-file $f.FullName "$($env:CI_API_V4_URL)/projects/$($env:CI_PROJECT_ID)/packages/generic/pedalboard3/$version/$($f.Name)"
-              if ($LASTEXITCODE -ne 0) { throw "Couldn't upload $($f.Name)." }
-              Write-Host "Uploaded $($f.Name)"
-          }
-      }
   artifacts:
     paths:
       - packages/*.zip
@@ -542,33 +506,50 @@ release:windows:
     when: on_success
 
 # ===========================================================================
-# PUBLISH — the GitLab Release, for a release tag only (#88).
+# PUBLISH — the GitLab Release, by hand from main (#88).
 #
-# The release jobs have uploaded their packages. This makes the Release: the
-# notes from docs/releases/<tag>.md and a download link for each package.
-# GitLab has no pre-release flag, so the notes say it's a beta. The GitHub
-# mirror (#89) will mark it as a pre-release there.
+# One more click, once release:linux, release:macos and release:windows have
+# passed in the same pipeline. It checks that the release notes
+# (docs/releases/v<version>.md) and all four packages are there, uploads the
+# packages to this project's package registry (pedalboard3/<version>), then
+# creates the tag v<version> on this commit and the Release: the notes and a
+# download link for each package. GitLab has no pre-release flag, so the
+# notes say it's a beta; the GitHub mirror (#89) will mark it as one there.
 # ===========================================================================
 release:gitlab:
   stage: publish
   image: registry.gitlab.com/gitlab-org/release-cli:v0.24.0
-  rules:
-    - if: '$CI_COMMIT_TAG'
+  rules: *rules-release
   needs:
     - job: release:linux
-      artifacts: true # PB3_VERSION, from its dotenv report
+      artifacts: true # its tarball, and PB3_VERSION from its dotenv report
     - job: release:macos
-      artifacts: false
+      artifacts: true
     - job: release:windows
-      artifacts: false
+      artifacts: true
   variables:
     GIT_DEPTH: "1"
   script:
-    - echo "Releasing $CI_COMMIT_TAG (Pedalboard 3 $PB3_VERSION)"
+    - |
+      notes="docs/releases/v${PB3_VERSION}.md"
+      [ -f "$notes" ] || { echo "No release notes at $notes: write and merge them first."; exit 1; }
+      for f in "Pedalboard3-${PB3_VERSION}-windows-x64-setup.exe" "Pedalboard3-${PB3_VERSION}-windows-x64.zip" \
+               "Pedalboard3-${PB3_VERSION}-macos-universal.zip" "Pedalboard3-${PB3_VERSION}-linux-x64.tar.gz"; do
+        [ -f "packages/$f" ] || { echo "packages/$f is missing: its release job didn't pass in this pipeline."; exit 1; }
+      done
+    - apk add --no-cache curl
+    - |
+      for f in packages/*; do
+        [ -f "$f" ] || continue
+        curl --fail --silent --show-error --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file "$f" \
+          "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/pedalboard3/${PB3_VERSION}/$(basename "$f")"
+        echo "Uploaded $(basename "$f")"
+      done
   release:
-    tag_name: "$CI_COMMIT_TAG"
+    tag_name: "v$PB3_VERSION"
+    ref: "$CI_COMMIT_SHA"
     name: "Pedalboard 3 $PB3_VERSION"
-    description: "docs/releases/$CI_COMMIT_TAG.md"
+    description: "docs/releases/v$PB3_VERSION.md"
     assets:
       links:
         - name: "Windows installer (x64)"
