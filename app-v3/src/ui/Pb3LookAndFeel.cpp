@@ -131,8 +131,8 @@ Pb3LookAndFeel::Pb3LookAndFeel()
     setColour(juce::DocumentWindow::textColourId, tokens::fgPrimary);
 
     // ----- AlertWindow ------------------------------------------------------
-    setColour(juce::AlertWindow::backgroundColourId, tokens::bgPopover);
-    setColour(juce::AlertWindow::textColourId, tokens::fgPrimary);
+    setColour(juce::AlertWindow::backgroundColourId, tokens::bgWindow);
+    setColour(juce::AlertWindow::textColourId, tokens::fgSecondaryText);
     setColour(juce::AlertWindow::outlineColourId, tokens::borderDefault);
 
     // ----- ProgressBar (plugin scan, future patch loading) -----------------
@@ -426,6 +426,37 @@ void Pb3LookAndFeel::drawResizableWindowBorder(
     }
     g.setColour(juce::Colours::black);
     g.drawRect(0, 0, w, h, 1);
+}
+
+void Pb3LookAndFeel::drawAlertBox(juce::Graphics& g,
+                                  juce::AlertWindow& alert,
+                                  const juce::Rectangle<int>& textArea,
+                                  juce::TextLayout& textLayout)
+{
+    g.fillAll(alert.findColour(juce::AlertWindow::backgroundColourId));
+    g.setColour(juce::Colours::black);
+    g.drawRect(alert.getLocalBounds(), 1);
+    textLayout.draw(g, textArea.toFloat());
+}
+
+juce::Font Pb3LookAndFeel::getAlertWindowTitleFont()
+{
+    return fonts::ui(15.0f, fonts::Weight::SemiBold);
+}
+
+juce::Font Pb3LookAndFeel::getAlertWindowMessageFont()
+{
+    return fonts::ui(14.0f);
+}
+
+juce::Font Pb3LookAndFeel::getAlertWindowFont()
+{
+    return fonts::ui(13.0f);
+}
+
+int Pb3LookAndFeel::getAlertWindowButtonHeight()
+{
+    return 30;
 }
 
 void Pb3LookAndFeel::drawCallOutBoxBackground(juce::CallOutBox&,

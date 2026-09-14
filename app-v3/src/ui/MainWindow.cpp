@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 
 #include "AboutWindow.h"
+#include "Alert.h"
 #include "AppContext.h"
 #include "AppMappingsWindow.h"
 #include "BankSidebar.h"
@@ -478,22 +479,17 @@ void MainWindow::offerRescanAfterReset(const juce::File& setAside)
     // Never a silent reset (M5 U7, plan KD8, AC-SE-24): the plugin list went
     // with the damaged file, and a scan brings it back.
     juce::Component::SafePointer<MainWindow> safeThis(this);
-    juce::AlertWindow::showAsync(
-        juce::MessageBoxOptions{}
-            .withIconType(juce::MessageBoxIconType::WarningIcon)
-            .withTitle("Settings couldn't be read")
-            .withMessage("Pedalboard 3's settings file was damaged, so it has been set aside as \"" +
-                         setAside.getFileName() +
-                         "\" and the app has started with fresh settings. Your plugin list is empty until you "
-                         "scan for plugins.")
-            .withButton("Scan for Plugins")
-            .withButton("Later")
-            .withAssociatedComponent(this),
-        [safeThis](int result)
-        {
-            if (result == 1 && safeThis != nullptr)
-                safeThis->root_->transportBar().rescanPlugins();
-        });
+    alert::show({"Settings couldn't be read",
+                 "Pedalboard 3's settings file was damaged, so it has been set aside as \"" + setAside.getFileName() +
+                     "\" and the app has started with fresh settings. Your plugin list is empty until you scan for "
+                     "plugins.",
+                 {{"Scan for Plugins", 1, alert::Role::Main}, {"Later", 0, alert::Role::Cancel}},
+                 {}},
+                [safeThis](const alert::Response& response)
+                {
+                    if (response.result == 1 && safeThis != nullptr)
+                        safeThis->root_->transportBar().rescanPlugins();
+                });
 }
 
 void MainWindow::updateTitle()

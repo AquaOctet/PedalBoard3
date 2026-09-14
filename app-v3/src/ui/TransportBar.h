@@ -129,11 +129,6 @@ private:
     juce::TextButton patchButton_;
     juce::TextButton nextPatchButton_{">"};
 
-    // The rename / remove-confirmation dialog, owned here (never
-    // auto-deleted) so its async callback can read the text field; the
-    // callback guards on a SafePointer to this bar.
-    std::unique_ptr<juce::AlertWindow> dialog_;
-
     // The rescan worker is OWNED here, not fire-and-forget (crash-hunt #8):
     // the old `new ...; launchThread()` self-delete pattern let a quit
     // mid-scan destroy AppContext/Session/PluginHost out from under the

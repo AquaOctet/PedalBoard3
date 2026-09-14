@@ -77,7 +77,7 @@ private:
     AppContext& ctx_;
     // Held as members so they outlive their async callbacks.
     std::unique_ptr<juce::FileChooser> chooser_;
-    std::unique_ptr<juce::AlertWindow> prompt_;
+    juce::Component::SafePointer<juce::Component> prompt_; // the Unsaved changes alert while it's open
 
     JUCE_DECLARE_WEAK_REFERENCEABLE(FileActions)
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(FileActions)
