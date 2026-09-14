@@ -23,7 +23,7 @@ AppName=Pedalboard 3
 AppVersion={#AppVersion}
 AppVerName=Pedalboard 3 {#AppVersion}
 ; The same company name the exe carries (COMPANY_NAME in app-v3/src/CMakeLists.txt).
-AppPublisher=AquaOctet
+AppPublisher=aquaOctet at OpenZephyr
 AppPublisherURL=https://gitlab.com/void-realm-solutions/pedalboard-3
 VersionInfoVersion={#NumericVersion}
 DefaultDirName={autopf}\Pedalboard 3

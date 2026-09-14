@@ -199,7 +199,7 @@ pb3_apply_strict_warnings(pb3_app_core
 # target size; ICON_SMALL is omitted so JUCE derives it from the big one.
 juce_add_gui_app(Pedalboard3
     PRODUCT_NAME        "Pedalboard 3"
-    COMPANY_NAME        "AquaOctet"
+    COMPANY_NAME        "aquaOctet at OpenZephyr"
     VERSION             "${PROJECT_VERSION}"
     BUNDLE_ID           "com.pedalboard3.app"
     ICON_BIG            "${CMAKE_SOURCE_DIR}/icon.png"
