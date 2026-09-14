@@ -1,29 +1,21 @@
 # Pedalboard 3 — GitLab CI pipeline.
 #
-# Linux:
-#   - lint:format, build:linux and test:linux:unit run on saas-linux inside
-#     the silkOps factory image `juce-linux` (void-realm-solutions/ci-cd),
-#     pinned to an immutable tag in CI_LINUX_IMAGE below. The toolchain
-#     (clang-18, CMake, Ninja, ccache, just, JUCE dev libs) is baked in, so
-#     no job installs anything. The image recipe lives in the factory
-#     catalog (ci-cd/images/juce-linux); bumping it is a one-line tag
-#     change here. Pulling requires this project to be on ci-cd's job-token
-#     allow-list (Settings > CI/CD > Job token permissions on ci-cd).
-# The self-hosted weeb-cluster runner is parked while its k8s infra
-# settles; once the cluster is stable, flip these tags back to
-# weeb-cluster to win on the ninja compile step. (See AGENTS.md notes
-# on Phase-6 self-hosting.)
+# Linux: lint:format, build:linux and test:linux:unit run on saas-linux inside
+#   the silkOps factory image `juce-linux` (void-realm-solutions/ci-cd),
+#   pinned to an immutable tag in CI_LINUX_IMAGE below. The toolchain
+#   (clang-18, CMake, Ninja, ccache, just, JUCE dev libs) is baked in, so no
+#   job installs anything; bumping the image is a one-line tag change here.
+#   Pulling it requires this project to be on ci-cd's job-token allow-list
+#   (Settings > CI/CD > Job token permissions on ci-cd).
 # macOS: build + unit tests on GitLab.com's saas-macos-medium-m1 (Apple
-# Silicon, brew preinstalled). Auto on MRs + v3-rewrite. `allow_failure: true`
-# while it stabilises.
+#   Silicon, Homebrew preinstalled), allow_failure.
 # Windows: build + unit tests in ONE job on GitLab.com's
-# saas-windows-medium-amd64 (Windows Server 2022, VS 2022 Build Tools + CMake
-# preinstalled). Same MR-only posture as macOS, same `allow_failure: true`.
-# MSVC objects are cached with ccache (pinned release zip, /Z7 debug info so
-# the objects are cacheable); a warm cache turns the ~25 min JUCE compile
-# into a few minutes. ctest runs in the build job because a second Windows
-# VM boot + setup costs more than the tests themselves. Installer signing
-# for releases is still Phase 6 work.
+#   saas-windows-medium-amd64 (Windows Server 2022, VS 2022 Build Tools and
+#   CMake preinstalled), allow_failure. MSVC objects are cached with ccache
+#   (/Z7 debug info, so the objects are cacheable); a warm cache turns the
+#   ~25 min JUCE compile into a few minutes. ctest runs in the build job
+#   because a second Windows VM boot + setup costs more than the tests.
+# Signing is #40.
 #
 # Full multi-platform + signing pipeline lives in the plan at
 # docs/plans/2026-04-12-001-feat-pedalboard-3-rewrite-plan.md (Appendix C).
@@ -33,20 +25,15 @@
 #     Linux, Windows and macOS);
 #   - main, only when someone starts a pipeline by hand (Build > Pipelines >
 #     Run pipeline, or `glab ci run -b main`). It holds just the release
-#     builds, each still a click of its own, so only the platforms wanted
-#     spend runner minutes. A merge into main starts no pipeline: its MR was
-#     already green;
-#   - v3-rewrite, the initial dev branch, as before;
-#   - a release tag, v<version> (v1.0.0-beta.1, say): the three release builds
-#     run by themselves and package, then release:gitlab makes the GitLab
-#     Release (docs/releases/README.md). Pushing the tag is a maintainer's job.
-# Nothing else (plain branch pushes, other tags) starts one.
+#     jobs, each a click of its own: the platform builds, then release:gitlab,
+#     which tags the commit and publishes (docs/releases/README.md). A merge
+#     into main starts no pipeline: its MR was already green.
+# Nothing else starts one: not a plain branch push, and not a pushed tag.
+# Releases are made by hand, from main only.
 workflow:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE =~ /^(web|api)$/'
-    - if: '$CI_COMMIT_BRANCH == "v3-rewrite"'
-    - if: '$CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$/'
 
 stages:
   - lint
@@ -58,11 +45,9 @@ stages:
 variables:
   CI_DEBUG_TRACE: "false"              # AC-SE-19: never leak secrets to logs
   GIT_DEPTH: "20"
-  GIT_SUBMODULE_STRATEGY: "recursive"  # harmless in Phase 0; future-proofs
   CPM_SOURCE_CACHE: "${CI_PROJECT_DIR}/.cpm-cache"
   CCACHE_DIR: "${CI_PROJECT_DIR}/.ccache"
   CCACHE_MAXSIZE: "2G"
-  DEBIAN_FRONTEND: "noninteractive"
   # silkOps factory image, immutable tag (never :latest). Registry root is
   # named explicitly, not via $CI_REGISTRY_IMAGE, which would resolve to
   # this project's own registry.
@@ -77,65 +62,32 @@ default:
       - stuck_or_timeout_failure
       - scheduler_failure
 
-# The Linux gate (lint, build, unit tests): every MR push + v3-rewrite. Not
-# main: a merge was already green on its MR, and a pipeline started by hand on
-# main is for the release builds (see workflow).
-.rules-default: &rules-default
-  - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-  - if: '$CI_COMMIT_BRANCH == "v3-rewrite"'   # initial dev branch
-
-# macOS build/test runs on every MR push (the gate) + v3-rewrite, but NOT on
-# main: a merge of an already-green MR doesn't need the slow macOS Debug
-# re-run. On main, macOS is exercised only by the manual release:macos job.
-# `allow_failure: true` keeps a slow macOS run off an MR's critical path.
-.rules-macos: &rules-macos
-  - if: '$CI_COMMIT_BRANCH == "v3-rewrite"'
+# The gate (lint, and build + unit tests on each platform): every merge
+# request push. Not main: a merge was already green on its MR, and a pipeline
+# started by hand on main is for the release builds (see workflow). Windows
+# and macOS set allow_failure on the job, which keeps a slow SaaS runner off
+# an MR's critical path.
+.rules-gate: &rules-gate
   - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
 
-# Windows build+test runs on every MR push (the gate) + v3-rewrite, but NOT on
-# main — same rationale as macOS: skip the slow Windows Debug re-run on a
-# merge that was already green on its MR. On main, Windows is exercised only by
-# the manual release:windows job. `allow_failure: true` until the runs stabilise.
-# Signing-cert provisioning for installers remains Phase 6 (not needed here).
-.rules-windows: &rules-windows
-  - if: '$CI_COMMIT_BRANCH == "v3-rewrite"'
-  - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-
-# Release jobs build and package one platform each (#88).
-#   - On a release tag they run by themselves and must pass: release:gitlab
-#     waits for all three.
-#   - On main (in a pipeline started by hand) and in merge requests, each is
-#     a manual click, so only the platforms wanted spend runner minutes, and
-#     an MR's packages can be tried before it merges. allow_failure keeps an
-#     un-clicked job from leaving the pipeline "blocked".
-# They live in the `release` stage so a pending manual job never blocks the
-# earlier stages (a manual-pending job in an early stage blocks downstream
+# Release jobs, from main only (#88): each is a manual click in a pipeline
+# someone starts by hand (see workflow). The three platform builds package
+# what they build; release:gitlab, one more click once they've passed,
+# publishes. Nothing releases from a merge request or a pushed tag.
+# allow_failure keeps an un-clicked job from leaving the pipeline "blocked".
+# They live in the last stages so a pending manual job never blocks the
+# earlier ones (a manual-pending job in an early stage blocks downstream
 # stages even with `optional: true` on `needs:`).
 .rules-release: &rules-release
-  - if: '$CI_COMMIT_TAG'
-    allow_failure: false
   - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     when: manual
     allow_failure: true
-  - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-    when: manual
-    allow_failure: true
 
-# On a release tag, the packages go to this project's package registry as
-# pedalboard3/<version> (the tag without its v), where release:gitlab links
-# them. Otherwise they stay job artifacts only.
-.upload-packages-unix: &upload-packages-unix
-  - |
-    if [ -n "${CI_COMMIT_TAG:-}" ]; then
-      for f in packages/*.zip packages/*.tar.gz; do
-        [ -f "$f" ] || continue
-        curl --fail --silent --show-error --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file "$f" \
-          "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/pedalboard3/${CI_COMMIT_TAG#v}/$(basename "$f")"
-        echo "Uploaded $(basename "$f")"
-      done
-    fi
-
-.cache-linux: &cache-linux
+# Build caches: CPM's dependency sources (JUCE, Catch2, ...), shared by every
+# job, and the compiler cache, keyed per job so Debug (build:*) and
+# RelWithDebInfo (release:*) objects don't evict each other. On Windows,
+# ccache 4.x speaks cl.exe; .windows-setup puts it on the runner.
+.cache-build: &cache-build
   cache:
     - key: "cpm-${CI_PROJECT_PATH_SLUG}"
       paths: [ .cpm-cache/ ]
@@ -144,21 +96,7 @@ default:
       paths: [ .ccache/ ]
       policy: pull-push
 
-# Windows: the CPM cache saves the JUCE source tarball fetch (+ Catch2 etc.)
-# per pipeline; the ccache cache holds the MSVC objects (ccache 4.x speaks
-# cl.exe — see .windows-setup for how it gets onto the runner). Keyed per job
-# so Debug (build:windows) and RelWithDebInfo (release:windows) objects don't
-# evict each other.
-.cache-windows: &cache-windows
-  cache:
-    - key: "cpm-${CI_PROJECT_PATH_SLUG}"
-      paths: [ .cpm-cache/ ]
-      policy: pull-push
-    - key: "ccache-${CI_JOB_NAME_SLUG}"
-      paths: [ .ccache/ ]
-      policy: pull-push
-
-# saas-macos-large-m2pro ships Xcode + Homebrew preinstalled but minimal
+# saas-macos-medium-m1 ships Xcode + Homebrew preinstalled but minimal
 # beyond that. Install only what CMakePresets/just need; everything else
 # (Apple Clang, AudioToolbox, CoreAudio frameworks) is already present.
 .macos-setup: &macos-setup
@@ -216,21 +154,11 @@ default:
           ccache --version | Select-Object -First 1
           ccache --zero-stats | Out-Null
       }
-  # juceaide failure — root cause finally identified in pipeline #136's
-  # diagnostic dump. Direct `juceaide.exe version` invocation returned
-  # exit code -1073741515 (0xC0000135 / STATUS_DLL_NOT_FOUND), not the
-  # Defender termination we initially suspected. JUCE's sub-cmake builds
-  # juceaide with CMake's default MSVC runtime selection, which on
-  # CMake 3.27 without CMP0091 NEW resolves to /MDd (dynamic debug
-  # runtime). The Debug runtime DLLs (ucrtbased.dll, msvcp140d.dll,
-  # vcruntime140d.dll) ship with VS but live under VC\Redist\..\debug_nonredist
-  # — Launch-VsDevShell.ps1 -Arch amd64 only adds the Release runtime
-  # paths. juceaide.exe loads those debug DLLs, can't find them on PATH,
-  # exits 0xC0000135 with no console output.
-  #
-  # Fix: after VsDevShell, locate Microsoft.VC*.DebugCRT under the VS
-  # install and prepend it to PATH so juceaide can resolve its imports.
-  # Defender disable is kept (cheap, does no harm).
+  # juceaide (JUCE's build helper, built during configure) links the Debug
+  # runtime (/MDd), whose DLLs Launch-VsDevShell doesn't put on PATH: it would
+  # exit 0xC0000135 (DLL not found) with no output. So after the dev shell,
+  # the MSVC DebugCRT and the SDK's debug UCRT (ucrtbased.dll) go on PATH.
+  # Defender's real-time scan is switched off to speed the build up.
   - 'Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue'
   - '$vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"'
   - 'if (-not (Test-Path $vswhere)) { throw "vswhere not found at $vswhere" }'
@@ -240,37 +168,16 @@ default:
   - '$devShell = Join-Path $installRoot ''Common7\Tools\Launch-VsDevShell.ps1'''
   - 'if (-not (Test-Path $devShell)) { throw "VS dev shell not found at $devShell" }'
   - '& $devShell -Arch amd64 -SkipAutomaticLocation'
-  # MSVC Debug runtime DLLs — required by anything cmake builds with
-  # /MDd. Pipeline #137 identified that the BuildTools install only ships
-  # the OneCore subset under VC\Redist\MSVC\<ver>\onecore\debug_nonredist\x64\,
-  # which is missing ucrtbased.dll. UCRT (Universal C Runtime) debug
-  # ships separately under the Windows 10 SDK at
-  # Windows Kits\10\bin\<sdk-version>\x64\ucrt\. Both directories must
-  # be on PATH for juceaide.exe to load.
   - '$debugCrt = Get-ChildItem -Path "$installRoot\VC\Redist\MSVC" -Recurse -Filter "Microsoft.VC*.DebugCRT" -Directory -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*\debug_nonredist\x64\*" } | Sort-Object @{Expression={$_.FullName -like "*\onecore\*"}; Ascending=$true}, @{Expression={$_.Name}; Descending=$true} | Select-Object -First 1'
   - 'if ($debugCrt) { $env:PATH = "$($debugCrt.FullName);$env:PATH"; Write-Host "Added MSVC DebugCRT: $($debugCrt.FullName)" } else { Write-Host "WARNING: Microsoft.VC*.DebugCRT not found under $installRoot — juceaide may STATUS_DLL_NOT_FOUND" }'
-  # Windows SDK debug UCRT (ucrtbased.dll). Picks the most recent SDK by
-  # bin\<version> dir name. WindowsSdkDir is set by Launch-VsDevShell;
-  # fall back to the canonical Program Files location if not.
   - '$sdkRoot = if ($env:WindowsSdkDir) { $env:WindowsSdkDir } else { "C:\Program Files (x86)\Windows Kits\10" }'
   - 'Write-Host "Windows SDK root: $sdkRoot"'
   - '$ucrtDebug = Get-ChildItem -Path "$sdkRoot\bin" -Directory -ErrorAction SilentlyContinue | Where-Object { Test-Path "$($_.FullName)\x64\ucrt\ucrtbased.dll" } | Sort-Object Name -Descending | Select-Object -First 1'
   - 'if ($ucrtDebug) { $ucrtDir = "$($ucrtDebug.FullName)\x64\ucrt"; $env:PATH = "$ucrtDir;$env:PATH"; Write-Host "Added UCRT debug: $ucrtDir" } else { Write-Host "WARNING: ucrtbased.dll not found under $sdkRoot\bin — juceaide will STATUS_DLL_NOT_FOUND" }'
-  # DirectComposition (dcomp.dll) is missing on saas-windows-medium-amd64
-  # — it's a Server Core SKU that ships D3D/D2D/DXGI but not dcomp.dll
-  # (Pipeline #139 where.exe probe confirmed dcomp.dll -> MISSING). JUCE 8
-  # statically imports dcomp.dll via juce_graphics → Direct2D, and juceaide
-  # pulls juce_graphics through juce_build_tools. The fix in two passes:
-  #   1. Install the Server Core App Compatibility Feature on Demand,
-  #      which drops dcomp.dll + other GUI shims into System32.
-  #   2. If the FoD path didn't work (or already installed), search the
-  #      VS / SDK install for a vendored dcomp.dll and add its dir to
-  #      PATH as a fallback.
-  # Both are tried; whichever satisfies juceaide's loader wins.
-  - 'try { Add-WindowsCapability -Online -Name "ServerCore.AppCompatibility~~~~0.0.1.0" -ErrorAction SilentlyContinue | Out-Null; Write-Host "ServerCore.AppCompatibility install attempted" } catch { Write-Host "AppCompatibility install threw: $_" }'
-  - 'if (Test-Path "C:\Windows\System32\dcomp.dll") { Write-Host "dcomp.dll now present in System32" } else { Write-Host "dcomp.dll still missing from System32; searching VS/SDK trees" }'
-  - '$dcomp = Get-ChildItem -Path "$installRoot","$sdkRoot" -Recurse -Filter "dcomp.dll" -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch "arm" } | Select-Object -First 1'
-  - 'if ($dcomp) { $env:PATH = "$($dcomp.DirectoryName);$env:PATH"; Write-Host "Found dcomp.dll at: $($dcomp.FullName)" } else { Write-Host "WARNING: dcomp.dll still not found; juceaide will STATUS_DLL_NOT_FOUND" }'
+  # No dcomp.dll here (DirectComposition; a Server Core runner), and it can't
+  # be added: the App Compatibility feature install is "Access is denied", and
+  # the VS and SDK folders don't carry one. The build script's delay-load
+  # patch is what lets juceaide load without it.
   - cmake --version
   - ninja --version
 
@@ -282,9 +189,7 @@ default:
 lint:format:
   stage: lint
   image: "${CI_LINUX_IMAGE}"
-  rules: *rules-default
-  variables:
-    GIT_SUBMODULE_STRATEGY: "none"
+  rules: *rules-gate
   script:
     - just format-check
 
@@ -294,11 +199,10 @@ lint:format:
 build:linux:
   stage: build
   image: "${CI_LINUX_IMAGE}"
-  rules: *rules-default
-  <<: *cache-linux
+  rules: *rules-gate
+  <<: *cache-build
+  # ccache: app-v3/CMakeLists.txt finds it in the image and uses it.
   variables:
-    CMAKE_C_COMPILER_LAUNCHER: ccache
-    CMAKE_CXX_COMPILER_LAUNCHER: ccache
     # Preset is a variable so release:linux can extend this job and only
     # swap in the RelWithDebInfo preset (linux-release).
     PB3_BUILD_PRESET: linux-dev
@@ -325,18 +229,15 @@ build:linux:
     expire_in: 1 day
     when: on_success
 
-# Windows Debug build on saas-windows-medium-amd64 (GitLab.com SaaS).
-# Same posture as build:macos — auto on MR pushes and v3-rewrite,
-# `allow_failure: true` while it stabilises. Flip mandatory once the
-# job is green twice in a row. PowerShell shell (default on the SaaS
-# Windows runner). Installer signing-cert provisioning is still Phase
-# 6 work and is unrelated to this build+test pair.
+# Windows Debug build + unit tests on saas-windows-medium-amd64 (GitLab.com
+# SaaS, PowerShell), on every MR push. `allow_failure: true` until the
+# platform CI is made required (#33).
 build:windows:
   stage: build
   tags: [ saas-windows-medium-amd64 ]
-  rules: *rules-windows
+  rules: *rules-gate
   allow_failure: true
-  <<: *cache-windows
+  <<: *cache-build
   before_script: *windows-setup
   variables:
     # Preset is a variable so release:windows can extend this job (reusing
@@ -374,27 +275,14 @@ build:windows:
       # fails the whole step if $LASTEXITCODE != 0 at the block's end. This fetch
       # is best-effort and must never fail the build, so reset the exit code.
       cmd /c "exit 0"
-    # Patch JUCE to delay-load dcomp.dll. Pipeline #140 confirmed
-    # saas-windows-medium-amd64 doesn't ship DirectComposition's
-    # dcomp.dll and there's no Microsoft FoD or vendored copy on the
-    # runner that puts it in PATH. Without dcomp.dll, juceaide's
-    # static import resolution at LoadLibrary time fails 0xC0000135
-    # before main() even runs, so juceaide.exe `version` produces
-    # empty output and JUCE's "Testing juceaide" FATAL_ERRORs out.
-    #
-    # juce_graphics.cpp:94 hard-codes `#pragma comment(lib, "DComp.lib")`.
-    # The patch below appends `#pragma comment(linker, "/DELAYLOAD:dcomp.dll")`
-    # plus a delayimp link, which marks dcomp.dll as delay-loaded —
-    # the import table still references it but the loader skips
-    # resolution until something calls a DCompositionXxx function.
-    # `juceaide version` doesn't, so juceaide loads cleanly.
-    # Pedalboard3 itself (which DOES use juce_graphics at runtime)
-    # ships to end-users on real Windows where dcomp.dll is present;
-    # the delay-load is harmless there.
-    #
-    # Two-pass: try patch (no-op if cache cold), run cmake, and on
-    # juceaide failure re-patch (cache is now populated by CPM) and
-    # re-run cmake. Final failure dumps a full diagnostic.
+    # Patch JUCE to delay-load dcomp.dll: juce_graphics imports it, this
+    # runner doesn't have it, so juceaide would fail to load before main().
+    # Delay-loaded, it's only resolved when a DirectComposition call is made,
+    # which never happens in juceaide and always works on desktop Windows.
+    # The patch lands in the CPM cache (kept by the job cache): the juceaide
+    # CMakeLists (the part that holds) and a pragma in juce_graphics.cpp. When
+    # the first configure fails (a cold cache, nothing to patch yet), patch
+    # and configure again; a second failure prints juceaide's diagnostics.
     - |
       function Patch-JuceForDcomp {
           # Two patches, applied together:
@@ -491,14 +379,13 @@ build:windows:
     expire_in: 1 day
     when: on_success
 
-# macOS Debug build on GitLab.com's saas-macos-large-m2pro (Apple Silicon).
-# `allow_failure: true` while the job stabilises — flip to mandatory once
-# it's green twice in a row. Auto on MR pushes and v3-rewrite (see
-# .rules-macos).
+# macOS Debug build on GitLab.com's saas-macos-medium-m1 (Apple Silicon), on
+# every MR push. `allow_failure: true` until the platform CI is made required
+# (#33).
 build:macos:
   stage: build
   tags: [ saas-macos-medium-m1 ]
-  rules: *rules-macos
+  rules: *rules-gate
   allow_failure: true
   before_script: *macos-setup
   variables:
@@ -527,16 +414,15 @@ build:macos:
 test:linux:unit:
   stage: test
   image: "${CI_LINUX_IMAGE}"
-  rules: *rules-default
+  rules: *rules-gate
   needs: [ build:linux ]
-  <<: *cache-linux
   script:
     - ctest --preset linux-dev
 
 test:macos:unit:
   stage: test
   tags: [ saas-macos-medium-m1 ]
-  rules: *rules-macos
+  rules: *rules-gate
   needs: [ build:macos ]
   allow_failure: true
   before_script: *macos-setup
@@ -554,9 +440,9 @@ test:macos:unit:
 #     portable zip. The exes carry the MSVC runtime; package.ps1 checks that.
 #   - macOS: a zip of the universal .app, with the helper inside it.
 #   - Linux: a tarball of the app and the helper.
-# .rules-release says when they run. On a release tag each also checks that
-# the tag matches the build's version, and uploads its packages for
-# release:gitlab. Signing and notarisation are still #40.
+# .rules-release says when they run: by hand, on main. Their packages stay
+# job artifacts for two weeks; release:gitlab publishes them. Signing and
+# notarisation are still #40.
 # ===========================================================================
 release:linux:
   extends: build:linux
@@ -567,7 +453,6 @@ release:linux:
   script:
     - !reference [build:linux, script]
     - tools/package.sh build/linux-release packages
-    - *upload-packages-unix
     # The bare version (no v), for release:gitlab's download links.
     - echo "PB3_VERSION=$(tr -d '[:space:]' < build/linux-release/pb3-version.txt)" > release.env
   artifacts:
@@ -586,7 +471,6 @@ release:macos:
   script:
     - !reference [build:macos, script]
     - tools/package.sh build/macos-universal packages
-    - *upload-packages-unix
   artifacts:
     paths: [ packages/*.zip ]
     expire_in: 2 weeks
@@ -614,16 +498,6 @@ release:windows:
       Start-Process -FilePath $isExe -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/DIR=`"$isDir`"" -Wait
       if (-not (Test-Path "$isDir\ISCC.exe")) { throw "Inno Setup didn't install into $isDir." }
       & ./tools/package.ps1 -BuildDir build/windows-ci -OutDir packages -Iscc "$isDir\ISCC.exe"
-    - |
-      # On a release tag: upload, as .upload-packages-unix does.
-      if ($env:CI_COMMIT_TAG) {
-          $version = $env:CI_COMMIT_TAG.Substring(1)
-          foreach ($f in Get-ChildItem -Path packages/* -File -Include *.zip, *-setup.exe) {
-              curl.exe --fail --silent --show-error --header "JOB-TOKEN: $($env:CI_JOB_TOKEN)" --upload-file $f.FullName "$($env:CI_API_V4_URL)/projects/$($env:CI_PROJECT_ID)/packages/generic/pedalboard3/$version/$($f.Name)"
-              if ($LASTEXITCODE -ne 0) { throw "Couldn't upload $($f.Name)." }
-              Write-Host "Uploaded $($f.Name)"
-          }
-      }
   artifacts:
     paths:
       - packages/*.zip
@@ -632,34 +506,50 @@ release:windows:
     when: on_success
 
 # ===========================================================================
-# PUBLISH — the GitLab Release, for a release tag only (#88).
+# PUBLISH — the GitLab Release, by hand from main (#88).
 #
-# The release jobs have uploaded their packages. This makes the Release: the
-# notes from docs/releases/<tag>.md and a download link for each package.
-# GitLab has no pre-release flag, so the notes say it's a beta. The GitHub
-# mirror (#89) will mark it as a pre-release there.
+# One more click, once release:linux, release:macos and release:windows have
+# passed in the same pipeline. It checks that the release notes
+# (docs/releases/v<version>.md) and all four packages are there, uploads the
+# packages to this project's package registry (pedalboard3/<version>), then
+# creates the tag v<version> on this commit and the Release: the notes and a
+# download link for each package. GitLab has no pre-release flag, so the
+# notes say it's a beta; the GitHub mirror (#89) will mark it as one there.
 # ===========================================================================
 release:gitlab:
   stage: publish
   image: registry.gitlab.com/gitlab-org/release-cli:v0.24.0
-  rules:
-    - if: '$CI_COMMIT_TAG'
+  rules: *rules-release
   needs:
     - job: release:linux
-      artifacts: true # PB3_VERSION, from its dotenv report
+      artifacts: true # its tarball, and PB3_VERSION from its dotenv report
     - job: release:macos
-      artifacts: false
+      artifacts: true
     - job: release:windows
-      artifacts: false
+      artifacts: true
   variables:
     GIT_DEPTH: "1"
-    GIT_SUBMODULE_STRATEGY: "none"
   script:
-    - echo "Releasing $CI_COMMIT_TAG (Pedalboard 3 $PB3_VERSION)"
+    - |
+      notes="docs/releases/v${PB3_VERSION}.md"
+      [ -f "$notes" ] || { echo "No release notes at $notes: write and merge them first."; exit 1; }
+      for f in "Pedalboard3-${PB3_VERSION}-windows-x64-setup.exe" "Pedalboard3-${PB3_VERSION}-windows-x64.zip" \
+               "Pedalboard3-${PB3_VERSION}-macos-universal.zip" "Pedalboard3-${PB3_VERSION}-linux-x64.tar.gz"; do
+        [ -f "packages/$f" ] || { echo "packages/$f is missing: its release job didn't pass in this pipeline."; exit 1; }
+      done
+    - apk add --no-cache curl
+    - |
+      for f in packages/*; do
+        [ -f "$f" ] || continue
+        curl --fail --silent --show-error --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file "$f" \
+          "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/pedalboard3/${PB3_VERSION}/$(basename "$f")"
+        echo "Uploaded $(basename "$f")"
+      done
   release:
-    tag_name: "$CI_COMMIT_TAG"
+    tag_name: "v$PB3_VERSION"
+    ref: "$CI_COMMIT_SHA"
     name: "Pedalboard 3 $PB3_VERSION"
-    description: "docs/releases/$CI_COMMIT_TAG.md"
+    description: "docs/releases/v$PB3_VERSION.md"
     assets:
       links:
         - name: "Windows installer (x64)"

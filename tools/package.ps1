@@ -8,9 +8,9 @@
 # Both ship the same files: the app, the scanner helper, the third-party
 # licences and, when there are some, the release notes.
 #
-# The version is the build's own (pb3-version.txt, written by CMake). In a tag
-# pipeline the tag must be v<version>, and the release notes
-# docs/releases/v<version>.md must exist.
+# The version is the build's own (pb3-version.txt, written by CMake). The
+# release notes docs/releases/v<version>.md go in when they exist;
+# release:gitlab requires them before it publishes.
 #
 # Usage (from a VS developer shell, so dumpbin can check the runtime):
 #   ./tools/package.ps1 [-BuildDir build/windows-ci] [-OutDir build/packages] [-Iscc <path to ISCC.exe>]
@@ -31,12 +31,6 @@ if (-not (Test-Path -LiteralPath $versionFile)) {
 }
 $version = (Get-Content -LiteralPath $versionFile -Raw).Trim()
 $notes = "docs/releases/v$version.md"
-if ($env:CI_COMMIT_TAG) {
-    if ($env:CI_COMMIT_TAG -ne "v$version") {
-        throw "The tag $($env:CI_COMMIT_TAG) doesn't match the build's version, $version. Tag v$version, or change the version in app-v3/CMakeLists.txt."
-    }
-    if (-not (Test-Path -LiteralPath $notes)) { throw "A release needs its notes: $notes is missing." }
-}
 
 $bin = Join-Path $BuildDir 'src/Pedalboard3_artefacts/RelWithDebInfo'
 $exes = @('Pedalboard 3.exe', 'pb3-scanner-helper.exe')
