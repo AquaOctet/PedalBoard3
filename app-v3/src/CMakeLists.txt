@@ -61,6 +61,8 @@ add_library(pb3_app_core STATIC
     ui/ColourScheme.h
     ui/CpuMeter.cpp
     ui/CpuMeter.h
+    ui/DialogFrame.cpp
+    ui/DialogFrame.h
     ui/EditorWindow.cpp
     ui/EditorWindow.h
     ui/FileActions.cpp
@@ -152,6 +154,7 @@ pb3_apply_strict_warnings(pb3_app_core
     ui/BankSidebar.cpp
     ui/BoardMappingsPanel.cpp
     ui/CpuMeter.cpp
+    ui/DialogFrame.cpp
     ui/EditorWindow.cpp
     ui/FileActions.cpp
     ui/FilePlayerWindow.cpp

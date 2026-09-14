@@ -1,6 +1,8 @@
 #include "AboutWindow.h"
 
 #include "ColourScheme.h"
+#include "DialogFrame.h"
+#include "Fonts.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -15,6 +17,8 @@ constexpr int kHeight = 190;
 constexpr int kMarginX = 26;
 constexpr int kMarginY = 22;
 
+// The mockup's About (UI chrome U4): the name in the display face with a teal
+// "3", the version in mono.
 class AboutPanel : public juce::Component
 {
 public:
@@ -22,8 +26,8 @@ public:
     {
         closeButton_.onClick = [this]
         {
-            if (auto* dialog = findParentComponentOfClass<juce::DialogWindow>())
-                dialog->exitModalState(0);
+            if (auto* frame = findParentComponentOfClass<DialogFrame>())
+                frame->closeButtonPressed();
         };
         addAndMakeVisible(closeButton_);
         setSize(kWidth, kHeight);
@@ -31,22 +35,23 @@ public:
 
     void paint(juce::Graphics& g) override
     {
-        g.fillAll(tokens::bgPopover);
+        g.fillAll(tokens::bgWindow);
         auto area = getLocalBounds().reduced(kMarginX, kMarginY);
 
-        const juce::Font title(juce::FontOptions(34.0f).withStyle("Bold"));
+        const auto title = fonts::display(34.0f);
         juce::AttributedString name;
         name.append("Pedalboard ", title, tokens::fgPrimary);
         name.append("3", title, tokens::accentPrimary);
         name.draw(g, area.removeFromTop(40).toFloat());
 
-        g.setFont(juce::Font(juce::FontOptions(13.0f)));
+        g.setFont(fonts::mono(12.0f));
         g.setColour(tokens::fgMuted);
         g.drawText(
             "Version " JUCE_APPLICATION_VERSION_STRING, area.removeFromTop(20), juce::Justification::centredLeft);
 
         area.removeFromTop(14);
-        g.setColour(tokens::fgPrimary);
+        g.setFont(fonts::ui(14.0f));
+        g.setColour(tokens::fgSecondaryText);
         g.drawText("Based on Pedalboard2 by Niall Moody. Built with JUCE.",
                    area.removeFromTop(20),
                    juce::Justification::centredLeft);
@@ -69,14 +74,7 @@ std::unique_ptr<juce::Component> makeAboutPanel()
 
 void showAboutWindow()
 {
-    juce::DialogWindow::LaunchOptions options;
-    options.content.setOwned(makeAboutPanel().release());
-    options.dialogTitle = "About Pedalboard 3";
-    options.dialogBackgroundColour = tokens::bgPopover;
-    options.escapeKeyTriggersCloseButton = true;
-    options.useNativeTitleBar = true;
-    options.resizable = false;
-    options.launchAsync();
+    DialogFrame::launchModal("About Pedalboard 3", makeAboutPanel(), false);
 }
 
 } // namespace pedalboard3::ui

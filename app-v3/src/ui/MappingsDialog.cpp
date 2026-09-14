@@ -279,12 +279,10 @@ MappingsWindow::MappingsWindow(AppContext& ctx,
                                session::NodeId node,
                                const juce::String& nodeName,
                                std::function<void()> onClose)
-    : juce::DocumentWindow("Mappings: " + nodeName, tokens::bgWindow, juce::DocumentWindow::closeButton),
-      onClose_(std::move(onClose)), node_(node)
+    : DialogFrame("Mappings: " + nodeName), onClose_(std::move(onClose)), node_(node)
 {
-    setUsingNativeTitleBar(true);
-    setContentOwned(new MappingsPanel(ctx, node), true);
     setResizable(true, false);
+    setContentOwned(new MappingsPanel(ctx, node), true);
     setResizeLimits(740, 260, 1800, 1400);
     centreWithSize(getWidth(), getHeight());
     setVisible(true);

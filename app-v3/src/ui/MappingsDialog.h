@@ -3,6 +3,7 @@
 #include "AppContext.h"
 #include "control/MidiMapping.h"
 #include "control/OscMapping.h"
+#include "DialogFrame.h"
 #include "MappingRowEditors.h"
 #include "session/NodeId.h"
 
@@ -76,12 +77,13 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MappingsPanel)
 };
 
-// The window around a MappingsPanel. SignalCanvas owns at most one and
+// The window around a MappingsPanel, in the dialog frame (UI chrome U4).
+// SignalCanvas owns at most one and
 // destroys it before anything that could invalidate its node: the node's
 // removal, a whole-patch swap (node ids can be reused), canvas teardown.
 // The close button calls `onClose`, which the owner uses to drop its handle
 // (the same contract as EditorWindow).
-class MappingsWindow : public juce::DocumentWindow
+class MappingsWindow : public DialogFrame
 {
 public:
     MappingsWindow(AppContext& ctx, session::NodeId node, const juce::String& nodeName, std::function<void()> onClose);

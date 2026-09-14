@@ -28,6 +28,7 @@
 #include "ui/AboutWindow.h"
 #include "ui/BankSidebar.h"
 #include "ui/ColourScheme.h"
+#include "ui/DialogFrame.h"
 #include "ui/FeatureSettingsWindows.h"
 #include "ui/FileActions.h"
 #include "ui/MappingsDialog.h"
@@ -257,17 +258,15 @@ public:
         add(name, component.createComponentSnapshot(component.getLocalBounds(), true, 1.0f));
     }
 
-    // A dialog's content on the background its window paints behind it.
-    void addDialog(const juce::String& name, juce::Component& content)
+    // A dialog: its content in the frame its window opens with (UI chrome U4),
+    // kept off the screen.
+    void addDialog(const juce::String& name, const juce::String& title, juce::Component& content)
     {
-        juce::Image image(
-            juce::Image::ARGB, juce::jmax(1, content.getWidth()), juce::jmax(1, content.getHeight()), true);
-        {
-            juce::Graphics g(image);
-            g.fillAll(ui::tokens::bgPopover);
-            g.drawImageAt(content.createComponentSnapshot(content.getLocalBounds(), true, 1.0f), 0, 0);
-        }
-        add(name, image);
+        ui::DialogFrame frame(title, false);
+        frame.setContentNonOwned(&content, true);
+        frame.setVisible(true);
+        add(name, frame.createComponentSnapshot(frame.getLocalBounds(), true, 1.0f));
+        frame.clearContentComponent();
     }
 
     int count() const noexcept { return count_; }
@@ -281,6 +280,26 @@ private:
 };
 
 using ContentFactory = std::function<std::unique_ptr<juce::Component>()>;
+
+// The title each dialog's window shows.
+juce::String dialogTitle(const juce::String& name)
+{
+    const std::pair<const char*, const char*> titles[] = {
+        {"dialog-audio-devices", "Audio Devices"},
+        {"dialog-midi-settings", "MIDI Settings"},
+        {"dialog-osc-settings", "OSC Settings"},
+        {"dialog-tempo-settings", "Tempo / BPM Settings"},
+        {"dialog-metronome-settings", "Metronome Settings"},
+        {"dialog-looper-settings", "Looper Settings"},
+        {"dialog-about", "About Pedalboard 3"},
+        {"dialog-mappings", "Mappings: Pro-Q 3"},
+        {"dialog-plugin-list", "Plugin List"},
+    };
+    for (const auto& [surface, title] : titles)
+        if (name == surface)
+            return title;
+    return name;
+}
 
 template <typename ComponentType>
 std::unique_ptr<juce::Component> sized(std::unique_ptr<ComponentType> component, int width, int height)
@@ -359,7 +378,7 @@ int main(int argc, char** argv)
         for (const auto& [name, make] : dialogs)
         {
             const auto content = make();
-            out.addDialog(name, *content);
+            out.addDialog(name, dialogTitle(name), *content);
         }
 
         // Alerts, as the app raises them.

@@ -1,6 +1,7 @@
 #include "Pb3LookAndFeel.h"
 
 #include "ColourScheme.h"
+#include "DialogFrame.h"
 #include "Fonts.h"
 
 namespace pedalboard3::ui
@@ -329,6 +330,115 @@ void Pb3LookAndFeel::drawPopupMenuUpDownArrowWithOptions(
     g.fillPath(path);
 }
 
+namespace
+{
+
+// The dialog title bar's close cross (UI chrome U4): fgSubtle, lit on hover.
+class DialogCloseButton : public juce::Button
+{
+public:
+    DialogCloseButton() : juce::Button("Close") {}
+
+    void paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override
+    {
+        const bool lit = shouldDrawButtonAsHighlighted || shouldDrawButtonAsDown;
+        const auto area = getLocalBounds().toFloat();
+        if (lit)
+        {
+            g.setColour(tokens::bgSecondary);
+            g.fillRoundedRectangle(area.reduced(4.0f), 4.0f);
+        }
+        const auto cross = area.withSizeKeepingCentre(8.0f, 8.0f);
+        juce::Path path;
+        path.addLineSegment({cross.getTopLeft(), cross.getBottomRight()}, 1.4f);
+        path.addLineSegment({cross.getTopRight(), cross.getBottomLeft()}, 1.4f);
+        g.setColour(lit ? tokens::fgPrimary : tokens::fgSubtle);
+        g.fillPath(path);
+    }
+};
+
+} // namespace
+
+void Pb3LookAndFeel::drawDocumentWindowTitleBar(juce::DocumentWindow& window,
+                                                juce::Graphics& g,
+                                                int w,
+                                                int h,
+                                                int /*titleSpaceX*/,
+                                                int /*titleSpaceW*/,
+                                                const juce::Image* /*icon*/,
+                                                bool /*drawTitleTextOnLeft*/)
+{
+    g.setColour(tokens::bgTitleBar);
+    g.fillAll();
+    const auto layout = dialogframe::titleBarLayout({0, 0, w, h});
+    g.setFont(fonts::ui(13.0f, fonts::Weight::Medium));
+    g.setColour(tokens::fgTitle);
+    g.drawText(window.getName(), layout.title, juce::Justification::centredLeft, true);
+}
+
+juce::Button* Pb3LookAndFeel::createDocumentWindowButton(int buttonType)
+{
+    if (buttonType == juce::DocumentWindow::closeButton)
+        return new DialogCloseButton();
+    return juce::LookAndFeel_V4::createDocumentWindowButton(buttonType);
+}
+
+void Pb3LookAndFeel::positionDocumentWindowButtons(juce::DocumentWindow& window,
+                                                   int titleBarX,
+                                                   int titleBarY,
+                                                   int titleBarW,
+                                                   int titleBarH,
+                                                   juce::Button* minimiseButton,
+                                                   juce::Button* maximiseButton,
+                                                   juce::Button* closeButton,
+                                                   bool positionTitleBarButtonsOnLeft)
+{
+    // Dialogs have only the close button; anything else keeps V4's layout.
+    if (minimiseButton != nullptr || maximiseButton != nullptr)
+    {
+        juce::LookAndFeel_V4::positionDocumentWindowButtons(window,
+                                                            titleBarX,
+                                                            titleBarY,
+                                                            titleBarW,
+                                                            titleBarH,
+                                                            minimiseButton,
+                                                            maximiseButton,
+                                                            closeButton,
+                                                            positionTitleBarButtonsOnLeft);
+        return;
+    }
+    if (closeButton != nullptr)
+        closeButton->setBounds(dialogframe::titleBarLayout({titleBarX, titleBarY, titleBarW, titleBarH}).close);
+}
+
+void Pb3LookAndFeel::drawResizableWindowBorder(
+    juce::Graphics& g, int w, int h, const juce::BorderSize<int>& border, juce::ResizableWindow& window)
+{
+    if (border.isEmpty())
+        return; // a native title bar: the system draws the frame
+
+    // A resizable dialog's border is 4 px: the strip above and beside the title
+    // bar takes its colour, so the bar reaches the edge.
+    if (auto* document = dynamic_cast<juce::DocumentWindow*>(&window))
+    {
+        g.setColour(tokens::bgTitleBar);
+        g.fillRect(0, 0, w, border.getTop() + document->getTitleBarHeight());
+    }
+    g.setColour(juce::Colours::black);
+    g.drawRect(0, 0, w, h, 1);
+}
+
+void Pb3LookAndFeel::drawCallOutBoxBackground(juce::CallOutBox&,
+                                              juce::Graphics& g,
+                                              const juce::Path& path,
+                                              juce::Image&)
+{
+    g.setColour(tokens::bgPopover);
+    g.fillPath(path);
+    g.setColour(tokens::borderDefault);
+    g.strokePath(path, juce::PathStrokeType(1.0f));
+}
+
 void Pb3LookAndFeel::drawButtonBackground(juce::Graphics& g,
                                           juce::Button& button,
                                           const juce::Colour& backgroundColour,
@@ -393,5 +503,259 @@ void Pb3LookAndFeel::drawTickBox(juce::Graphics& g,
         g.fillRoundedRectangle(box.reduced(2.5f), kTickBoxCornerRadius - 1.0f);
     }
 }
+
+// ---- Pb3DialogLookAndFeel (UI chrome U4) ------------------------------------
+
+namespace
+{
+constexpr float kFieldRadius = 5.0f;
+constexpr float kDialogButtonRadius = 6.0f;
+constexpr float kFieldFontSize = 12.0f;
+constexpr float kTabCaptionSize = 12.0f;
+constexpr float kToggleOnAlpha = 0.14f;
+
+juce::Colour pressedOrHovered(juce::Colour fill, bool highlighted, bool down)
+{
+    if (down)
+        return fill.overlaidWith(tokens::fgPrimary.withAlpha(0.08f));
+    if (highlighted)
+        return fill.overlaidWith(tokens::fgPrimary.withAlpha(0.05f));
+    return fill;
+}
+} // namespace
+
+Pb3DialogLookAndFeel::Pb3DialogLookAndFeel()
+{
+    setColour(juce::TextButton::buttonColourId, tokens::bgSecondary);
+    setColour(juce::TextButton::buttonOnColourId, tokens::accentPrimary.withAlpha(kToggleOnAlpha));
+    setColour(juce::TextButton::textColourOffId, tokens::fgPrimary);
+    setColour(juce::TextButton::textColourOnId, tokens::accentPrimary);
+    setColour(juce::ToggleButton::textColourId, tokens::fgField);
+
+    setColour(juce::ComboBox::backgroundColourId, tokens::bgSecondary);
+    setColour(juce::ComboBox::textColourId, tokens::fgField);
+    setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
+    setColour(juce::ComboBox::arrowColourId, tokens::fgSubtle);
+
+    setColour(juce::TextEditor::backgroundColourId, tokens::bgSecondary);
+    setColour(juce::TextEditor::textColourId, tokens::fgField);
+    setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
+
+    setColour(juce::Slider::textBoxBackgroundColourId, tokens::bgSecondary);
+    setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+    setColour(juce::Slider::textBoxTextColourId, tokens::fgField);
+
+    setColour(juce::ScrollBar::thumbColourId, tokens::borderDefault);
+
+    setColour(juce::TabbedComponent::outlineColourId, juce::Colours::transparentBlack);
+    setColour(juce::TabbedButtonBar::tabOutlineColourId, juce::Colours::transparentBlack);
+    setColour(juce::TabbedButtonBar::frontOutlineColourId, juce::Colours::transparentBlack);
+}
+
+void Pb3DialogLookAndFeel::drawButtonBackground(juce::Graphics& g,
+                                                juce::Button& button,
+                                                const juce::Colour& backgroundColour,
+                                                bool shouldDrawButtonAsHighlighted,
+                                                bool shouldDrawButtonAsDown)
+{
+    // Filled bgSecondary, or a ghost (transparent with a 1 px edge, teal when
+    // toggled on); no teal-filled primary.
+    const auto bounds = button.getLocalBounds().toFloat().reduced(0.5f);
+    const bool ghost = static_cast<bool>(button.getProperties()[kOutlineButton]);
+    const bool on = button.getToggleState();
+
+    auto fill = (ghost && !on) ? juce::Colours::transparentBlack : backgroundColour;
+    fill = pressedOrHovered(fill, shouldDrawButtonAsHighlighted, shouldDrawButtonAsDown);
+    g.setColour(fill.withMultipliedAlpha(button.isEnabled() ? 1.0f : 0.5f));
+    g.fillRoundedRectangle(bounds, kDialogButtonRadius);
+
+    if (ghost)
+    {
+        g.setColour(on ? tokens::accentPrimary : tokens::borderDefault);
+        g.drawRoundedRectangle(bounds, kDialogButtonRadius, 1.0f);
+    }
+}
+
+juce::Font Pb3DialogLookAndFeel::getTextButtonFont(juce::TextButton&, int buttonHeight)
+{
+    return fonts::ui(juce::jmin(14.0f, static_cast<float>(buttonHeight) * 0.6f), fonts::Weight::Medium);
+}
+
+void Pb3DialogLookAndFeel::drawToggleButton(juce::Graphics& g,
+                                            juce::ToggleButton& button,
+                                            bool shouldDrawButtonAsHighlighted,
+                                            bool shouldDrawButtonAsDown)
+{
+    // A toggle as a field: bgSecondary, or teal at 14% with teal text when on,
+    // with its tick box at the left.
+    const bool on = button.getToggleState();
+    const float alpha = button.isEnabled() ? 1.0f : 0.5f;
+    auto fill = on ? tokens::accentPrimary.withAlpha(kToggleOnAlpha) : tokens::bgSecondary;
+    fill = pressedOrHovered(fill, shouldDrawButtonAsHighlighted, shouldDrawButtonAsDown);
+    g.setColour(fill.withMultipliedAlpha(alpha));
+    g.fillRoundedRectangle(button.getLocalBounds().toFloat().reduced(0.5f), kFieldRadius);
+
+    auto content = button.getLocalBounds().reduced(10, 0);
+    const auto box = content.removeFromLeft(14).withSizeKeepingCentre(14, 14).toFloat();
+    drawTickBox(g,
+                button,
+                box.getX(),
+                box.getY(),
+                box.getWidth(),
+                box.getHeight(),
+                on,
+                button.isEnabled(),
+                shouldDrawButtonAsHighlighted,
+                shouldDrawButtonAsDown);
+    content.removeFromLeft(8);
+
+    const auto textColour = on ? tokens::accentPrimary : button.findColour(juce::ToggleButton::textColourId);
+    g.setFont(fonts::ui(juce::jmin(14.0f, static_cast<float>(button.getHeight()) * 0.6f)));
+    g.setColour(textColour.withMultipliedAlpha(alpha));
+    g.drawFittedText(button.getButtonText(), content, juce::Justification::centredLeft, 2);
+}
+
+void Pb3DialogLookAndFeel::drawComboBox(juce::Graphics& g,
+                                        int width,
+                                        int height,
+                                        bool /*isButtonDown*/,
+                                        int /*buttonX*/,
+                                        int /*buttonY*/,
+                                        int /*buttonW*/,
+                                        int /*buttonH*/,
+                                        juce::ComboBox& box)
+{
+    const float alpha = box.isEnabled() ? 1.0f : 0.5f;
+    g.setColour(box.findColour(juce::ComboBox::backgroundColourId).withMultipliedAlpha(alpha));
+    g.fillRoundedRectangle(juce::Rectangle<int>(width, height).toFloat(), kFieldRadius);
+
+    // The mockup's " ▾", drawn so it doesn't depend on the font.
+    const float centreX = static_cast<float>(width) - 14.0f;
+    const float centreY = static_cast<float>(height) * 0.5f;
+    juce::Path arrow;
+    arrow.addTriangle(centreX - 4.0f, centreY - 2.0f, centreX + 4.0f, centreY - 2.0f, centreX, centreY + 3.0f);
+    g.setColour(box.findColour(juce::ComboBox::arrowColourId).withMultipliedAlpha(alpha));
+    g.fillPath(arrow);
+}
+
+juce::Font Pb3DialogLookAndFeel::getComboBoxFont(juce::ComboBox&)
+{
+    return fonts::ui(kFieldFontSize);
+}
+
+void Pb3DialogLookAndFeel::positionComboBoxText(juce::ComboBox& box, juce::Label& label)
+{
+    // The label's own 5 px inset puts the text 10 px in; the arrow keeps 24.
+    label.setBounds(5, 1, box.getWidth() - 5 - 24, box.getHeight() - 2);
+    label.setFont(getComboBoxFont(box));
+}
+
+void Pb3DialogLookAndFeel::fillTextEditorBackground(juce::Graphics& g, int width, int height, juce::TextEditor& editor)
+{
+    g.setColour(editor.findColour(juce::TextEditor::backgroundColourId));
+    g.fillRoundedRectangle(juce::Rectangle<int>(width, height).toFloat(), kFieldRadius);
+}
+
+void Pb3DialogLookAndFeel::drawTextEditorOutline(juce::Graphics& g, int width, int height, juce::TextEditor& editor)
+{
+    // No border, except a teal edge while typing.
+    if (editor.isEnabled() && !editor.isReadOnly() && editor.hasKeyboardFocus(true))
+    {
+        g.setColour(tokens::accentPrimary.withAlpha(0.6f));
+        g.drawRoundedRectangle(juce::Rectangle<int>(width, height).toFloat().reduced(0.5f), kFieldRadius, 1.0f);
+    }
+}
+
+void Pb3DialogLookAndFeel::drawLinearSlider(juce::Graphics& g,
+                                            int x,
+                                            int y,
+                                            int width,
+                                            int height,
+                                            float sliderPos,
+                                            float minSliderPos,
+                                            float maxSliderPos,
+                                            juce::Slider::SliderStyle style,
+                                            juce::Slider& slider)
+{
+    if (style != juce::Slider::LinearHorizontal && style != juce::Slider::LinearBar)
+    {
+        juce::LookAndFeel_V4::drawLinearSlider(
+            g, x, y, width, height, sliderPos, minSliderPos, maxSliderPos, style, slider);
+        return;
+    }
+
+    // The mockup's value bar: a field filled teal up to the value, with a teal
+    // edge at the value.
+    const auto area = juce::Rectangle<int>(x, y, width, height).toFloat();
+    const auto track = area.withSizeKeepingCentre(area.getWidth(), juce::jmin(area.getHeight(), 28.0f));
+    const float alpha = slider.isEnabled() ? 1.0f : 0.5f;
+    g.setColour(tokens::bgSecondary.withMultipliedAlpha(alpha));
+    g.fillRoundedRectangle(track, kFieldRadius);
+
+    const float value = juce::jlimit(track.getX(), track.getRight(), sliderPos);
+    g.setColour(tokens::accentPrimary.withAlpha(0.28f * alpha));
+    g.fillRoundedRectangle(track.withRight(value), kFieldRadius);
+    g.setColour(tokens::accentPrimary.withMultipliedAlpha(alpha));
+    g.fillRect(juce::Rectangle<float>(value - 1.0f, track.getY(), 2.0f, track.getHeight()));
+}
+
+void Pb3DialogLookAndFeel::drawScrollbar(juce::Graphics& g,
+                                         juce::ScrollBar& bar,
+                                         int x,
+                                         int y,
+                                         int width,
+                                         int height,
+                                         bool isScrollbarVertical,
+                                         int thumbStartPosition,
+                                         int thumbSize,
+                                         bool isMouseOver,
+                                         bool isMouseDown)
+{
+    if (thumbSize <= 0)
+        return;
+
+    // Thin and rounded, with no track; a little wider under the mouse.
+    const float thickness = (isMouseOver || isMouseDown) ? 6.0f : 4.0f;
+    auto thumb = isScrollbarVertical ? juce::Rectangle<int>(x, thumbStartPosition, width, thumbSize).toFloat()
+                                     : juce::Rectangle<int>(thumbStartPosition, y, thumbSize, height).toFloat();
+    thumb = isScrollbarVertical ? thumb.withSizeKeepingCentre(thickness, thumb.getHeight() - 4.0f)
+                                : thumb.withSizeKeepingCentre(thumb.getWidth() - 4.0f, thickness);
+    g.setColour(bar.findColour(juce::ScrollBar::thumbColourId));
+    g.fillRoundedRectangle(thumb, thickness * 0.5f);
+}
+
+int Pb3DialogLookAndFeel::getTabButtonBestWidth(juce::TabBarButton& button, int /*tabDepth*/)
+{
+    return juce::GlyphArrangement::getStringWidthInt(fonts::caption(kTabCaptionSize),
+                                                     button.getButtonText().toUpperCase()) +
+           28;
+}
+
+void Pb3DialogLookAndFeel::drawTabButton(juce::TabBarButton& button,
+                                         juce::Graphics& g,
+                                         bool isMouseOver,
+                                         bool /*isMouseDown*/)
+{
+    // An uppercase caption; the front tab is lit and underlined in teal.
+    const bool front = button.isFrontTab();
+    auto area = button.getLocalBounds();
+    g.setFont(fonts::caption(kTabCaptionSize));
+    g.setColour(front ? tokens::fgPrimary : (isMouseOver ? tokens::fgMenu : tokens::fgSubtle));
+    g.drawText(button.getButtonText().toUpperCase(), area, juce::Justification::centred, false);
+    if (front)
+    {
+        g.setColour(tokens::accentPrimary);
+        g.fillRect(area.removeFromBottom(2).reduced(10, 0));
+    }
+}
+
+void Pb3DialogLookAndFeel::drawTabbedButtonBarBackground(juce::TabbedButtonBar& bar, juce::Graphics& g)
+{
+    g.fillAll(tokens::bgWindow);
+    g.setColour(tokens::borderDefault);
+    g.fillRect(bar.getLocalBounds().removeFromBottom(1));
+}
+
+void Pb3DialogLookAndFeel::drawTabAreaBehindFrontButton(juce::TabbedButtonBar&, juce::Graphics&, int, int) {}
 
 } // namespace pedalboard3::ui

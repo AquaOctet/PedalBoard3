@@ -106,12 +106,107 @@ public:
     void drawPopupMenuUpDownArrowWithOptions(
         juce::Graphics&, int width, int height, bool isScrollUpArrow, const juce::PopupMenu::Options&) override;
 
+    // The dialog frame (UI chrome U4, ui/DialogFrame.h): a 28 px bgTitleBar title
+    // bar with the title on the left, a close cross, and a 1 px black edge.
+    // Only windows without a native title bar reach these, and those are the
+    // dialogs. The main window and plugin editors use the native one.
+    void drawDocumentWindowTitleBar(juce::DocumentWindow&,
+                                    juce::Graphics&,
+                                    int w,
+                                    int h,
+                                    int titleSpaceX,
+                                    int titleSpaceW,
+                                    const juce::Image* icon,
+                                    bool drawTitleTextOnLeft) override;
+    juce::Button* createDocumentWindowButton(int buttonType) override;
+    void positionDocumentWindowButtons(juce::DocumentWindow&,
+                                       int titleBarX,
+                                       int titleBarY,
+                                       int titleBarW,
+                                       int titleBarH,
+                                       juce::Button* minimiseButton,
+                                       juce::Button* maximiseButton,
+                                       juce::Button* closeButton,
+                                       bool positionTitleBarButtonsOnLeft) override;
+    void drawResizableWindowBorder(
+        juce::Graphics&, int w, int h, const juce::BorderSize<int>& border, juce::ResizableWindow&) override;
+
+    // Popovers (the tempo pill's): the menu panel's colours and edge.
+    void drawCallOutBoxBackground(juce::CallOutBox&, juce::Graphics&, const juce::Path&, juce::Image&) override;
+
     // The mockup's embedded fonts stand in for JUCE's default sans-serif and
     // monospaced fonts (UI chrome plan U2, KD1), so plain juce::FontOptions text
     // and stock JUCE components follow them. Bold is Barlow's SemiBold.
     juce::Typeface::Ptr getTypefaceForFont(const juce::Font& font) override;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Pb3LookAndFeel)
+};
+
+// The controls inside a dialog, as the mockup draws them (UI chrome U4):
+// 28 px fields (combo boxes and text) with radius 5 and no border; 6 px-radius
+// buttons, filled bgSecondary or ghost (the kOutlineButton property); toggles
+// as fields, tinted teal when on; a value bar for horizontal sliders; a thin
+// scrollbar; and tabs as uppercase captions with a teal underline. DialogFrame
+// installs it on itself, so the main window's controls don't change.
+class Pb3DialogLookAndFeel : public Pb3LookAndFeel
+{
+public:
+    Pb3DialogLookAndFeel();
+
+    void drawButtonBackground(juce::Graphics&,
+                              juce::Button&,
+                              const juce::Colour& backgroundColour,
+                              bool shouldDrawButtonAsHighlighted,
+                              bool shouldDrawButtonAsDown) override;
+    juce::Font getTextButtonFont(juce::TextButton&, int buttonHeight) override;
+    void drawToggleButton(juce::Graphics&,
+                          juce::ToggleButton&,
+                          bool shouldDrawButtonAsHighlighted,
+                          bool shouldDrawButtonAsDown) override;
+
+    void drawComboBox(juce::Graphics&,
+                      int width,
+                      int height,
+                      bool isButtonDown,
+                      int buttonX,
+                      int buttonY,
+                      int buttonW,
+                      int buttonH,
+                      juce::ComboBox&) override;
+    juce::Font getComboBoxFont(juce::ComboBox&) override;
+    void positionComboBoxText(juce::ComboBox&, juce::Label&) override;
+
+    void fillTextEditorBackground(juce::Graphics&, int width, int height, juce::TextEditor&) override;
+    void drawTextEditorOutline(juce::Graphics&, int width, int height, juce::TextEditor&) override;
+
+    void drawLinearSlider(juce::Graphics&,
+                          int x,
+                          int y,
+                          int width,
+                          int height,
+                          float sliderPos,
+                          float minSliderPos,
+                          float maxSliderPos,
+                          juce::Slider::SliderStyle,
+                          juce::Slider&) override;
+    void drawScrollbar(juce::Graphics&,
+                       juce::ScrollBar&,
+                       int x,
+                       int y,
+                       int width,
+                       int height,
+                       bool isScrollbarVertical,
+                       int thumbStartPosition,
+                       int thumbSize,
+                       bool isMouseOver,
+                       bool isMouseDown) override;
+
+    int getTabButtonBestWidth(juce::TabBarButton&, int tabDepth) override;
+    void drawTabButton(juce::TabBarButton&, juce::Graphics&, bool isMouseOver, bool isMouseDown) override;
+    void drawTabbedButtonBarBackground(juce::TabbedButtonBar&, juce::Graphics&) override;
+    void drawTabAreaBehindFrontButton(juce::TabbedButtonBar&, juce::Graphics&, int w, int h) override;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Pb3DialogLookAndFeel)
 };
 
 } // namespace pedalboard3::ui
