@@ -72,6 +72,11 @@ public:
                      bool shouldDrawButtonAsHighlighted,
                      bool shouldDrawButtonAsDown) override;
 
+    // The mockup's embedded fonts stand in for JUCE's default sans-serif and
+    // monospaced fonts (UI chrome plan U2, KD1), so plain juce::FontOptions text
+    // and stock JUCE components follow them. Bold is Barlow's SemiBold.
+    juce::Typeface::Ptr getTypefaceForFont(const juce::Font& font) override;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Pb3LookAndFeel)
 };
 

@@ -1,7 +1,10 @@
 #pragma once
 
+#include <memory>
+
 namespace juce
 {
+class Component;
 class Value;
 } // namespace juce
 
@@ -27,5 +30,11 @@ void showMidiSettingsWindow(AppContext& ctx);
 
 // The OSC listener's port and multicast group.
 void showOscSettingsWindow(AppContext& ctx);
+
+// Each dialog's content on its own, as the windows above open it (the UI
+// snapshots tool renders them: UI chrome plan U1).
+std::unique_ptr<juce::Component> makeAudioDevicesPanel(AppContext& ctx, juce::Value& testTone);
+std::unique_ptr<juce::Component> makeMidiSettingsPanel(AppContext& ctx);
+std::unique_ptr<juce::Component> makeOscSettingsPanel(AppContext& ctx);
 
 } // namespace pedalboard3::ui

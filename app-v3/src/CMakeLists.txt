@@ -20,6 +20,25 @@ add_subdirectory(session)
 # control/ (Phase 4 MIDI/OSC) depends only on session/NodeId.h + juce basics.
 add_subdirectory(control)
 
+# The mockup's fonts (UI chrome plan 2026-09-13-002, KD1): Barlow Semi Condensed,
+# Barlow Condensed and JetBrains Mono, all SIL OFL (licences beside them).
+# ui/Fonts.cpp reads them from the generated Pb3Fonts.h.
+set(PB3_FONT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../resources/fonts)
+juce_add_binary_data(pb3_ui_fonts
+    HEADER_NAME Pb3Fonts.h
+    NAMESPACE pb3fonts
+    SOURCES
+        ${PB3_FONT_DIR}/barlow-semi-condensed/BarlowSemiCondensed-Regular.ttf
+        ${PB3_FONT_DIR}/barlow-semi-condensed/BarlowSemiCondensed-Medium.ttf
+        ${PB3_FONT_DIR}/barlow-semi-condensed/BarlowSemiCondensed-SemiBold.ttf
+        ${PB3_FONT_DIR}/barlow-semi-condensed/BarlowSemiCondensed-Bold.ttf
+        ${PB3_FONT_DIR}/barlow-condensed/BarlowCondensed-Medium.ttf
+        ${PB3_FONT_DIR}/barlow-condensed/BarlowCondensed-SemiBold.ttf
+        ${PB3_FONT_DIR}/barlow-condensed/BarlowCondensed-Bold.ttf
+        ${PB3_FONT_DIR}/jetbrains-mono/JetBrainsMono-Regular.ttf
+        ${PB3_FONT_DIR}/jetbrains-mono/JetBrainsMono-Medium.ttf
+)
+
 add_library(pb3_app_core STATIC
     App.cpp
     App.h
@@ -48,6 +67,8 @@ add_library(pb3_app_core STATIC
     ui/FileActions.h
     ui/FilePlayerWindow.cpp
     ui/FilePlayerWindow.h
+    ui/Fonts.cpp
+    ui/Fonts.h
     ui/Icons.h
     ui/MappingRowEditors.cpp
     ui/MappingRowEditors.h
@@ -110,6 +131,7 @@ target_link_libraries(pb3_app_core
         pb3_engine_core
         pb3_session_core
         pb3_control_core
+        pb3_ui_fonts
         juce::juce_gui_extra
         juce::juce_audio_utils
         juce::juce_audio_processors
@@ -133,6 +155,7 @@ pb3_apply_strict_warnings(pb3_app_core
     ui/EditorWindow.cpp
     ui/FileActions.cpp
     ui/FilePlayerWindow.cpp
+    ui/Fonts.cpp
     ui/MappingRowEditors.cpp
     ui/MappingsDialog.cpp
     ui/LooperWindow.cpp
@@ -279,3 +302,29 @@ else()
         VERBATIM
     )
 endif()
+
+# -----------------------------------------------------------------------------
+# pb3-ui-snapshots — the app's menus, dialogs and alerts rendered to PNG
+# -----------------------------------------------------------------------------
+# UI chrome plan 2026-09-13-002, U1 / KD6: every UI change shows its surfaces
+# before and after. It draws through the real LookAndFeel with the real menu
+# builders and dialog contents. Run it with ./build.ps1 snapshots. A dev tool;
+# never installed.
+juce_add_console_app(pb3-ui-snapshots
+    VERSION             "${PROJECT_VERSION}"
+    BUNDLE_ID           "com.pedalboard3.ui-snapshots"
+    NEEDS_CURL          FALSE
+    NEEDS_WEB_BROWSER   FALSE
+)
+
+target_sources(pb3-ui-snapshots PRIVATE tools/pb3-ui-snapshots.cpp)
+
+target_link_libraries(pb3-ui-snapshots PRIVATE
+    pb3_app_core
+    pb3_rtsafety
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags
+    juce::juce_recommended_lto_flags
+)
+
+pb3_apply_strict_warnings(pb3-ui-snapshots tools/pb3-ui-snapshots.cpp)

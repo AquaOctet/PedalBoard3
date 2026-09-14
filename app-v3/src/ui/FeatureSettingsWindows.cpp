@@ -312,19 +312,34 @@ private:
 
 } // namespace
 
+std::unique_ptr<juce::Component> makeTempoSettingsPanel(AppContext& ctx)
+{
+    return std::make_unique<TempoPanel>(ctx);
+}
+
+std::unique_ptr<juce::Component> makeMetronomeSettingsPanel(AppContext& ctx)
+{
+    return std::make_unique<MetronomePanel>(ctx);
+}
+
+std::unique_ptr<juce::Component> makeLooperSettingsPanel(AppContext& ctx)
+{
+    return std::make_unique<LooperPanel>(ctx);
+}
+
 void showTempoSettingsWindow(AppContext& ctx)
 {
-    launch(new TempoPanel(ctx), "Tempo / BPM Settings");
+    launch(makeTempoSettingsPanel(ctx).release(), "Tempo / BPM Settings");
 }
 
 void showMetronomeSettingsWindow(AppContext& ctx)
 {
-    launch(new MetronomePanel(ctx), "Metronome Settings");
+    launch(makeMetronomeSettingsPanel(ctx).release(), "Metronome Settings");
 }
 
 void showLooperSettingsWindow(AppContext& ctx)
 {
-    launch(new LooperPanel(ctx), "Looper Settings");
+    launch(makeLooperSettingsPanel(ctx).release(), "Looper Settings");
 }
 
 } // namespace pedalboard3::ui

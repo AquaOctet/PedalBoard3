@@ -1,6 +1,7 @@
 #include "Pb3LookAndFeel.h"
 
 #include "ColourScheme.h"
+#include "Fonts.h"
 
 namespace pedalboard3::ui
 {
@@ -28,14 +29,8 @@ Pb3LookAndFeel::Pb3LookAndFeel()
         tokens::fgPrimary,     //  menuText
     });
 
-    // Default sans-serif typeface — a clean system font so the app and JUCE's own
-    // dialogs (the plugin-list / scan window) render with a known-good face
-    // instead of JUCE's default pick, which rendered poorly on Windows. No
-    // bundled binary; uses a font that ships with the OS. macOS / Linux keep
-    // JUCE's fontconfig/CoreText default (they render fine already).
-#if JUCE_WINDOWS
-    setDefaultSansSerifTypefaceName("Segoe UI");
-#endif
+    // Fonts: the embedded Barlow and JetBrains Mono (getTypefaceForFont), on
+    // every platform.
 
     // ----- TextButton -------------------------------------------------------
     setColour(juce::TextButton::buttonColourId, tokens::bgCard);
@@ -113,6 +108,16 @@ Pb3LookAndFeel::Pb3LookAndFeel()
 
     // ----- AudioDeviceSelectorComponent already routes via the slider/
     //       combo/label/text-editor IDs above. No bespoke overrides needed.
+}
+
+juce::Typeface::Ptr Pb3LookAndFeel::getTypefaceForFont(const juce::Font& font)
+{
+    const auto name = font.getTypefaceName();
+    if (name == juce::Font::getDefaultSansSerifFontName())
+        return fonts::uiTypeface(font.isBold() ? fonts::Weight::SemiBold : fonts::Weight::Regular);
+    if (name == juce::Font::getDefaultMonospacedFontName())
+        return fonts::monoTypeface(font.isBold() ? fonts::Weight::Medium : fonts::Weight::Regular);
+    return juce::LookAndFeel_V4::getTypefaceForFont(font);
 }
 
 void Pb3LookAndFeel::drawButtonBackground(juce::Graphics& g,

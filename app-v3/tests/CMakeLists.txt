@@ -65,6 +65,11 @@ set(PB3_TEST_SOURCES
     unit/ui/BodyLayout_test.cpp
     unit/ui/BrowserModel_test.cpp
     unit/ui/CardText_test.cpp
+    unit/ui/Fonts_test.cpp
+    # ui/Fonts and the LookAndFeel, the only UI sources the tests compile (UI
+    # chrome U2): they need nothing but JUCE's graphics and the embedded fonts.
+    ../src/ui/Fonts.cpp
+    ../src/ui/Pb3LookAndFeel.cpp
     unit/ui/MappingRows_test.cpp
     unit/control/MidiMapping_test.cpp
     unit/control/MidiRouter_test.cpp
@@ -86,6 +91,7 @@ target_link_libraries(pb3_smoke_tests PRIVATE
     pb3_engine_core
     pb3_session_core
     pb3_control_core
+    pb3_ui_fonts
     pb3_rtsafety
     juce::juce_recommended_config_flags
 )

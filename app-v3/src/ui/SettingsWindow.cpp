@@ -375,19 +375,34 @@ private:
 
 } // namespace
 
+std::unique_ptr<juce::Component> makeAudioDevicesPanel(AppContext& ctx, juce::Value& testTone)
+{
+    return std::make_unique<AudioDevicesPanel>(ctx, testTone);
+}
+
+std::unique_ptr<juce::Component> makeMidiSettingsPanel(AppContext& ctx)
+{
+    return std::make_unique<MidiSettingsPanel>(ctx);
+}
+
+std::unique_ptr<juce::Component> makeOscSettingsPanel(AppContext& ctx)
+{
+    return std::make_unique<OscSettingsPanel>(ctx);
+}
+
 void showAudioDevicesWindow(AppContext& ctx, juce::Value& testTone)
 {
-    launch(new AudioDevicesPanel(ctx, testTone), "Audio Devices");
+    launch(makeAudioDevicesPanel(ctx, testTone).release(), "Audio Devices");
 }
 
 void showMidiSettingsWindow(AppContext& ctx)
 {
-    launch(new MidiSettingsPanel(ctx), "MIDI Settings");
+    launch(makeMidiSettingsPanel(ctx).release(), "MIDI Settings");
 }
 
 void showOscSettingsWindow(AppContext& ctx)
 {
-    launch(new OscSettingsPanel(ctx), "OSC Settings");
+    launch(makeOscSettingsPanel(ctx).release(), "OSC Settings");
 }
 
 } // namespace pedalboard3::ui

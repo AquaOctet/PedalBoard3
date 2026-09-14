@@ -2,6 +2,10 @@
 
 #include "AppContext.h"
 
+#include <juce_gui_basics/juce_gui_basics.h>
+
+#include <memory>
+
 namespace pedalboard3::ui
 {
 
@@ -16,5 +20,11 @@ namespace pedalboard3::ui
 void showTempoSettingsWindow(AppContext& ctx);
 void showMetronomeSettingsWindow(AppContext& ctx);
 void showLooperSettingsWindow(AppContext& ctx);
+
+// Each window's content on its own (the UI snapshots tool renders them: UI
+// chrome plan U1).
+std::unique_ptr<juce::Component> makeTempoSettingsPanel(AppContext& ctx);
+std::unique_ptr<juce::Component> makeMetronomeSettingsPanel(AppContext& ctx);
+std::unique_ptr<juce::Component> makeLooperSettingsPanel(AppContext& ctx);
 
 } // namespace pedalboard3::ui
