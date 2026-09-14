@@ -36,19 +36,24 @@
 #     builds, each still a click of its own, so only the platforms wanted
 #     spend runner minutes. A merge into main starts no pipeline: its MR was
 #     already green;
-#   - v3-rewrite, the initial dev branch, as before.
-# Nothing else (plain branch pushes, tags) starts one.
+#   - v3-rewrite, the initial dev branch, as before;
+#   - a release tag, v<version> (v1.0.0-beta.1, say): the three release builds
+#     run by themselves and package, then release:gitlab makes the GitLab
+#     Release (docs/releases/README.md). Pushing the tag is a maintainer's job.
+# Nothing else (plain branch pushes, other tags) starts one.
 workflow:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE =~ /^(web|api)$/'
     - if: '$CI_COMMIT_BRANCH == "v3-rewrite"'
+    - if: '$CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$/'
 
 stages:
   - lint
   - build
   - test
   - release
+  - publish
 
 variables:
   CI_DEBUG_TRACE: "false"              # AC-SE-19: never leak secrets to logs
@@ -96,17 +101,39 @@ default:
   - if: '$CI_COMMIT_BRANCH == "v3-rewrite"'
   - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
 
-# Release jobs: main branch ONLY, and manual (a click in the pipeline UI). They
-# appear only in a pipeline someone starts by hand on main (see workflow), and
-# each still waits for its own click, so you build just the platforms needed.
-# They live in the final `release` stage so a pending manual job never
-# blocks earlier stages (a manual-pending job in an early stage blocks
-# downstream stages even with `optional: true` on `needs:`). Paired
-# with `allow_failure: true` on each release job so an un-clicked manual
-# action leaves the pipeline green rather than "blocked".
+# Release jobs build and package one platform each (#88).
+#   - On a release tag they run by themselves and must pass: release:gitlab
+#     waits for all three.
+#   - On main (in a pipeline started by hand) and in merge requests, each is
+#     a manual click, so only the platforms wanted spend runner minutes, and
+#     an MR's packages can be tried before it merges. allow_failure keeps an
+#     un-clicked job from leaving the pipeline "blocked".
+# They live in the `release` stage so a pending manual job never blocks the
+# earlier stages (a manual-pending job in an early stage blocks downstream
+# stages even with `optional: true` on `needs:`).
 .rules-release: &rules-release
+  - if: '$CI_COMMIT_TAG'
+    allow_failure: false
   - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     when: manual
+    allow_failure: true
+  - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    when: manual
+    allow_failure: true
+
+# On a release tag, the packages go to this project's package registry as
+# pedalboard3/<version> (the tag without its v), where release:gitlab links
+# them. Otherwise they stay job artifacts only.
+.upload-packages-unix: &upload-packages-unix
+  - |
+    if [ -n "${CI_COMMIT_TAG:-}" ]; then
+      for f in packages/*.zip packages/*.tar.gz; do
+        [ -f "$f" ] || continue
+        curl --fail --silent --show-error --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file "$f" \
+          "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/pedalboard3/${CI_COMMIT_TAG#v}/$(basename "$f")"
+        echo "Uploaded $(basename "$f")"
+      done
+    fi
 
 .cache-linux: &cache-linux
   cache:
@@ -517,33 +544,36 @@ test:macos:unit:
     - ctest --preset macos-dev
 
 # ===========================================================================
-# RELEASE — RelWithDebInfo builds, MANUAL on the main branch only.
+# RELEASE — RelWithDebInfo builds, packaged (#88).
 #
-# These produce artifacts that run on a clean machine (release CRT + real
-# optimisation), unlike the Debug build:* jobs whose artifacts need the VS
-# debug runtime installed. Each release job `extends` its build:* sibling so
-# it reuses the exact same runner setup and build script (including the
-# Windows dcomp/DLL handling) and only overrides the preset (via
-# PB3_BUILD_PRESET), the stage, the rules (main + manual), and the artifacts.
-#
-# `allow_failure: true` keeps an un-clicked manual job from leaving the
-# pipeline "blocked". Signing / installers / notarisation are Phase 6 and
-# build on top of these.
+# Each job extends its build:* sibling, so it reuses the same runner setup
+# and build script (on Windows the dcomp and DLL handling, and the unit
+# tests). Then it packages what it built, with tools/package.ps1 or
+# tools/package.sh:
+#   - Windows: the installer (Inno Setup, installed on the runner) and the
+#     portable zip. The exes carry the MSVC runtime; package.ps1 checks that.
+#   - macOS: a zip of the universal .app, with the helper inside it.
+#   - Linux: a tarball of the app and the helper.
+# .rules-release says when they run. On a release tag each also checks that
+# the tag matches the build's version, and uploads its packages for
+# release:gitlab. Signing and notarisation are still #40.
 # ===========================================================================
 release:linux:
   extends: build:linux
   stage: release
   rules: *rules-release
-  allow_failure: true
   variables:
     PB3_BUILD_PRESET: linux-release
+  script:
+    - !reference [build:linux, script]
+    - tools/package.sh build/linux-release packages
+    - *upload-packages-unix
+    # The bare version (no v), for release:gitlab's download links.
+    - echo "PB3_VERSION=$(tr -d '[:space:]' < build/linux-release/pb3-version.txt)" > release.env
   artifacts:
-    paths:
-      - build/linux-release/
-    exclude:
-      - "build/linux-release/_deps/**/*"
-      - "build/linux-release/**/CMakeFiles/**"
-      - "build/linux-release/**/*.o"
+    paths: [ packages/*.tar.gz ]
+    reports:
+      dotenv: release.env
     expire_in: 2 weeks
     when: on_success
 
@@ -551,16 +581,14 @@ release:macos:
   extends: build:macos
   stage: release
   rules: *rules-release
-  allow_failure: true
   variables:
     PB3_BUILD_PRESET: macos-universal
+  script:
+    - !reference [build:macos, script]
+    - tools/package.sh build/macos-universal packages
+    - *upload-packages-unix
   artifacts:
-    paths:
-      - build/macos-universal/
-    exclude:
-      - "build/macos-universal/_deps/**/*"
-      - "build/macos-universal/**/CMakeFiles/**"
-      - "build/macos-universal/**/*.o"
+    paths: [ packages/*.zip ]
     expire_in: 2 weeks
     when: on_success
 
@@ -568,15 +596,81 @@ release:windows:
   extends: build:windows
   stage: release
   rules: *rules-release
-  allow_failure: true
   variables:
     PB3_BUILD_PRESET: windows-ci
+  script:
+    - !reference [build:windows, script]
+    - |
+      # Inno Setup for the installer: a pinned release, checked against its
+      # SHA-256 before it runs, installed into the job's folder (the runner is
+      # thrown away afterwards).
+      $isVer = "6.7.3"
+      $isSha = "9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732"
+      $isExe = Join-Path $env:CI_PROJECT_DIR "innosetup-$isVer.exe"
+      $isDir = Join-Path $env:CI_PROJECT_DIR ".tools\innosetup-$isVer"
+      curl.exe --fail --silent --show-error --location --output $isExe "https://github.com/jrsoftware/issrc/releases/download/is-$($isVer.Replace('.', '_'))/innosetup-$isVer.exe"
+      if ($LASTEXITCODE -ne 0) { throw "Couldn't download Inno Setup $isVer." }
+      if ((Get-FileHash $isExe -Algorithm SHA256).Hash.ToLower() -ne $isSha) { throw "Inno Setup's checksum doesn't match, so it wasn't run." }
+      Start-Process -FilePath $isExe -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/DIR=`"$isDir`"" -Wait
+      if (-not (Test-Path "$isDir\ISCC.exe")) { throw "Inno Setup didn't install into $isDir." }
+      & ./tools/package.ps1 -BuildDir build/windows-ci -OutDir packages -Iscc "$isDir\ISCC.exe"
+    - |
+      # On a release tag: upload, as .upload-packages-unix does.
+      if ($env:CI_COMMIT_TAG) {
+          $version = $env:CI_COMMIT_TAG.Substring(1)
+          foreach ($f in Get-ChildItem -Path packages/* -File -Include *.zip, *-setup.exe) {
+              curl.exe --fail --silent --show-error --header "JOB-TOKEN: $($env:CI_JOB_TOKEN)" --upload-file $f.FullName "$($env:CI_API_V4_URL)/projects/$($env:CI_PROJECT_ID)/packages/generic/pedalboard3/$version/$($f.Name)"
+              if ($LASTEXITCODE -ne 0) { throw "Couldn't upload $($f.Name)." }
+              Write-Host "Uploaded $($f.Name)"
+          }
+      }
   artifacts:
     paths:
-      - build/windows-ci/
-    exclude:
-      - "build/windows-ci/_deps/**/*"
-      - "build/windows-ci/**/CMakeFiles/**"
-      - "build/windows-ci/**/*.obj"
+      - packages/*.zip
+      - packages/*-setup.exe
     expire_in: 2 weeks
     when: on_success
+
+# ===========================================================================
+# PUBLISH — the GitLab Release, for a release tag only (#88).
+#
+# The release jobs have uploaded their packages. This makes the Release: the
+# notes from docs/releases/<tag>.md and a download link for each package.
+# GitLab has no pre-release flag, so the notes say it's a beta. The GitHub
+# mirror (#89) will mark it as a pre-release there.
+# ===========================================================================
+release:gitlab:
+  stage: publish
+  image: registry.gitlab.com/gitlab-org/release-cli:v0.24.0
+  rules:
+    - if: '$CI_COMMIT_TAG'
+  needs:
+    - job: release:linux
+      artifacts: true # PB3_VERSION, from its dotenv report
+    - job: release:macos
+      artifacts: false
+    - job: release:windows
+      artifacts: false
+  variables:
+    GIT_DEPTH: "1"
+    GIT_SUBMODULE_STRATEGY: "none"
+  script:
+    - echo "Releasing $CI_COMMIT_TAG (Pedalboard 3 $PB3_VERSION)"
+  release:
+    tag_name: "$CI_COMMIT_TAG"
+    name: "Pedalboard 3 $PB3_VERSION"
+    description: "docs/releases/$CI_COMMIT_TAG.md"
+    assets:
+      links:
+        - name: "Windows installer (x64)"
+          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/pedalboard3/${PB3_VERSION}/Pedalboard3-${PB3_VERSION}-windows-x64-setup.exe"
+          link_type: package
+        - name: "Windows portable zip (x64)"
+          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/pedalboard3/${PB3_VERSION}/Pedalboard3-${PB3_VERSION}-windows-x64.zip"
+          link_type: package
+        - name: "macOS (Apple Silicon and Intel)"
+          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/pedalboard3/${PB3_VERSION}/Pedalboard3-${PB3_VERSION}-macos-universal.zip"
+          link_type: package
+        - name: "Linux (x64)"
+          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/pedalboard3/${PB3_VERSION}/Pedalboard3-${PB3_VERSION}-linux-x64.tar.gz"
+          link_type: package
