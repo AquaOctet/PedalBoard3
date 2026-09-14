@@ -207,7 +207,6 @@ Session::Session(engine::AudioEngine& engine, engine::PluginHost& host, BuildFn 
     resultUpdater_ = std::make_unique<ResultUpdater>(*this);
     worker_ = std::make_unique<Worker>(*this);
     worker_->startThread();
-    idleEvent_.signal(); // start Idle
 
     // Synchronous initial empty graph: builds a 4-IO-node passthrough
     // (audioIn → audioOut, midiIn → midiOut) and swaps it into the
@@ -885,13 +884,6 @@ juce::String Session::getLastError() const
     return lastError_;
 }
 
-bool Session::waitForIdle(int timeoutMs)
-{
-    if (state_.load(std::memory_order_acquire) == State::Idle)
-        return true;
-    return idleEvent_.wait(timeoutMs);
-}
-
 void Session::dispatchPendingResult()
 {
     onBuildResult();
@@ -903,11 +895,6 @@ void Session::publishStateChange(State newState)
 {
     state_.store(newState, std::memory_order_release);
     stateVersion_.fetch_add(1, std::memory_order_release);
-
-    if (newState == State::Idle)
-        idleEvent_.signal();
-    else
-        idleEvent_.reset();
 
     sendChangeMessage();
 }

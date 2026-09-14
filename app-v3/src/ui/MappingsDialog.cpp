@@ -1,6 +1,7 @@
 #include "MappingsDialog.h"
 
 #include "ColourScheme.h"
+#include "DialogStyle.h"
 #include "session/ControlHub.h"
 #include "session/Session.h"
 
@@ -14,13 +15,6 @@ constexpr int kRowHeight = 26;
 constexpr int kRowGap = 4;
 constexpr int kSectionGap = 14;
 constexpr int kMinContentWidth = 720;
-
-void styleSectionHeader(juce::Label& label, const juce::String& text)
-{
-    label.setText(text, juce::dontSendNotification);
-    label.setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::bold)));
-    label.setColour(juce::Label::textColourId, tokens::fgPrimary);
-}
 
 } // namespace
 
@@ -62,8 +56,8 @@ MappingsPanel::MappingsPanel(AppContext& ctx, session::NodeId node) : ctx_(ctx),
     footerLabel_.setMinimumHorizontalScale(0.8f);
     addAndMakeVisible(footerLabel_);
 
-    styleSectionHeader(midiHeader_, "MIDI");
-    styleSectionHeader(oscHeader_, "OSC");
+    dialogstyle::sectionHeader(midiHeader_, "MIDI");
+    dialogstyle::sectionHeader(oscHeader_, "OSC");
     rowsContent_.addAndMakeVisible(midiHeader_);
     rowsContent_.addAndMakeVisible(oscHeader_);
     rowsContent_.addAndMakeVisible(addMidiButton_);

@@ -24,8 +24,6 @@ public:
     ProcessorBase(const BusesProperties& buses, juce::String typeId);
     ~ProcessorBase() override;
 
-    const juce::String& getTypeId() const noexcept { return typeId_; }
-
     // Switched off by an optional feature (optional-features plan KD6): the
     // processor passes its input through untouched until switched on again.
     // Runtime only: never saved, and not the node's bypass. (Not JUCE's

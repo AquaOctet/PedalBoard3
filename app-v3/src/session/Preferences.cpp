@@ -11,7 +11,6 @@ namespace
 
 constexpr auto kAudioDeviceStateKey = "audioDeviceState";
 constexpr auto kKnownPluginListKey = "knownPluginList";
-constexpr auto kActivePluginDescriptionKey = "activePluginDescription";
 constexpr auto kActivePatchKey = "activePatch";
 constexpr auto kActiveBankKey = "activeBank";
 constexpr auto kActiveBankFileKey = "activeBankFile";
@@ -148,46 +147,6 @@ void Preferences::setKnownPluginList(const juce::XmlElement& xml)
 {
     if (auto* store = props_.getUserSettings())
         store->setValue(kKnownPluginListKey, &xml);
-}
-
-std::unique_ptr<juce::PluginDescription> Preferences::getActivePluginDescription()
-{
-    auto* store = props_.getUserSettings();
-    if (store == nullptr)
-        return nullptr;
-
-    auto xml = readXml(*store, kActivePluginDescriptionKey);
-    if (xml == nullptr)
-        return nullptr;
-
-    auto desc = std::make_unique<juce::PluginDescription>();
-    if (!desc->loadFromXml(*xml))
-        return nullptr;
-
-    // Treat a fully-empty record (no format, no identifier) the same as
-    // "no value stored" so callers don't need to defend against the
-    // round-trip-of-an-empty-element edge case.
-    if (desc->pluginFormatName.isEmpty() && desc->fileOrIdentifier.isEmpty())
-        return nullptr;
-
-    return desc;
-}
-
-void Preferences::setActivePluginDescription(const juce::PluginDescription& desc)
-{
-    auto* store = props_.getUserSettings();
-    if (store == nullptr)
-        return;
-
-    auto xml = desc.createXml();
-    if (xml != nullptr)
-        store->setValue(kActivePluginDescriptionKey, xml.get());
-}
-
-void Preferences::clearActivePluginDescription()
-{
-    if (auto* store = props_.getUserSettings())
-        store->removeValue(kActivePluginDescriptionKey);
 }
 
 std::unique_ptr<Patch> Preferences::getActivePatch()

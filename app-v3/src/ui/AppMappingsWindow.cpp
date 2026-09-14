@@ -1,6 +1,8 @@
 #include "AppMappingsWindow.h"
 
 #include "ColourScheme.h"
+#include "DialogStyle.h"
+#include "MappingRowEditors.h"
 #include "session/AppCommands.h"
 #include "session/AppMappings.h"
 #include "session/ControlHub.h"
@@ -49,22 +51,6 @@ juce::String commandIdFromBox(const juce::ComboBox& box, const juce::String& fal
     if (id >= 1 && id <= static_cast<int>(session::kAppCommands.size()))
         return session::kAppCommands[static_cast<size_t>(id - 1)].id;
     return fallback;
-}
-
-void configureIntSlider(juce::Slider& s, int minValue, int maxValue, int value, const juce::String& tooltip)
-{
-    s.setSliderStyle(juce::Slider::LinearBar);
-    s.setRange(minValue, maxValue, 1.0);
-    s.setNumDecimalPlacesToDisplay(0);
-    s.setValue(value, juce::dontSendNotification);
-    s.setTooltip(tooltip);
-}
-
-void styleSectionHeader(juce::Label& label, const juce::String& text)
-{
-    label.setText(text, juce::dontSendNotification);
-    label.setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::bold)));
-    label.setColour(juce::Label::textColourId, tokens::fgPrimary);
 }
 
 // ------------------------------------------------------------ MIDI row
@@ -248,8 +234,8 @@ public:
         hintLabel_.setColour(juce::Label::textColourId, tokens::fgMuted);
         addAndMakeVisible(hintLabel_);
 
-        styleSectionHeader(midiHeader_, "MIDI");
-        styleSectionHeader(oscHeader_, "OSC");
+        dialogstyle::sectionHeader(midiHeader_, "MIDI");
+        dialogstyle::sectionHeader(oscHeader_, "OSC");
         for (auto* c : std::initializer_list<juce::Component*>{&midiHeader_, &oscHeader_, &addMidi_, &addOsc_})
             content_.addAndMakeVisible(*c);
 

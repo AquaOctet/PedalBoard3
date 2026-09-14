@@ -1,4 +1,4 @@
-# control/ — Phase 4 control surface (MIDI / OSC / mappings).
+# control/ — the control surface (MIDI / OSC / mappings).
 #
 # Headless control core: MIDI (MidiMapping model + transform, MidiRouter,
 # MidiControlSurface incl. learn) and OSC (OscMapping model + address match +

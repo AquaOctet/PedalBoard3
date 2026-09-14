@@ -20,15 +20,6 @@ void configureRangeSlider(juce::Slider& s, float value, const juce::String& tool
     s.setTooltip(tooltip);
 }
 
-void configureIntSlider(juce::Slider& s, int minValue, int maxValue, int value, const juce::String& tooltip)
-{
-    s.setSliderStyle(juce::Slider::LinearBar);
-    s.setRange(minValue, maxValue, 1.0);
-    s.setNumDecimalPlacesToDisplay(0);
-    s.setValue(value, juce::dontSendNotification);
-    s.setTooltip(tooltip);
-}
-
 // Item id = parameter index + 1. A mapping whose index is past the plugin's
 // parameter list (a different build of the plugin) keeps a placeholder item so
 // the row still shows, and saves, what it targets.
@@ -43,6 +34,15 @@ void fillParameterBox(juce::ComboBox& box, const juce::StringArray& names, int s
 }
 
 } // namespace
+
+void configureIntSlider(juce::Slider& s, int minValue, int maxValue, int value, const juce::String& tooltip)
+{
+    s.setSliderStyle(juce::Slider::LinearBar);
+    s.setRange(minValue, maxValue, 1.0);
+    s.setNumDecimalPlacesToDisplay(0);
+    s.setValue(value, juce::dontSendNotification);
+    s.setTooltip(tooltip);
+}
 
 // ---------------------------------------------------------------- column spans
 

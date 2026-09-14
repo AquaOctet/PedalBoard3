@@ -1,7 +1,7 @@
 // Tests for pedalboard3::engine::AudioGraphRuntime -- the atomic graph-swap
-// primitive. Phase 1.A scope: null-safety, swap correctness, generation
-// counter, built-in OutputSanitiser pass. The full patch-switch state
-// machine arrives in Phase 1.D.
+// primitive: null-safety, swap correctness, the generation counter and the
+// built-in OutputSanitiser pass. The patch-switch state machine on top of it
+// is Session's (Session_test).
 
 #include <catch2/catch_test_macros.hpp>
 

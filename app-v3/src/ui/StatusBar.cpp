@@ -26,8 +26,8 @@ StatusBar::StatusBar(AppContext& ctx) : ctx_(ctx), stateDotColour_(tokens::statu
     leftLabel_.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(leftLabel_);
 
-    errorLabel_.setColour(juce::Label::textColourId, tokens::accentDestructive);
-    errorLabel_.setColour(juce::Label::backgroundColourId, tokens::accentDestructive.withAlpha(0.12f));
+    errorLabel_.setColour(juce::Label::textColourId, tokens::statusError);
+    errorLabel_.setColour(juce::Label::backgroundColourId, tokens::statusError.withAlpha(0.12f));
     errorLabel_.setFont(juce::Font(juce::FontOptions(12.0f)));
     errorLabel_.setJustificationType(juce::Justification::centred);
     errorLabel_.setInterceptsMouseClicks(false, false);

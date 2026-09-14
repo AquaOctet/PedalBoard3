@@ -56,12 +56,6 @@ namespace
 
 using engine::processors::FilePlayerProcessor;
 
-juce::String minutesAndSeconds(double seconds)
-{
-    const int whole = static_cast<int>(std::floor(juce::jmax(0.0, seconds)));
-    return juce::String(whole / 60) + ":" + juce::String(whole % 60).paddedLeft('0', 2);
-}
-
 // ---- Output Toggle (M6 U10): one big 1 / 2 switch ------------------------------
 
 // The lit half is where the input goes; clicking the other half switches it.
@@ -291,7 +285,7 @@ private:
         else if (length <= 0.0)
             text = "No file: ED to choose one";
         else
-            text = minutesAndSeconds(p->getPositionSeconds()) + " / " + minutesAndSeconds(length);
+            text = card::minutesAndSeconds(p->getPositionSeconds()) + " / " + card::minutesAndSeconds(length);
         waveform_.setState(length > 0.0 ? p->getPositionSeconds() / length : 0.0, text);
     }
 
@@ -367,7 +361,7 @@ private:
             recordButton_.setColours(colour, tokens::accentDestructive, tokens::accentDestructive);
             time_.setColour(juce::Label::textColourId, recording ? tokens::accentDestructive : tokens::fgMuted);
         }
-        const auto text = recording ? minutesAndSeconds(r->getTakeSeconds()) : juce::String("Ready");
+        const auto text = recording ? card::minutesAndSeconds(r->getTakeSeconds()) : juce::String("Ready");
         if (time_.getText() != text)
             time_.setText(text, juce::dontSendNotification);
 
@@ -627,13 +621,13 @@ private:
         const double length = l->getLengthSeconds();
         juce::String text;
         if (recording)
-            text = "Recording " + minutesAndSeconds(l->getRecordedSeconds());
+            text = "Recording " + card::minutesAndSeconds(l->getRecordedSeconds());
         else if (l->isLoading())
             text = "Loading...";
         else if (length <= 0.0)
             text = "Record a loop";
         else
-            text = minutesAndSeconds(l->getPositionSeconds()) + " / " + minutesAndSeconds(length) +
+            text = card::minutesAndSeconds(l->getPositionSeconds()) + " / " + card::minutesAndSeconds(length) +
                    (l->ranOutOfMemory() ? " (full)" : "");
         waveform_.setState(!recording && length > 0.0 ? l->getPositionSeconds() / length : 0.0, text);
 

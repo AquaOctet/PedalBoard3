@@ -1,5 +1,5 @@
 // Tests for pedalboard3::session::buildPreparedGraph -- the worker-thread-
-// safe builder extracted from PluginSlot::load in Phase 1.D.2.
+// safe builder that turns a patch into a graph.
 //
 // We can't unit-test "build a real VST3 graph" headlessly: every JUCE
 // plugin loader expects an actual binary on disk. These tests cover:

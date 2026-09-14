@@ -21,10 +21,9 @@ namespace pedalboard3::engine
 // `loadGraph()` is the production path for patch switching — it forwards
 // to `AudioGraphRuntime::swapPreparedGraph`.
 //
-// Phase 1.C.1 scope: the wiring itself + headless-safe initialisation.
-// Phase 1.C.2 will add device-selection persistence via Preferences.
-// The full patch-switch state machine (worker-thread build + queued
-// coalescing) on top of `loadGraph` is Phase 1.D.
+// Initialisation is headless-safe. The chosen device is saved in Preferences
+// (by PreferencesPersister), and session::Session swaps each built patch in
+// through `loadGraph`.
 //
 // Not RT-safe. Message-thread only. `AudioDeviceManager` itself handles
 // locking for its audio callbacks.
@@ -71,8 +70,8 @@ public:
     // don't hand out a raw runtime reference unnecessarily.
     std::unique_ptr<juce::AudioProcessorGraph> loadGraph(std::unique_ptr<juce::AudioProcessorGraph> next);
 
-    // Accessors for code that needs the low-level JUCE objects. The
-    // AudioDeviceSelectorComponent wants the ADM. Tests want the runtime.
+    // Accessors for code that needs the low-level JUCE objects: the audio
+    // settings and MIDI input want the ADM, tests want the runtime.
     AudioGraphRuntime* getRuntime() noexcept { return runtime_.get(); }
     juce::AudioDeviceManager* getDeviceManager() noexcept { return &deviceManager_; }
 

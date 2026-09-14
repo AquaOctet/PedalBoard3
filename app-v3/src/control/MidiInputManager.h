@@ -51,8 +51,8 @@ private:
 // input device on the given AudioDeviceManager, and drains it on a
 // message-thread juce::Timer, delivering each message to the injected sink
 // (ControlHub::handleMidi in production). Device *enablement* stays owned by
-// AudioDeviceSelectorComponent (Audio Settings) and its persisted state; this
-// class only consumes whatever is currently enabled and re-syncs when
+// the MIDI Settings panel (SettingsWindow.cpp) and the AudioDeviceManager's
+// persisted state; this class only consumes whatever is currently enabled and re-syncs when
 // AudioDeviceManager (a juce::ChangeBroadcaster) reports a change.
 //
 // Threading: handleIncomingMidiMessage runs on JUCE's MIDI input thread (one

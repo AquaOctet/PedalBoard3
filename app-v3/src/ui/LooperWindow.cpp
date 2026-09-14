@@ -1,6 +1,7 @@
 #include "LooperWindow.h"
 
 #include "ColourScheme.h"
+#include "DialogStyle.h"
 #include "engine/processors/LooperProcessor.h"
 #include "session/Session.h"
 
@@ -22,12 +23,6 @@ Parameter* parameterOf(juce::AudioProcessor& processor, const juce::String& id)
     return nullptr;
 }
 
-void styleCaption(juce::Label& label, const juce::String& text)
-{
-    label.setText(text, juce::dontSendNotification);
-    label.setColour(juce::Label::textColourId, tokens::fgMuted);
-}
-
 void styleLevel(juce::Slider& slider)
 {
     slider.setSliderStyle(juce::Slider::LinearHorizontal);
@@ -43,16 +38,16 @@ LooperEditor::LooperEditor(AppContext& ctx, engine::processors::LooperProcessor&
         "Play the loop while the transport plays, at the transport's position counted from where it was recorded");
     autoPlayButton_.setTooltip("Play the loop as soon as its recording ends");
     stopAfterBarButton_.setTooltip("End the recording by itself after one bar, at the transport's tempo");
-    styleCaption(beatsLabel_, "Beats per bar");
+    dialogstyle::fieldLabel(beatsLabel_, "Beats per bar");
     beats_.setSliderStyle(juce::Slider::IncDecButtons);
     beats_.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 44, kRow - 4);
-    styleCaption(noteLabel_, "Note value");
+    dialogstyle::fieldLabel(noteLabel_, "Note value");
     for (const auto* value : {"1", "2", "4", "8", "16"})
         note_.addItem(value, note_.getNumItems() + 1);
-    styleCaption(inputLabel_, "Input level");
+    dialogstyle::fieldLabel(inputLabel_, "Input level");
     styleLevel(input_);
     input_.setTooltip("The input passing through the Looper (-60 dB is silent: hear only the loop)");
-    styleCaption(loopLabel_, "Loop level");
+    dialogstyle::fieldLabel(loopLabel_, "Loop level");
     styleLevel(loop_);
 
     if (auto* p = parameterOf<juce::AudioParameterBool>(looper_, "sync"))
@@ -70,7 +65,7 @@ LooperEditor::LooperEditor(AppContext& ctx, engine::processors::LooperProcessor&
     if (auto* p = parameterOf<juce::AudioParameterFloat>(looper_, "loopLevel"))
         loopAttachment_ = std::make_unique<juce::SliderParameterAttachment>(*p, loop_);
 
-    styleCaption(folderCaption_, "Loops are saved as takes in");
+    dialogstyle::fieldLabel(folderCaption_, "Loops are saved as takes in");
     folderLabel_.setColour(juce::Label::textColourId, tokens::fgPrimary);
     folderLabel_.setMinimumHorizontalScale(0.6f);
     chooseFolderButton_.setTooltip("Choose the folder loops are saved into");

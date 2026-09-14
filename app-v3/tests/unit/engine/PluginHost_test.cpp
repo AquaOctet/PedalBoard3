@@ -1,12 +1,8 @@
 // Tests for pedalboard3::engine::PluginHost -- the thin facade over
-// juce::AudioPluginFormatManager + KnownPluginList that future subsystems
-// (Phase 1.D patch-switch state machine, Phase 3 UI plugin-list dialog)
-// call into.
-//
-// Phase 1.C.3 scope: registration, empty-list, synchronous directory scan,
-// instance creation error path. Phase 1.C.5 adds format introspection
-// (getFormatNames) and OS-default plugin-path enumeration + scan helpers.
-// Sandboxed out-of-process scanning with a crash list arrives in Phase 1.C.4.
+// juce::AudioPluginFormatManager + KnownPluginList: registration, the empty
+// list, synchronous directory scans, the instance-creation error path, format
+// introspection (getFormatNames) and the OS-default plugin paths. The app's
+// out-of-process scan is engine::PluginScanner's.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -157,8 +153,8 @@ TEST_CASE("PluginHost: scanDefaultPaths runs without crashing on a bare runner",
     // filesystem actually IS bare. On a developer machine with installed
     // VST3 / LV2 plugins, JUCE's PluginDirectoryScanner instantiates each
     // plugin to introspect its metadata -- and a single buggy plugin in
-    // that set will SIGABRT the test process. The proper fix is Phase 1.C.4
-    // (out-of-process sandbox scanning); until then, skip when any default
+    // that set will SIGABRT the test process. This scan runs in-process (the
+    // app's out-of-process scan is PluginScanner's), so skip when any default
     // path contains a plugin candidate.
     for (const auto& name : host.getFormatNames())
     {
@@ -169,7 +165,7 @@ TEST_CASE("PluginHost: scanDefaultPaths runs without crashing on a bare runner",
                 continue;
             const auto children = path[i].findChildFiles(juce::File::findFilesAndDirectories, /*recursive*/ false);
             if (!children.isEmpty())
-                SKIP("default plugin path is populated; defer to Phase 1.C.4 sandbox scan");
+                SKIP("default plugin path is populated; an in-process scan could crash on a real plugin");
         }
     }
 

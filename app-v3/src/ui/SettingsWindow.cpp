@@ -6,13 +6,12 @@
 #include "control/OscMapping.h" // control::isOscMulticastAddress
 #include "control/OscServer.h"
 #include "DialogFrame.h"
+#include "DialogStyle.h"
 #include "engine/AudioEngine.h"
 #include "Fonts.h"
 #include "session/FeatureGate.h"
 #include "session/Preferences.h"
 #include "session/TransportCommands.h"
-
-#include <juce_audio_utils/juce_audio_utils.h>
 
 #include <memory>
 #include <vector>
@@ -26,27 +25,6 @@ namespace
 constexpr int kPad = 16;
 constexpr int kLabelWidth = 130;
 constexpr int kRowHeight = 28;
-
-// A section caption, as the mockup's (UI chrome U4): uppercase Barlow
-// Condensed, letter-spaced.
-void styleCaption(juce::Label& label, const juce::String& text)
-{
-    label.setText(text.toUpperCase(), juce::dontSendNotification);
-    label.setFont(fonts::caption(12.0f));
-    label.setColour(juce::Label::textColourId, tokens::fgMuted);
-}
-
-void styleHint(juce::Label& label, const juce::String& text)
-{
-    label.setText(text, juce::dontSendNotification);
-    label.setFont(juce::Font(juce::FontOptions(12.0f)));
-    label.setColour(juce::Label::textColourId, tokens::fgMuted);
-}
-
-void launch(juce::Component* content, const juce::String& title)
-{
-    DialogFrame::launchModal(title, std::unique_ptr<juce::Component>(content), false);
-}
 
 // ---- MIDI Settings --------------------------------------------------------------
 
@@ -65,8 +43,8 @@ public:
             ctx_.features.setEnabled(session::Feature::Midi, enable_.getToggleState());
             refreshEnabled();
         };
-        styleCaption(header_, "MIDI INPUTS");
-        styleHint(empty_, "No MIDI inputs found. Connect a controller; it appears here.");
+        dialogstyle::caption(header_, "MIDI INPUTS");
+        dialogstyle::hint(empty_, "No MIDI inputs found. Connect a controller; it appears here.");
         for (auto* c : std::initializer_list<juce::Component*>{&enable_, &header_, &hint_, &empty_})
             addAndMakeVisible(c);
 
@@ -116,9 +94,9 @@ private:
     void refreshEnabled()
     {
         const bool on = enable_.getToggleState();
-        styleHint(hint_,
-                  on ? "Enabled inputs drive mapped controls and Program Change patch switching."
-                     : "MIDI is off: no MIDI input is read.");
+        dialogstyle::hint(hint_,
+                          on ? "Enabled inputs drive mapped controls and Program Change patch switching."
+                             : "MIDI is off: no MIDI input is read.");
         for (auto& toggle : toggles_)
             toggle->setEnabled(on);
     }
@@ -153,7 +131,7 @@ public:
             refreshEnabled();
         };
 
-        styleCaption(header_, "OSC LISTENER");
+        dialogstyle::caption(header_, "OSC LISTENER");
         portLabel_.setText("Port", juce::dontSendNotification);
         groupLabel_.setText("Multicast group", juce::dontSendNotification);
 
@@ -344,17 +322,17 @@ std::unique_ptr<juce::Component> makeOscSettingsPanel(AppContext& ctx)
 
 void showAudioDevicesWindow(AppContext& ctx, juce::Value& testTone)
 {
-    launch(makeAudioDevicesPanel(ctx, testTone).release(), "Audio Devices");
+    dialogstyle::launch(makeAudioDevicesPanel(ctx, testTone).release(), "Audio Devices");
 }
 
 void showMidiSettingsWindow(AppContext& ctx)
 {
-    launch(makeMidiSettingsPanel(ctx).release(), "MIDI Settings");
+    dialogstyle::launch(makeMidiSettingsPanel(ctx).release(), "MIDI Settings");
 }
 
 void showOscSettingsWindow(AppContext& ctx)
 {
-    launch(makeOscSettingsPanel(ctx).release(), "OSC Settings");
+    dialogstyle::launch(makeOscSettingsPanel(ctx).release(), "OSC Settings");
 }
 
 } // namespace pedalboard3::ui

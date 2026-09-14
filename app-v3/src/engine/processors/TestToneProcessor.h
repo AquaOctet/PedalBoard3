@@ -54,11 +54,9 @@ public:
 
     // 20 Hz – 20 kHz. Values outside this range are clamped.
     void setFrequency(float hz) noexcept;
-    float getFrequency() const noexcept { return frequency_.load(std::memory_order_relaxed); }
 
     // 0.0 – 1.0. Clamped.
     void setAmplitude(float amplitude) noexcept;
-    float getAmplitude() const noexcept { return amplitude_.load(std::memory_order_relaxed); }
 
 private:
     static constexpr double kEnableRampSeconds = 0.020; // 20 ms ramp

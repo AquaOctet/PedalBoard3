@@ -7,8 +7,9 @@
 # skips.
 #
 # We link pb3_engine_core rather than re-listing engine .cpp files, so there
-# is one source-of-truth for what "the engine" is. Tests stay headless — they
-# never pull in juce_gui_extra or pb3_app_core.
+# is one source-of-truth for what "the engine" is. Tests stay headless: they
+# don't link pb3_app_core, and the only UI sources they compile are listed
+# below (Fonts and the LookAndFeel).
 
 set(PB3_TEST_SOURCES
     smoke_test.cpp
@@ -122,8 +123,8 @@ target_compile_definitions(pb3_smoke_tests PRIVATE
 # path is set at CMake configure time using CMAKE_CURRENT_BINARY_DIR
 # (always forward slashes), so the macro embedded in source is safe.
 #
-# Tests gate the integration cases on the helper existing — a build with
-# PB3_LINT_ONLY (no helper target) still compiles and gated cases SKIP.
+# Tests gate the integration cases on the helper existing: without the
+# helper target they SKIP.
 if(TARGET pb3-scanner-helper)
     add_dependencies(pb3_smoke_tests pb3-scanner-helper)
     file(GENERATE

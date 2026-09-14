@@ -22,29 +22,6 @@
 
 using namespace pedalboard3;
 
-namespace
-{
-
-juce::PluginDescription makeFakeDesc()
-{
-    juce::PluginDescription d;
-    d.name = "Pedalboard 3 Unit-Test Synth";
-    d.descriptiveName = "Pedalboard 3 Unit-Test Synth (descriptive)";
-    d.pluginFormatName = "VST3";
-    d.category = "Synth";
-    d.manufacturerName = "Pedalboard 3 Tests";
-    d.version = "9.9.9";
-    d.fileOrIdentifier = "/nonexistent/Pedalboard3UnitTestSynth.vst3";
-    d.uniqueId = static_cast<int>(0x0EADBEEF);
-    d.deprecatedUid = static_cast<int>(0x0EADBEEF);
-    d.numInputChannels = 2;
-    d.numOutputChannels = 2;
-    d.isInstrument = true;
-    return d;
-}
-
-} // namespace
-
 TEST_CASE("Preferences: getStore returns a usable PropertiesFile after construction", "[session][preferences]")
 {
     pb3test::TempSettings settings;
@@ -176,116 +153,10 @@ TEST_CASE("Preferences: getters return nullptr when no value is stored", "[sessi
     // Make sure any stale data from a prior test run is cleared.
     prefs.getStore()->removeValue("audioDeviceState");
     prefs.getStore()->removeValue("knownPluginList");
-    prefs.getStore()->removeValue("activePluginDescription");
     prefs.flush();
 
     REQUIRE(prefs.getAudioDeviceState() == nullptr);
     REQUIRE(prefs.getKnownPluginList() == nullptr);
-    REQUIRE(prefs.getActivePluginDescription() == nullptr);
-}
-
-TEST_CASE("Preferences: ActivePluginDescription round-trips through the store", "[session][preferences]")
-{
-    pb3test::TempSettings settings;
-    session::Preferences prefs(settings.file());
-    prefs.clearActivePluginDescription();
-    prefs.flush();
-
-    auto desc = makeFakeDesc();
-    prefs.setActivePluginDescription(desc);
-    prefs.flush();
-
-    auto roundTripped = prefs.getActivePluginDescription();
-    REQUIRE(roundTripped != nullptr);
-    REQUIRE(roundTripped->name == desc.name);
-    REQUIRE(roundTripped->pluginFormatName == desc.pluginFormatName);
-    REQUIRE(roundTripped->fileOrIdentifier == desc.fileOrIdentifier);
-    REQUIRE(roundTripped->manufacturerName == desc.manufacturerName);
-    REQUIRE(roundTripped->isInstrument == desc.isInstrument);
-    REQUIRE(roundTripped->uniqueId == desc.uniqueId);
-
-    prefs.clearActivePluginDescription();
-    prefs.flush();
-}
-
-TEST_CASE("Preferences: ActivePluginDescription persists across instance reconstruction", "[session][preferences]")
-{
-    pb3test::TempSettings settings;
-    {
-        session::Preferences first(settings.file());
-        first.setActivePluginDescription(makeFakeDesc());
-        first.flush();
-    }
-
-    {
-        session::Preferences second(settings.file());
-        auto desc = second.getActivePluginDescription();
-        REQUIRE(desc != nullptr);
-        REQUIRE(desc->fileOrIdentifier == "/nonexistent/Pedalboard3UnitTestSynth.vst3");
-        second.clearActivePluginDescription();
-        second.flush();
-    }
-}
-
-TEST_CASE("Preferences: clearActivePluginDescription drops the value", "[session][preferences]")
-{
-    pb3test::TempSettings settings;
-    session::Preferences prefs(settings.file());
-    prefs.setActivePluginDescription(makeFakeDesc());
-    prefs.flush();
-    REQUIRE(prefs.getActivePluginDescription() != nullptr);
-
-    prefs.clearActivePluginDescription();
-    prefs.flush();
-    REQUIRE(prefs.getActivePluginDescription() == nullptr);
-}
-
-TEST_CASE("Preferences: malformed ActivePluginDescription XML returns nullptr (no crash)", "[session][preferences]")
-{
-    pb3test::TempSettings settings;
-    session::Preferences prefs(settings.file());
-
-    // Write something that is *not* a <PLUGIN> root -- loadFromXml should
-    // refuse it and the getter should return nullptr instead of UB.
-    juce::XmlElement bogus("NOT_A_PLUGIN");
-    bogus.setAttribute("garbage", "yes");
-    prefs.getStore()->setValue("activePluginDescription", &bogus);
-    prefs.flush();
-
-    REQUIRE(prefs.getActivePluginDescription() == nullptr);
-
-    prefs.clearActivePluginDescription();
-    prefs.flush();
-}
-
-TEST_CASE("Preferences: ActivePluginDescription is XXE-safe (AC-1.D.2-K)", "[session][preferences][security]")
-{
-    pb3test::TempSettings settings;
-    session::Preferences prefs(settings.file());
-
-    // Construct a payload that, on a DTD-resolving parser, would expand
-    // &x; into the contents of /etc/passwd. juce::parseXML(const String&)
-    // does not install an inputSource, so SYSTEM-entity expansion silently
-    // fails and the parsed file attribute stays empty (or unchanged).
-    const juce::String malicious = "<!DOCTYPE foo [<!ENTITY x SYSTEM \"file:///etc/passwd\">]>"
-                                   "<PLUGIN name=\"Evil\" format=\"VST3\" file=\"&x;\"/>";
-
-    prefs.getStore()->setValue("activePluginDescription", malicious);
-    prefs.flush();
-
-    if (auto desc = prefs.getActivePluginDescription())
-    {
-        // Whatever loadFromXml produced, the file path must NOT contain
-        // contents of /etc/passwd (which would start with "root:" on
-        // every Unix system on Earth).
-        REQUIRE_FALSE(desc->fileOrIdentifier.startsWith("root:"));
-        REQUIRE_FALSE(desc->fileOrIdentifier.contains("/bin/bash"));
-    }
-    // If desc is null, that's also acceptable -- a strict parser refused
-    // the payload outright, which is the safest outcome.
-
-    prefs.clearActivePluginDescription();
-    prefs.flush();
 }
 
 // ---- Phase 1.D.3: ActivePatch round-trip ---------------------------------
@@ -700,7 +571,10 @@ TEST_CASE("Preferences: the MMC switch round-trips", "[session][preferences][mmc
     REQUIRE_FALSE(prefs.getMmcTransport());
 }
 
-TEST_CASE("Preferences: a planted file never leaks through an entity in a saved description (M5 U1)",
+// The XXE check, on the plugin list now that the single saved plugin
+// description is gone: stored XML is parsed from a string, so the entity that
+// names a planted file must not pull its text in.
+TEST_CASE("Preferences: a planted file never leaks through an entity in saved XML (M5 U1, AC-1.D.2-K)",
           "[session][preferences][security]")
 {
     pb3test::TempSettings settings;
@@ -710,17 +584,12 @@ TEST_CASE("Preferences: a planted file never leaks through an entity in a saved 
     REQUIRE(secret.replaceWithText("PB3-PLANTED-SECRET-MARKER"));
     const juce::String malicious = "<!DOCTYPE foo [<!ENTITY x SYSTEM \"" + secret.getFullPathName() +
                                    "\">]>"
-                                   "<PLUGIN name=\"&x;\" format=\"VST3\" file=\"&x;\"/>";
-    prefs.getStore()->setValue("activePluginDescription", malicious);
+                                   "<KNOWNPLUGINS><PLUGIN name=\"&x;\" format=\"VST3\" file=\"&x;\"/></KNOWNPLUGINS>";
+    prefs.getStore()->setValue("knownPluginList", malicious);
     prefs.flush();
 
-    if (auto desc = prefs.getActivePluginDescription())
-    {
-        REQUIRE_FALSE(desc->name.contains("PB3-PLANTED-SECRET-MARKER"));
-        REQUIRE_FALSE(desc->fileOrIdentifier.contains("PB3-PLANTED-SECRET-MARKER"));
-    }
-    prefs.clearActivePluginDescription();
-    prefs.flush();
+    if (auto xml = prefs.getKnownPluginList())
+        REQUIRE_FALSE(xml->toString().contains("PB3-PLANTED-SECRET-MARKER"));
     secret.deleteFile();
 }
 

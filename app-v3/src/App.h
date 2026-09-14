@@ -33,10 +33,8 @@ namespace pedalboard3
 
 // Top-level JUCE application object. Owns every subsystem by unique_ptr
 // and exposes them to UI via an AppContext reference bundle (see
-// AppContext.h). Phase 1.D.2 extracted listener fan-out into
-// session::PreferencesPersister so App is a pure composition root.
-// Phase 1.D.3 retired PluginSlot — Session now owns the multi-node
-// patch directly.
+// AppContext.h). Listener fan-out lives in session::PreferencesPersister,
+// so App is a pure composition root.
 class App : public juce::JUCEApplication
 {
 public:
