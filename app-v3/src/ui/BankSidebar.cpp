@@ -1,4 +1,6 @@
 #include "BankSidebar.h"
+
+#include "Pb3LookAndFeel.h"
 #include "session/FeatureGate.h"
 #include "session/Preferences.h"
 
@@ -189,7 +191,7 @@ void BankSidebar::listBoxItemDoubleClicked(int row, const juce::MouseEvent&)
         onRenameActive();
 }
 
-void BankSidebar::showRowMenu(int row)
+juce::PopupMenu BankSidebar::makeRowMenu(int row)
 {
     // Rename and Remove act on the playing patch (the top bar's prompts), so
     // they switch to the row first.
@@ -215,7 +217,12 @@ void BankSidebar::showRowMenu(int row)
                      if (onRemoveActive)
                          onRemoveActive();
                  });
-    menu.showMenuAsync(juce::PopupMenu::Options{});
+    return menu;
+}
+
+void BankSidebar::showRowMenu(int row)
+{
+    makeRowMenu(row).showMenuAsync(juce::PopupMenu::Options{}.withMinimumWidth(Pb3LookAndFeel::kMenuMinimumWidth));
 }
 
 } // namespace pedalboard3::ui

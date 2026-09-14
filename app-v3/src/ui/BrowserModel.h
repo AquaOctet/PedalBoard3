@@ -103,6 +103,36 @@ inline std::vector<Group> groupsFor(const std::vector<Entry>& entries,
     return groups;
 }
 
+// The Add Plugin menu (UI chrome U3): the effects A to Z, then the built-ins
+// in their own order.
+struct AddPluginSections
+{
+    std::vector<Entry> effects;
+    std::vector<Entry> builtIn;
+};
+
+inline AddPluginSections addPluginSections(const std::vector<Entry>& entries)
+{
+    AddPluginSections sections;
+    for (const auto& e : entries)
+        (e.builtIn ? sections.builtIn : sections.effects).push_back(e);
+    std::sort(sections.effects.begin(),
+              sections.effects.end(),
+              [](const Entry& a, const Entry& b) { return a.name.compareNatural(b.name) < 0; });
+    return sections;
+}
+
+// The tag on the right of an Add Plugin item: the plugin's format ("VST3",
+// "AU" for an AudioUnit), or "INT" for a built-in.
+inline juce::String formatTag(const Entry& e)
+{
+    if (e.builtIn)
+        return "INT";
+    if (e.format == "AudioUnit")
+        return "AU";
+    return e.format;
+}
+
 // The recents after using `id`: it moves to the front, with no duplicates and
 // at most kMaxRecents.
 inline juce::StringArray pushRecent(juce::StringArray recents, const juce::String& id)

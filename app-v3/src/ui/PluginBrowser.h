@@ -36,6 +36,10 @@ juce::String browserDragId(const juce::var& dragDescription);
 // always.
 bool builtInAvailable(AppContext& ctx, const juce::String& internalType);
 
+// Everything the browser and the Add Plugin menu offer: the built-ins available
+// now, then the scanned effects (PluginHost::getKnownEffects).
+std::vector<browser::Entry> browserEntries(AppContext& ctx);
+
 // The plugin browser (UI refresh U5): a 256 px right-hand panel with a
 // search box, category chips and the Built-in / Recently used / All effects
 // groups. A double-click adds at the end of the chain; dragging a row onto the

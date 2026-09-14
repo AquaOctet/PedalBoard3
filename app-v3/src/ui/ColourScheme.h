@@ -45,6 +45,15 @@ inline const juce::Colour fgPrimary{0xfff2f2f2}; // oklch(0.95 0 0)
 inline const juce::Colour fgMuted{0xff8b8b8b};   // oklch(0.60 0 0)
 inline const juce::Colour fgInverse{0xff1a1b22}; // = bgWindow, used on accent fills
 
+// The mockup's finer shades (UI chrome plan 2026-09-13-002, U3 on) ----------
+
+inline const juce::Colour fgMenu{0xffd7d8de};          // menu items
+inline const juce::Colour fgSubtle{0xff62646f};        // headers, accessories, disabled items, the close cross
+inline const juce::Colour fgTitle{0xffc7c8cf};         // dialog titles
+inline const juce::Colour fgSecondaryText{0xffc9cad1}; // alert messages
+inline const juce::Colour fgField{0xffd6d7dd};         // text in fields
+inline const juce::Colour bgTitleBar{0xff0c0d11};      // dialog title bars
+
 // Borders / dividers --------------------------------------------------------
 
 inline const juce::Colour borderDefault{0xff3e404b}; // oklch(0.28 0.01 250)

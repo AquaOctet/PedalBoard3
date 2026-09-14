@@ -97,3 +97,28 @@ TEST_CASE("BrowserModel: using an entry moves it to the front of recents, once, 
     REQUIRE(recents.size() == browser::kMaxRecents);
     REQUIRE(recents[0] == "x9");
 }
+
+TEST_CASE("BrowserModel: the Add Plugin menu lists the effects A to Z, then the built-ins, each with its format tag",
+          "[ui][browser]")
+{
+    auto entries = sampleEntries();
+    entries.push_back({"plugin:ch", "Chorus", "Apple", "AudioUnit", "Modulation", false});
+    const auto sections = browser::addPluginSections(entries);
+
+    juce::StringArray effects, effectTags, builtIns, builtInTags;
+    for (const auto& e : sections.effects)
+    {
+        effects.add(e.name);
+        effectTags.add(browser::formatTag(e));
+    }
+    for (const auto& e : sections.builtIn)
+    {
+        builtIns.add(e.name);
+        builtInTags.add(browser::formatTag(e));
+    }
+
+    REQUIRE(effects == juce::StringArray{"Chorus", "Decapitator", "Pro-Q 3", "ValhallaRoom"});
+    REQUIRE(effectTags == juce::StringArray{"AU", "VST3", "VST3", "VST3"});
+    REQUIRE(builtIns == juce::StringArray{"Level", "VU Meter"});
+    REQUIRE(builtInTags == juce::StringArray{"INT", "INT"});
+}

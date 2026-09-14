@@ -49,6 +49,24 @@ bool builtInAvailable(AppContext& ctx, const juce::String& internalType)
     return !feature.has_value() || ctx.features.isAvailable(*feature);
 }
 
+std::vector<browser::Entry> browserEntries(AppContext& ctx)
+{
+    std::vector<browser::Entry> entries;
+    for (const auto& type : ctx.pluginHost.getInternalNodeTypes())
+        if (builtInAvailable(ctx, type.typeId))
+            entries.push_back(
+                {kInternalPrefix + type.typeId, type.displayName, {}, "Built-in", browser::kBuiltInChip, true});
+    // Effects only (PluginHost::getKnownEffects).
+    for (const auto& desc : ctx.pluginHost.getKnownEffects())
+        entries.push_back({kPluginPrefix + desc.createIdentifierString(),
+                           desc.name,
+                           desc.manufacturerName,
+                           desc.pluginFormatName,
+                           browser::chipForCategory(desc.category),
+                           false});
+    return entries;
+}
+
 bool addBrowserEntry(AppContext& ctx,
                      const juce::String& id,
                      std::optional<juce::Point<float>> position,
@@ -144,19 +162,7 @@ void PluginBrowser::changeListenerCallback(juce::ChangeBroadcaster* source)
 
 void PluginBrowser::rebuildEntries()
 {
-    entries_.clear();
-    for (const auto& type : ctx_.pluginHost.getInternalNodeTypes())
-        if (builtInAvailable(ctx_, type.typeId))
-            entries_.push_back(
-                {kInternalPrefix + type.typeId, type.displayName, {}, "Built-in", browser::kBuiltInChip, true});
-    // Effects only, like the Add Plugin menu (PluginHost::getKnownEffects).
-    for (const auto& desc : ctx_.pluginHost.getKnownEffects())
-        entries_.push_back({kPluginPrefix + desc.createIdentifierString(),
-                            desc.name,
-                            desc.manufacturerName,
-                            desc.pluginFormatName,
-                            browser::chipForCategory(desc.category),
-                            false});
+    entries_ = browserEntries(ctx_);
 
     search_.setTextToShowWhenEmpty("Search " + juce::String(entries_.size()) + " plugins", tokens::fgMuted);
     rebuildChips();

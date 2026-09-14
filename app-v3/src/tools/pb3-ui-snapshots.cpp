@@ -26,6 +26,7 @@
 #include "session/Session.h"
 #include "session/TransportCommands.h"
 #include "ui/AboutWindow.h"
+#include "ui/BankSidebar.h"
 #include "ui/ColourScheme.h"
 #include "ui/FeatureSettingsWindows.h"
 #include "ui/FileActions.h"
@@ -142,7 +143,8 @@ void seed(Rig& rig)
 // item plus the border on both sides, at least the minimum width.
 juce::Image renderMenu(const juce::PopupMenu& menu, int highlight)
 {
-    const juce::PopupMenu::Options options;
+    // The app opens its menus at the mockup's minimum width (UI chrome U3).
+    const auto options = juce::PopupMenu::Options{}.withMinimumWidth(ui::Pb3LookAndFeel::kMenuMinimumWidth);
     auto& lookAndFeel = juce::LookAndFeel::getDefaultLookAndFeel();
     const int border = lookAndFeel.getPopupMenuBorderSizeWithOptions(options);
     const int standard = options.getStandardItemHeight();
@@ -181,6 +183,7 @@ juce::Image renderMenu(const juce::PopupMenu& menu, int highlight)
 
     juce::Image image(juce::Image::ARGB, width, height, true);
     juce::Graphics g(image);
+    g.fillAll(ui::tokens::bgWindow); // what a menu opens over: the app window
     lookAndFeel.drawPopupMenuBackgroundWithOptions(g, width, height, options);
 
     int y = border;
@@ -323,9 +326,11 @@ int main(int argc, char** argv)
         out.addMenu("menu-plugins", &pluginsMenu);
         const auto* addPlugin = findSubMenu(pluginsMenu, "Add Plugin");
         out.addMenu("menu-add-plugin", addPlugin, 1);
-        out.addMenu("menu-add-plugin-built-in", addPlugin != nullptr ? findSubMenu(*addPlugin, "Built-in") : nullptr);
         const auto patchMenu = bar.makePatchMenu();
         out.addMenu("menu-patch", &patchMenu, 2);
+        ui::BankSidebar sidebar(rig.context);
+        const auto rowMenu = sidebar.makeRowMenu(2);
+        out.addMenu("menu-bank-row", &rowMenu);
 
         // Dialogs: each one's content, as its window opens it.
         juce::Value testTone;

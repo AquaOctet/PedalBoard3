@@ -30,6 +30,9 @@ public:
     void resized() override;
     bool keyPressed(const juce::KeyPress&) override;
 
+    // A row's right-click menu: rename, duplicate, remove.
+    juce::PopupMenu makeRowMenu(int row);
+
     // Installed by MainWindow's root component.
     std::function<void()> onRenameActive; // the top bar's rename prompt, for the active patch
     std::function<void()> onRemoveActive; // the top bar's remove confirmation
