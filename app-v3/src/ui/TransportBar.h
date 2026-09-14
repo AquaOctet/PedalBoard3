@@ -51,12 +51,13 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
 
-    // File > App Mappings... (M4 U5). MainWindow owns the window and the key
+    // Settings > App Mappings... (M4 U5). MainWindow owns the window and the key
     // mappings it edits, so it installs this.
     std::function<void()> onOpenAppMappings;
 
-    // File > Patch Bank (UI refresh U6): MainWindow's root component installs
-    // both; the item is ticked while the bank panel is showing.
+    // Show or hide the patch bank (UI refresh U6), for the macOS Window menu:
+    // MainWindow's root component installs both; the item is ticked while the
+    // bank panel is showing.
     std::function<void()> onTogglePatchBank;
     std::function<bool()> isPatchBankShown;
 
@@ -80,7 +81,9 @@ public:
     // The File, Settings and Plugins menus, shared by the bar's buttons and the
     // macOS menu bar (#25). With `menuBarCommands` the File menu is the menu
     // bar's: Save runs through the app command, so it shows its shortcut, and
-    // Settings, Patch Bank and About are left to the menu bar's other menus.
+    // About is left to the app menu. Settings, with App Mappings, is a menu of
+    // its own everywhere; the patch bank shows and hides from the bank itself
+    // (and the macOS Window menu).
     juce::PopupMenu makeFileMenu(juce::ApplicationCommandManager* menuBarCommands = nullptr);
     juce::PopupMenu makeSettingsMenu();
     juce::PopupMenu makePluginsMenu();

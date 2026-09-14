@@ -14,8 +14,8 @@ namespace pedalboard3::ui
 //           "Chain: N plugin(s)" + state text
 //   middle: lastError pill (when set) and the audio-device readout
 //           (device, sample rate, buffer; or why there is no device),
-//           refreshed on every AudioDeviceManager change
-//   right:  build version
+//           refreshed on every AudioDeviceManager change, at the right
+// The version is in the About window, not here.
 //
 // Listener-driven (per AC-UI-K and the deferred-implementation
 // note about Timer-poll alternative). If Idle/Building flickers
@@ -44,7 +44,6 @@ private:
     juce::Label leftLabel_;
     juce::Label errorLabel_;
     juce::Label deviceLabel_;
-    juce::Label rightLabel_;
     juce::Colour stateDotColour_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(StatusBar)

@@ -17,8 +17,8 @@ namespace pedalboard3::ui
 {
 
 // The Settings dialogs (UI refresh U10, plan KD10), opened from the Settings
-// menu on the left of the top bar and from File > Settings. Each opens as a
-// dialog that owns its content.
+// menu on the left of the top bar (on macOS, the menu bar's Settings menu).
+// Each opens as a dialog that owns its content.
 
 // The audio device and its channels (ui::AudioSettingsPanel), and the Test
 // Tone toggle. `testTone` is the top bar's shared on / off value, so
