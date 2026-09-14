@@ -136,7 +136,7 @@ Without the SDK, Windows builds use WASAPI/DirectSound only (no error).
   the `ship-mr` skill performs (see "Shipping and tracking" in `CLAUDE.md`)
 - Any signing, notarization, or release pipeline invocation
 - Installing or modifying runner credentials, certs, or keys
-- Modifying `.gitlab-ci.yml` jobs that carry signing variables (none yet — Phase 6)
+- Modifying `.gitlab-ci.yml` jobs that carry signing variables (none yet; signing is #40)
 
 ## Agent-native verification matrix
 
@@ -147,16 +147,16 @@ on a local Mac, vs. what still needs the Windows QA desktop:
 |---|---|---|
 | CMake configure + build | Everything in Linux col + AU/VST3 plugin scan, audible CoreAudio test tone | WASAPI / ASIO round-trip latency |
 | Unit tests (Catch2) | Same ctest suite | Commercial VST compatibility |
-| Offline render regression (golden WAV diff) | Same, plus live-device render | Real MIDI controller input from physical hardware |
-| pluginval on Linux-native plugins (Surge XT / Dexed / Dragonfly) | pluginval on macOS-native AU + VST3 | Driver-specific audio bugs |
-| Code style (clang-format) | — | Code signing / MSI installer smoke test |
-| Architecture linting (grep-based RT-safety) | — | WebView2 editor embedding |
+| Plugin scans through pb3-scanner-helper (VST3 / LV2 installed locally) | The same, plus AU | Real MIDI controller input from physical hardware |
+| RealtimeSanitizer build (`linux-rtsan` preset) | — | Driver-specific audio bugs |
+| Code style (clang-format) | — | The installer on a clean PC; code signing (#40) |
 | `just build` + `just test` end-to-end | `just build` + `just test` + `just run` end-to-end | — |
 
 **macOS is a first-class dev-QA target.** CoreAudio, AudioUnit, and VST3 all
 auto-register via `juce::AudioPluginFormatManager::addDefaultFormats()`. A
 local Mac can exercise the full Pedalboard 3 stack short of Windows-specific
-audio drivers and the Phase 1.B.2 SEH code path.
+audio drivers and the Windows crash guard (structured exception handling,
+`app-v3/src/platform/CrashGuard_windows.cpp`).
 
 ## Conventions
 
