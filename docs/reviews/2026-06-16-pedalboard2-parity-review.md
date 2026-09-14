@@ -1,11 +1,15 @@
 # Pedalboard 3 — Parity Review vs Pedalboard2
 Created: 2026-06-16
 
+> **A June 2026 snapshot, kept for the record.** Much of what it lists as missing
+> (transport, multi-patch banks, live MIDI/OSC input, undo) has shipped since, in
+> milestones M1 to M6. For where things stand now, see
+> `docs/plans/2026-07-02-001-feat-road-to-1-0-release-plan.md` and the GitLab
+> milestones.
+
 Status snapshot of Pedalboard 3 against the original Pedalboard2 feature set and the master
 rewrite plan acceptance criteria (docs/plans/2026-04-12-001-feat-pedalboard-3-rewrite-plan.md).
 Produced by a 4-agent research pass over `source code/src/` (PB2), `app-v3/src/` (PB3), and the master plan.
-
-I have all the context I need. The four reports are comprehensive, and I've confirmed the plan references. Let me produce the consolidated deliverables.
 
 # PART 1 — PARITY REVIEW
 

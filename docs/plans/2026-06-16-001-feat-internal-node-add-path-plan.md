@@ -1,6 +1,7 @@
 ---
 title: "feat: Internal-node add-path (built-in graph nodes)"
 type: feat
+status: completed
 date: 2026-06-16
 depth: deep
 origin: docs/plans/2026-04-12-001-feat-pedalboard-3-rewrite-plan.md

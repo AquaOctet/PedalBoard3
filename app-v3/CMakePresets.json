@@ -60,7 +60,7 @@
     {
       "name": "lint-only",
       "displayName": "Lint-only configure",
-      "description": "Fast configure that skips heavy dependencies (JUCE/CLAP/Catch2). Used by the lint CI stage.",
+      "description": "Fast configure that skips heavy dependencies (JUCE/CLAP/Catch2), for local lint tooling. CI's lint job runs `just format-check` and does not configure.",
       "generator": "Ninja",
       "binaryDir": "${fileDir}/../build/lint",
       "cacheVariables": {
@@ -106,7 +106,7 @@
     {
       "name": "macos-universal",
       "displayName": "macOS Universal (x86_64 + arm64)",
-      "description": "Release build on macOS, universal binary. Runs on self-hosted Mac mini (Phase 6).",
+      "description": "Release build on macOS, universal binary. Used by the release:macos CI job on GitLab's SaaS macOS runner.",
       "generator": "Ninja",
       "binaryDir": "${fileDir}/../build/macos-universal",
       "cacheVariables": {

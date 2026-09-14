@@ -1,6 +1,7 @@
 ---
 title: M6 — Parity tail: transport + processors
 type: feat
+status: completed
 date: 2026-09-12
 topic: parity-tail
 artifact_contract: ce-unified-plan/v1

@@ -1,6 +1,7 @@
 ---
 title: Optional features — Tempo, Metronome, Looper, MIDI and OSC
 type: feat
+status: completed
 date: 2026-09-12
 topic: optional-features
 artifact_contract: ce-unified-plan/v1

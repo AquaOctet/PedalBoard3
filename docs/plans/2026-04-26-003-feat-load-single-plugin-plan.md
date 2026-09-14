@@ -1,7 +1,7 @@
 ---
 title: "Phase 1.D.1: load a single plugin into the audio graph"
 type: feat
-status: active
+status: completed
 date: 2026-04-26
 ---
 

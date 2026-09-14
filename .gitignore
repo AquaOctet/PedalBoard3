@@ -10,15 +10,6 @@
 # Don't ignore these as they're needed for analysis and testing
 
 # =============================================================================
-# RUST/CARGO BUILD ARTIFACTS
-# =============================================================================
-target/
-pedalboard3/target/
-Cargo.lock
-**/*.rs.bk
-*.pdb
-
-# =============================================================================
 # C++/JUCE BUILD ARTIFACTS (for alternative C++ path)
 # =============================================================================
 # Visual Studio
@@ -147,6 +138,12 @@ dist/
 build/
 out/
 
+# CI caches (.gitlab-ci.yml): CPM's dependency sources, ccache objects, and
+# the tools the Windows jobs download
+.cpm-cache/
+.ccache/
+.tools/
+
 # =============================================================================
 # TESTING AND COVERAGE
 # =============================================================================
@@ -177,17 +174,13 @@ pids
 # =============================================================================
 # Keep Pedalboard2's documentation (legacy/documentation/) and the v3 docs
 # Only ignore auto-generated documentation
-generated_docs/
 api_docs/
-target/doc/
-**/target/doc/
 
 # =============================================================================
 # PROJECT-SPECIFIC ARTIFACTS
 # =============================================================================
-# Demo and development scripts outputs
+# Development script outputs
 *.bat.log
-demo_output/
 test_output/
 
 # Workspace files (if using VS Code workspace)

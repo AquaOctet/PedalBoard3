@@ -16,12 +16,19 @@ and `.pdl` format only; do not edit.
 ## Stack
 
 - **Engine & UI:** JUCE 8 + CMake, C++20 (targeting C++23 features where portable)
-- **Plugin formats:** VST3 (MIT SDK), AU (macOS), CLAP (via vendored
-  `juce_clap_hosting` fork), LV2 (Linux), VST2 (opt-in build flag)
-- **Tests:** Catch2 v3 (unit), pluginval (integration), golden-WAV regression
-- **CI:** GitLab CI. Linux on shared runners inside the silkOps factory
-  image (`ci-cd/juce-linux`); Windows/macOS on GitLab SaaS runners with
-  `allow_failure` until Phase 6.
+- **Plugin formats:** VST3 (MIT SDK); AU on macOS; LV2 on macOS and Linux.
+  CLAP (vendored `juce_clap_hosting` fork, `PB3_ENABLE_CLAP`, off in every
+  preset) and VST2 (`PB3_ENABLE_VST2`, needs your own SDK) are opt-in.
+- **Tests:** Catch2 v3 unit tests, headless (`app-v3/tests/`)
+- **CI:** GitLab CI; see the `workflow:` block in `.gitlab-ci.yml`.
+  - Every merge request push runs a pipeline: lint, then build and unit tests
+    on Linux, Windows and macOS.
+  - On main a pipeline runs only when someone starts it by hand (Build >
+    Pipelines > Run pipeline). It holds the release builds as manual jobs; a
+    merge starts no pipeline.
+  - Linux runs on shared runners inside the silkOps factory image
+    (`ci-cd/juce-linux`). Windows and macOS run on GitLab SaaS runners, with
+    `allow_failure`.
 
 ## Build
 
@@ -31,7 +38,7 @@ Host-OS-aware via `just` — the default recipes pick `linux-dev` on Linux and
 ```bash
 just build       # configure + build host dev preset
 just test        # ctest against the host dev build
-just run         # launch the hello-world app (execs binary on Linux, `open`s .app on macOS)
+just run         # launch the app (execs the binary on Linux, `open`s the .app on macOS)
 just format      # clang-format -i on app-v3/src + tests
 just release     # RelWithDebInfo on Linux, Universal RelWithDebInfo on macOS
 ```
@@ -48,7 +55,7 @@ ctest --test-dir build/linux-dev --output-on-failure
 cmake --preset macos-dev -S app-v3
 cmake --build build/macos-dev
 ctest --test-dir build/macos-dev --output-on-failure
-open "build/macos-dev/src/Pedalboard 3_artefacts/Debug/Pedalboard 3.app"
+open "build/macos-dev/src/Pedalboard3_artefacts/Debug/Pedalboard 3.app"
 
 # macOS Release (universal x86_64 + arm64)
 cmake --preset macos-universal -S app-v3
@@ -78,6 +85,9 @@ make release     # optimized preset for the host OS
 ./build.ps1 build -Config release  # RelWithDebInfo (windows-ci)
 ./build.ps1 test                   # build + ctest
 ./build.ps1 run                    # launch the built app
+./build.ps1 snapshots              # render every menu and dialog to build/ui-snapshots
+./build.ps1 configure              # configure only
+./build.ps1 clean                  # remove this config's build folder
 ```
 
 `make` on Windows still needs a VS developer shell (it can't load the VS env);
@@ -113,9 +123,10 @@ Without the SDK, Windows builds use WASAPI/DirectSound only (no error).
 
 - `cmake --preset linux-*`, `cmake --build`, `ctest`
 - `just build`, `just test`, `just format`
+- `./build.ps1 build`, `./build.ps1 test`, `./build.ps1 snapshots` (Windows)
 - `git status`, `git diff`, `git log`
 - `grep`, `rg`, `glob`
-- Edits anywhere under `app-v3/`, `docs/`, `tests/`, `ci/`, `scripts/`
+- Edits anywhere under `app-v3/` and `docs/`
 
 ## What requires a human
 
@@ -154,9 +165,10 @@ audio drivers and the Phase 1.B.2 SEH code path.
   (`pedalboard3::engine::`, `pedalboard3::session::`, etc.).
 - **JUCE:** use `juce::` qualifier explicitly in headers; `using namespace juce;`
   permissible inside `.cpp` implementation files only.
-- **Real-time code:** any function callable from `processBlock` must be
-  marked with the comment `// RT: safe (no alloc, no lock, no I/O)`.
-  Debug builds enforce this via RealtimeSanitizer (Phase 1).
+- **Real-time code:** anything callable from `processBlock` must not
+  allocate, lock or do I/O (the rules at the top of
+  `app-v3/src/engine/CMakeLists.txt`). The `linux-rtsan` preset builds with
+  Clang's RealtimeSanitizer (`PB3_ENABLE_RTSAN`).
 - **Commits:** conventional-commits format (`feat(engine):`, `fix(ui):`,
   `chore(ci):`, `docs(plan):`). Keep the first line under 72 chars.
 - **Tests:** mirror `src/` structure under `tests/unit/` with `_test.cpp` suffix.
@@ -166,45 +178,48 @@ audio drivers and the Phase 1.B.2 SEH code path.
 ```
 .
 ├── AGENTS.md                # this file
-├── CLAUDE.md                # alias → AGENTS.md (legacy)
+├── CLAUDE.md                # points here, plus the shipping rules (ship-mr)
 ├── README.md
 ├── .clang-format
 ├── .gitignore
+├── .gitlab-ci.yml
 ├── docs/
-│   └── plans/               # /ce-plan output
+│   ├── plans/               # /ce-plan output
+│   └── reviews/
 ├── source code/             # READ-ONLY: original Pedalboard2 v2
 ├── legacy/                  # Pedalboard2 binaries, end-user docs, readme, to-do
 ├── vercel-ui-demo/          # UI mockup (design source)
-├── app-v3/                  # NEW v3 code
+├── app-v3/                  # the v3 code
 │   ├── CMakeLists.txt
 │   ├── CMakePresets.json
+│   ├── cmake/               # CPM.cmake (dependency fetching)
+│   ├── resources/fonts/     # embedded UI fonts (SIL OFL)
 │   ├── src/
 │   │   ├── main.cpp
 │   │   ├── App.h / App.cpp
-│   │   ├── engine/          # [Phase 1] AudioGraphRuntime, etc.
-│   │   ├── engine/processors/  # [Phase 1 + 5] internal processors
-│   │   ├── session/         # [Phase 2]
-│   │   ├── session/v2_import/  # [Phase 2]
-│   │   ├── control/         # [Phase 4]
-│   │   ├── diagnostics/     # [Phase 1]
-│   │   ├── ui/              # [Phase 3]
-│   │   └── platform/
-│   ├── external/            # CPM cache / git submodules
+│   │   ├── engine/          # graph runtime, plugin host and scanner, transport
+│   │   ├── engine/processors/  # built-in processors
+│   │   ├── session/         # patches, banks, Session, .pdl files, Preferences
+│   │   ├── session/v2_import/  # Pedalboard2 .pdl import
+│   │   ├── control/         # MIDI / OSC mappings and input devices
+│   │   ├── ui/
+│   │   ├── platform/        # the crash guard, per OS
+│   │   └── tools/           # pb3-scanner-helper, pb3-ui-snapshots
 │   └── tests/
+│       ├── unit/            # mirrors src/
+│       └── support/         # shared test helpers
 ├── build.ps1                # Windows build / test / run / snapshots
 └── justfile, Makefile       # build wrappers (the Linux CI image recipe lives in ci-cd)
 ```
 
-## Current phase: road to v1.0.0
+## Current state: road to v1.0.0
 
-Phases 0–5 of the master rewrite plan are substantially landed (audio
-engine, session/persistence, interactive canvas, control-layer logic,
-first internal processors). The active track is the milestone sequence in
-`docs/plans/2026-07-02-001-feat-road-to-1-0-release-plan.md`: **M1
-stability** (the crash-hunt backlog, GitLab issues #6–8) is in progress,
-followed by wiring the MIDI/OSC control layer, multi-patch banks, mappings
-UI, a public beta, the parity tail, hardening, and the Phase 6 signed
-release. Windows / macOS / signing remain deferred to Phase 6.
+The milestones in `docs/plans/2026-07-02-001-feat-road-to-1-0-release-plan.md`
+up to M6 have merged: stability (M1), live MIDI/OSC control (M2), multi-patch
+banks (M3), the mappings UI (M4), hardening (M5) and the parity tail (M6). So
+have the finish pass, the UI refresh and the UI chrome pass. Next is the first
+public beta, 1.0.0-beta.1 (M7), then the signed v1.0.0 release (M8). The
+GitLab milestones and issues track what's open.
 
 ### Dev toolchain note
 
@@ -218,7 +233,7 @@ export PATH="$HOME/.local/bin:$PATH"
 ```
 
 Then the `cmake --preset linux-dev` / `cmake --build build/linux-dev` /
-`ctest --test-dir build/linux-dev` loop works. `just` is not installed;
+`ctest --test-dir build/linux-dev` loop works. If `just` isn't installed,
 use the `make` wrappers or the raw `cmake` commands above.
 
 ## Memory

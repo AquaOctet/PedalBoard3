@@ -1,6 +1,7 @@
 ---
 title: silkOps Factory Onboarding - Plan
 type: chore
+status: completed
 date: 2026-09-10
 topic: silkops-factory-onboarding
 artifact_contract: ce-unified-plan/v1

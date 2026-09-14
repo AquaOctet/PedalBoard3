@@ -1,7 +1,7 @@
 ---
 title: "feat: queued patch-switch state machine on top of PluginSlot (Phase 1.D.2)"
 type: feat
-status: active
+status: completed
 date: 2026-04-26
 origin: docs/plans/2026-04-12-001-feat-pedalboard-3-rewrite-plan.md
 ---

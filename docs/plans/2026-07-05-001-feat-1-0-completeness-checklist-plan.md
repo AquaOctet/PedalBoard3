@@ -1,6 +1,7 @@
 ---
 title: 1.0 Completeness Checklist - Plan
 type: feat
+status: active
 date: 2026-07-05
 topic: 1-0-completeness-checklist
 artifact_contract: ce-unified-plan/v1

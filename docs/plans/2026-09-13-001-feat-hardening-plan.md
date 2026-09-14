@@ -1,6 +1,7 @@
 ---
 title: M5 — Hardening: crash guard + .pdl
 type: feat
+status: completed
 date: 2026-09-13
 topic: hardening
 artifact_contract: ce-unified-plan/v1

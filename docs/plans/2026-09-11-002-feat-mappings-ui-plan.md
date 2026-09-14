@@ -1,6 +1,7 @@
 ---
 title: Mappings UI and App Commands (M4) - Plan
 type: feat
+status: completed
 date: 2026-09-11
 topic: mappings-ui
 artifact_contract: ce-unified-plan/v1

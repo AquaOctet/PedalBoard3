@@ -1,6 +1,7 @@
 ---
 title: UI Refresh (stage layout) - Plan
 type: feat
+status: completed
 date: 2026-09-11
 topic: ui-refresh
 artifact_contract: ce-unified-plan/v1
@@ -326,7 +327,7 @@ The status bar keeps what it shows today (state dot, chain count, error pill, de
 
 MRs through `ship-mr`, in this order:
 
-1. **Top bar:** U1. In progress.
+1. **Top bar:** U1. Merged.
 2. **Top bar right end, Settings and About:** U2, U3, U10, U11. Closes #22 and #24.
 3. **Sidebar frame and bank:** U4, U6.
 4. **Plugin browser:** U5, isolated because of the drag-and-drop risk.

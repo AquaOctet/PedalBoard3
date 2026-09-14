@@ -1,7 +1,7 @@
 ---
 title: "feat: named patch save/load to .pdl (Phase 2 MVP, with plugin state)"
 type: feat
-status: active
+status: completed
 date: 2026-06-07
 origin: docs/plans/2026-04-12-001-feat-pedalboard-3-rewrite-plan.md
 ---
