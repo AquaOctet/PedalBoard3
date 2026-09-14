@@ -175,7 +175,7 @@ pids
 # =============================================================================
 # DOCUMENTATION BUILD (auto-generated)
 # =============================================================================
-# Keep original documentation/ and pedalboard3 development docs
+# Keep Pedalboard2's documentation (legacy/documentation/) and the v3 docs
 # Only ignore auto-generated documentation
 generated_docs/
 api_docs/

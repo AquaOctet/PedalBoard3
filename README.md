@@ -50,17 +50,19 @@ libcurl4-openssl-dev libwebkit2gtk-4.1-dev
 ```
 .
 ├── AGENTS.md                # conventions for coding agents
-├── docs/plans/              # product plans (ce-plan output)
-├── source code/             # READ-ONLY original Pedalboard2 v2 code
-├── documentation/           # READ-ONLY original v2 end-user docs
-├── app-v3/                  # NEW v3 source tree
+├── app-v3/                  # the v3 source tree
 │   ├── CMakeLists.txt
 │   ├── CMakePresets.json
+│   ├── resources/           # embedded fonts (SIL OFL)
 │   ├── src/
 │   └── tests/
-├── ci/docker/               # CI image Dockerfile (published in Phase 6)
-├── scripts/                 # dev-loop + provisioning helpers
-└── justfile
+├── docs/plans/              # product plans (ce-plan output)
+├── legacy/                  # Pedalboard2 binaries, docs, readme, to-do
+├── source code/             # READ-ONLY original Pedalboard2 v2 code
+├── vercel-ui-demo/          # UI mockup (design source)
+├── build.ps1                # Windows build / test / run / snapshots
+├── justfile, Makefile       # build wrappers (Linux / macOS)
+└── CMakePresets.json
 ```
 
 ## Licence

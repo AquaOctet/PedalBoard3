@@ -173,7 +173,8 @@ audio drivers and the Phase 1.B.2 SEH code path.
 ├── docs/
 │   └── plans/               # /ce-plan output
 ├── source code/             # READ-ONLY: original Pedalboard2 v2
-├── documentation/           # READ-ONLY: original v2 end-user docs
+├── legacy/                  # Pedalboard2 binaries, end-user docs, readme, to-do
+├── vercel-ui-demo/          # UI mockup (design source)
 ├── app-v3/                  # NEW v3 code
 │   ├── CMakeLists.txt
 │   ├── CMakePresets.json
@@ -190,9 +191,8 @@ audio drivers and the Phase 1.B.2 SEH code path.
 │   │   └── platform/
 │   ├── external/            # CPM cache / git submodules
 │   └── tests/
-├── ci/                      # CI helper scripts (the Linux image recipe lives in ci-cd)
-├── scripts/                 # provisioning + dev-loop helpers
-└── justfile
+├── build.ps1                # Windows build / test / run / snapshots
+└── justfile, Makefile       # build wrappers (the Linux CI image recipe lives in ci-cd)
 ```
 
 ## Current phase: road to v1.0.0
