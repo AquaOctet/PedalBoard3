@@ -8,7 +8,7 @@ namespace pedalboard3::ui::tokens
 // Pedalboard 3 colour tokens — mapped from the Vercel design mockup at
 // vercel-ui-demo/app/globals.css (oklch source values), pre-converted to
 // sRGB hex. Values are approximate visually but stable and addressable by
-// name from any UI code; Phase 3 canvas pulls from the same source.
+// name from any UI code.
 //
 // The conversion was done once by hand — adding new tokens means computing
 // the sRGB approximation once and committing it as a literal here. There
@@ -17,11 +17,6 @@ namespace pedalboard3::ui::tokens
 // Naming convention: dotted CSS names from the mockup table (e.g.
 // `--background`) translate to flat camelCase (`bgWindow`). The dotted
 // form is documentation only — these are the canonical C++ identifiers.
-//
-// Phase 1.D.3 → Phase 3 staging: this header defines the core dialog/
-// button/text tokens. Canvas-specific cable/port tokens land alongside
-// SignalCanvas in Unit 5. Master-plan §4.2.D 19-token list is preserved
-// in spirit; surface grows as new UI components need it.
 
 // Backgrounds ---------------------------------------------------------------
 
@@ -59,7 +54,7 @@ inline const juce::Colour bgTitleBar{0xff0c0d11};      // dialog title bars
 inline const juce::Colour borderDefault{0xff3e404b}; // oklch(0.28 0.01 250)
 inline const juce::Colour borderMuted{0xff2e303b};   // = bgSecondary
 
-// Status-dot colours for StatusBar (Unit 6 consumer) ------------------------
+// Status-dot colours for StatusBar -------------------------------------------
 
 inline const juce::Colour statusIdle = accentPrimary;      // green/teal — running
 inline const juce::Colour statusBuilding = accentWarning;  // amber — async build in flight

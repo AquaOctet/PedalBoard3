@@ -29,6 +29,9 @@ namespace pedalboard3::session
 // app, which says so and offers a plugin rescan. Saves go through the atomic
 // writer, owner-only (0600) on POSIX.
 //
+// Stored XML is parsed from a string, with no input source, so an external
+// entity in a settings file can't pull in another file (M5 U1, AC-1.D.2-K).
+//
 // Carries:
 //   - "audioDeviceState" — XML from AudioDeviceManager::createStateXml()
 //   - "knownPluginList"  — XML from KnownPluginList::createXml()
@@ -51,9 +54,9 @@ public:
     static juce::File defaultSettingsFile();
     ~Preferences() override;
 
-    // Hand to JUCE components that take a PropertiesFile* (e.g.
-    // juce::AudioDeviceSelectorComponent, juce::PluginListComponent).
-    // They read/write keys directly into the same file.
+    // Hand to JUCE components that take a PropertiesFile*
+    // (juce::PluginListComponent). They read and write keys directly in the
+    // same file.
     juce::PropertiesFile* getStore() noexcept;
 
     // A settings file that couldn't be read when Preferences opened it (M5 U7):
@@ -72,25 +75,10 @@ public:
     std::unique_ptr<juce::XmlElement> getKnownPluginList();
     void setKnownPluginList(const juce::XmlElement& xml);
 
-    // The plugin description that was active in the host slot when the
-    // app last quit cleanly. nullptr on first run, on a malformed
-    // settings entry, or after clearActivePluginDescription. Used by
-    // App::initialise to restore the user's last loaded plugin via
-    // session::Session::queueLoad.
-    //
-    // Read path is XXE-safe: PropertiesFile::getXmlValue uses the
-    // string overload of juce::parseXML, which constructs an
-    // XmlDocument with no inputSource and therefore cannot resolve
-    // SYSTEM/PUBLIC external entities.
-    std::unique_ptr<juce::PluginDescription> getActivePluginDescription();
-    void setActivePluginDescription(const juce::PluginDescription& desc);
-    void clearActivePluginDescription();
-
-    // The whole active patch (Phase 1.D.3 — replaces ActivePluginDescription
-    // for multi-plugin chains). XML root is <ACTIVE_PATCH>; no schemaMajor
-    // attribute (the future .pdl format owns version negotiation per master
-    // plan §4.5). Round-trip preserves node order, connections,
-    // per-node bypass, and customName.
+    // The whole active patch, the single-patch form from before banks. XML
+    // root is <ACTIVE_PATCH>, with no schemaMajor attribute (the .pdl format
+    // owns version negotiation). Round-trip preserves node order,
+    // connections, per-node bypass, and customName.
     //
     // Returns nullptr on first run, malformed XML, or a structurally
     // invalid patch (validatePatch != Ok). The caller is responsible for

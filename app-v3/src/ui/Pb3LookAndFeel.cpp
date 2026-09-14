@@ -138,9 +138,6 @@ Pb3LookAndFeel::Pb3LookAndFeel()
     // ----- ProgressBar (plugin scan, future patch loading) -----------------
     setColour(juce::ProgressBar::backgroundColourId, tokens::bgSecondary);
     setColour(juce::ProgressBar::foregroundColourId, tokens::accentPrimary);
-
-    // ----- AudioDeviceSelectorComponent already routes via the slider/
-    //       combo/label/text-editor IDs above. No bespoke overrides needed.
 }
 
 juce::Typeface::Ptr Pb3LookAndFeel::getTypefaceForFont(const juce::Font& font)

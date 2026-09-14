@@ -2,6 +2,7 @@
 
 #include "ColourScheme.h"
 #include "DialogFrame.h"
+#include "DialogStyle.h"
 #include "Fonts.h"
 #include "Pb3LookAndFeel.h"
 
@@ -28,11 +29,10 @@ constexpr int kButtonHeight = 34;
 constexpr int kNoInputId = 1; // the input field's "None"
 constexpr int kMeterHz = 20;
 
+// The shared caption, flush in its row: no label border.
 void styleCaption(juce::Label& label, const juce::String& text)
 {
-    label.setText(text.toUpperCase(), juce::dontSendNotification);
-    label.setFont(fonts::caption(12.0f));
-    label.setColour(juce::Label::textColourId, tokens::fgMuted);
+    dialogstyle::caption(label, text);
     label.setBorderSize({});
 }
 

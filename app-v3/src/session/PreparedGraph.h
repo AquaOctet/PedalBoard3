@@ -105,7 +105,7 @@ inline juce::String crashedLoading(const juce::String& fault)
 // build: an empty PreparedGraph (graph == nullptr), with `errorOut` carrying
 // "<type>: <reason>". isNodeSafeForChain filters those out beforehand.
 //
-// Does NOT touch any AudioEngine, PluginSlot, or Session state. Safe to
+// Does NOT touch any AudioEngine or Session state. Safe to
 // call from a worker thread. The graph is fully prepared (prepareToPlay
 // run) before return; the caller commits it to engine::AudioGraphRuntime
 // from the message thread via swapPreparedGraph or by direct ownership.

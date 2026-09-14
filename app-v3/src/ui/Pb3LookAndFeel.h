@@ -1,8 +1,7 @@
 #pragma once
 
-#include <juce_audio_processors/juce_audio_processors.h>
-#include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <juce_gui_extra/juce_gui_extra.h>
 
 namespace pedalboard3::ui
 {
@@ -26,11 +25,11 @@ namespace pedalboard3::ui
 // register per-class colour IDs via `setColour(ClassName::ColourId,
 // tokens::…)` in the constructor.
 //
-// Bespoke `paint*` overrides are kept to a minimum — enabled only
-// where shape changes are needed (rounded button corners, custom
-// title-bar chrome). The Unit 1 baseline only overrides
-// `drawButtonBackground` for rounded corners + accent border;
-// everything else uses V4 defaults driven by colour mappings.
+// Bespoke `paint*` overrides draw what colours alone can't: rounded buttons,
+// the popup menus, the dialog title bar and its close cross, alerts, the
+// call-out box, and the embedded fonts (getTypefaceForFont). Controls inside
+// dialogs take the mockup's look from Pb3DialogLookAndFeel below, which each
+// DialogFrame installs.
 //
 // Singleton lifetime
 // ------------------

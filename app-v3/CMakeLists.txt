@@ -3,9 +3,8 @@ cmake_minimum_required(VERSION 3.25)
 # -----------------------------------------------------------------------------
 # Pedalboard 3 — root CMake project.
 #
-# Phase 0: buildable Linux hello-world JUCE 8 GUI app + Catch2 unit test.
-# Subsequent phases enrich this with engine / session / UI / diagnostics.
-# Signing, cross-platform release, and auto-update are Phase 6.
+# The app (src/), its plugin scanner helper and the unit tests (tests/), on
+# Windows, macOS and Linux. Signing is still to come (#40).
 # -----------------------------------------------------------------------------
 
 project(Pedalboard3
@@ -135,8 +134,8 @@ if(PB3_ENABLE_CLAP AND NOT PB3_LINT_ONLY)
         GITHUB_REPOSITORY free-audio/clap
         GIT_TAG     1.2.7
     )
-    # clap-helpers has no release tags; track `main` and re-pin to a SHA
-    # once we have a known-good commit for the fork work in Phase 1.
+    # clap-helpers has no release tags, so this tracks `main`. Pin a commit
+    # before CLAP ships (every preset turns PB3_ENABLE_CLAP off).
     CPMAddPackage(
         NAME        clap-helpers
         GITHUB_REPOSITORY free-audio/clap-helpers
@@ -146,8 +145,7 @@ if(PB3_ENABLE_CLAP AND NOT PB3_LINT_ONLY)
     # JUCE's `juce_add_module()` derives the module ID from the source
     # directory's basename, so we can't point it at CPM's `-src` suffixed
     # directory. Symlink to a correctly-named sibling and register from that.
-    # Ship-in-v3.0 decision per 2026-04-12 /ce:work kickoff; pin to a SHA
-    # in Phase 1 once we exercise hosting end-to-end.
+    # Tracks `main` too: pin a commit before CLAP ships.
     CPMAddPackage(
         NAME           juce_clap_hosting
         GITHUB_REPOSITORY jatinchowdhury18/juce_clap_hosting

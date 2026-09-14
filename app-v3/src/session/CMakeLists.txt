@@ -1,8 +1,5 @@
-# session/ — per-user persistence + (later) Session/Patch state model.
-#
-# Phase 1.C.2: Preferences (audio-device choice + scanned plugin list).
-# Phase 1.D will add Session + Patch types here for the patch-switch
-# state machine.
+# session/ — the patch and bank model, the Session state machine that swaps
+# patches in, board files, and per-user Preferences.
 #
 # Built as a STATIC library so pb3_warnings can apply per-source via
 # pb3_apply_strict_warnings() without touching JUCE INTERFACE_SOURCES.
@@ -71,9 +68,8 @@ target_include_directories(pb3_session_core PUBLIC
 
 target_link_libraries(pb3_session_core
     PUBLIC
-        # PluginSlot.h forward-declares engine types; PluginSlot.cpp
-        # uses them directly. PUBLIC because consumers of session
-        # (App, tests) typically use both.
+        # Session and PreparedGraph use engine types in their API.
+        # PUBLIC because consumers of session (App, tests) use both.
         pb3_engine_core
         # ControlParameterApplier.h exposes control::MidiTarget; PUBLIC so
         # consumers get the control headers. (control depends on session only

@@ -14,10 +14,10 @@
 # -----------------------------------------------------------------------------
 # Subsystems (static libs that carry pb3_warnings on their own sources)
 # -----------------------------------------------------------------------------
-# engine first; session PUBLIC-links pb3_engine_core for PluginSlot.
+# engine first: session PUBLIC-links pb3_engine_core.
 add_subdirectory(engine)
 add_subdirectory(session)
-# control/ (Phase 4 MIDI/OSC) depends only on session/NodeId.h + juce basics.
+# control/ (MIDI and OSC) depends only on session/NodeId.h + juce basics.
 add_subdirectory(control)
 
 # The mockup's fonts (UI chrome plan 2026-09-13-002, KD1): Barlow Semi Condensed,
@@ -68,6 +68,7 @@ add_library(pb3_app_core STATIC
     ui/AudioSettingsPanel.h
     ui/DialogFrame.cpp
     ui/DialogFrame.h
+    ui/DialogStyle.h
     ui/EditorWindow.cpp
     ui/EditorWindow.h
     ui/FileActions.cpp

@@ -2,6 +2,7 @@
 
 #include "ColourScheme.h"
 #include "DialogFrame.h"
+#include "DialogStyle.h"
 #include "engine/Recordings.h"
 #include "Fonts.h"
 #include "session/FeatureGate.h"
@@ -21,28 +22,6 @@ constexpr int kPad = 16;
 constexpr int kLabelWidth = 170;
 constexpr int kRowHeight = 28;
 
-// A section caption, as the mockup's (UI chrome U4): uppercase Barlow
-// Condensed, letter-spaced.
-void styleCaption(juce::Label& label, const juce::String& text)
-{
-    label.setText(text.toUpperCase(), juce::dontSendNotification);
-    label.setFont(fonts::caption(12.0f));
-    label.setColour(juce::Label::textColourId, tokens::fgMuted);
-}
-
-void styleHint(juce::Label& label, const juce::String& text)
-{
-    label.setText(text, juce::dontSendNotification);
-    label.setFont(juce::Font(juce::FontOptions(12.0f)));
-    label.setColour(juce::Label::textColourId, tokens::fgMuted);
-    label.setJustificationType(juce::Justification::topLeft);
-}
-
-void launch(juce::Component* content, const juce::String& title)
-{
-    DialogFrame::launchModal(title, std::unique_ptr<juce::Component>(content), false);
-}
-
 // The top every feature window shares: "Enable <feature>" and what it does,
 // with the options below greyed out while it's off. The switch follows
 // changes made elsewhere (another window, the menu bar).
@@ -59,7 +38,7 @@ public:
             ctx_.features.setEnabled(feature_, enable_.getToggleState());
             refreshOptions();
         };
-        styleHint(description_, description);
+        dialogstyle::hint(description_, description, juce::Justification::topLeft);
         addAndMakeVisible(enable_);
         addAndMakeVisible(description_);
         ctx_.features.addChangeListener(this);
@@ -120,7 +99,7 @@ public:
                        "Shows the transport (play, tempo, time signature and position) and lets keys, "
                        "mappings and MMC run it. Each patch keeps its own tempo.")
     {
-        styleCaption(newHeader_, "NEW PATCHES START AT");
+        dialogstyle::caption(newHeader_, "NEW PATCHES START AT");
         tempoLabel_.setText("Tempo", juce::dontSendNotification);
         tempo_.setSliderStyle(juce::Slider::IncDecButtons);
         tempo_.setRange(20.0, 300.0, 0.1);
@@ -144,7 +123,7 @@ public:
                                                       text.fromFirstOccurrenceOf("/", false, false).getIntValue());
         };
 
-        styleCaption(transportHeader_, "TRANSPORT");
+        dialogstyle::caption(transportHeader_, "TRANSPORT");
         mmc_.setToggleState(ctx_.transportCommands.isMmcEnabled(), juce::dontSendNotification);
         mmc_.setTooltip("Play, Stop, Pause and Rewind from a controller or another app run the transport");
         mmc_.onClick = [this]
@@ -244,7 +223,7 @@ public:
                        "Adds the Looper to Add Plugin and the plugin browser: record a phrase and play it back "
                        "as a loop. Each loop is also saved as a take.")
     {
-        styleCaption(folderCaption_, "NEW LOOPERS SAVE LOOPS IN");
+        dialogstyle::caption(folderCaption_, "NEW LOOPERS SAVE LOOPS IN");
         folder_.setColour(juce::Label::textColourId, tokens::fgPrimary);
         folder_.setMinimumHorizontalScale(0.6f);
         choose_.setTooltip("Choose the folder new Loopers save loops into");
@@ -326,17 +305,17 @@ std::unique_ptr<juce::Component> makeLooperSettingsPanel(AppContext& ctx)
 
 void showTempoSettingsWindow(AppContext& ctx)
 {
-    launch(makeTempoSettingsPanel(ctx).release(), "Tempo / BPM Settings");
+    dialogstyle::launch(makeTempoSettingsPanel(ctx).release(), "Tempo / BPM Settings");
 }
 
 void showMetronomeSettingsWindow(AppContext& ctx)
 {
-    launch(makeMetronomeSettingsPanel(ctx).release(), "Metronome Settings");
+    dialogstyle::launch(makeMetronomeSettingsPanel(ctx).release(), "Metronome Settings");
 }
 
 void showLooperSettingsWindow(AppContext& ctx)
 {
-    launch(makeLooperSettingsPanel(ctx).release(), "Looper Settings");
+    dialogstyle::launch(makeLooperSettingsPanel(ctx).release(), "Looper Settings");
 }
 
 } // namespace pedalboard3::ui

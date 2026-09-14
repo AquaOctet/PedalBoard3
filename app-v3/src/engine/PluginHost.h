@@ -21,19 +21,14 @@ struct InternalNodeType
 };
 
 // Thin facade over juce::AudioPluginFormatManager + KnownPluginList.
-//
-// Phase 1.C.3 scope:
-//   - Registers default plugin formats on construction (VST3 + AU + LV2
-//     + whatever juce_audio_processors ships with). CLAP support is added
-//     in Phase 1.F via a vendored juce_clap_hosting fork.
+//   - Registers the default plugin formats on construction: VST3, plus AU on
+//     macOS and LV2 on macOS and Linux.
 //   - Owns a KnownPluginList with reader/writer synchronisation so the
 //     UI thread and worker thread can read + mutate it safely.
-//   - Exposes synchronous directory scanning and single-instance
-//     creation — the minimum surface later layers (Phase 1.D patch
-//     build, Phase 3 plugin-list UI) need.
-//
-// Phase 1.C.4 will add sandboxed out-of-process scanning with a crash
-// list (plan AC-PL-2, AC-SE-23..26). Not in this slice.
+//   - Exposes synchronous directory scanning, single-instance creation and
+//     the built-in processors.
+// The scan that runs each plugin in its own process, so a crashing plugin
+// can't take the host down, is engine::PluginScanner, with pb3-scanner-helper.
 //
 // Not RT-safe; message-thread only. Scans hold the write lock for their
 // duration; readers block briefly during a scan. The audio thread never
@@ -70,8 +65,7 @@ public:
     // paths. juce::AudioUnitPluginFormat::searchPathsForPlugins() ignores the
     // FileSearchPath argument and enumerates EVERY AudioComponent the OS
     // knows about, so passing AU through alongside a VST3-only path will
-    // walk every installed AU plugin too. Phase 1.C.4 (sandboxed scanning)
-    // will be the proper isolation; until then, scope by format.
+    // walk every installed AU plugin too.
     int scanDirectory(const juce::FileSearchPath& path, const juce::StringArray& formatNames = {});
 
     // Convenience: scan every format's default OS paths, one format at a
@@ -136,8 +130,8 @@ public:
 
     // Create a single plugin instance. Returns nullptr and fills `errorOut`
     // on any failure (plugin missing, format unregistered, plugin ctor
-    // threw, etc.). Caller takes ownership; the Phase 1.D patch builder
-    // wraps the returned instance in a BypassableInstance.
+    // threw, etc.). Caller takes ownership; the patch builder
+    // (session::buildPreparedGraph) wraps it in a BypassableInstance.
     std::unique_ptr<juce::AudioPluginInstance> createInstance(const juce::PluginDescription& desc,
                                                               double sampleRate,
                                                               int blockSize,
@@ -160,19 +154,15 @@ public:
                                                                  int blockSize,
                                                                  juce::String& errorOut);
 
-    // Escape hatch for code that needs the raw JUCE format manager (e.g.
-    // JUCE's own PluginListComponent in a future settings dialog).
+    // Escape hatch for code that needs the raw JUCE format manager (JUCE's
+    // own PluginListComponent, in the Plugin List dialog).
     juce::AudioPluginFormatManager& getFormatManager() noexcept { return formats_; }
-
-    // The built-in processors' shared disk thread (M6 U6).
-    DiskThread& getDiskThread() noexcept { return diskThread_; }
 
     // Mutable reference to the underlying KnownPluginList. Intended for
     // JUCE's built-in PluginListComponent, which mutates the list as the
     // user adds/removes plugins through the UI. Message-thread-only —
     // the ReadWriteLock used by scanDirectory/getKnownPlugins is NOT
-    // held for UI edits. Phase 1.D revisits this when the patch-switch
-    // worker thread also needs to read the list.
+    // held for UI edits.
     juce::KnownPluginList& getKnownPluginList() noexcept { return knownList_; }
 
     // Path to the "dead man's pedal" file JUCE uses to remember which

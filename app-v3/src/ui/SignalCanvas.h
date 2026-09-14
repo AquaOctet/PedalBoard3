@@ -104,10 +104,6 @@ public:
     bool isInterestedInFileDrag(const juce::StringArray& files) override;
     void filesDropped(const juce::StringArray& files, int x, int y) override;
 
-    // The selected card (UI refresh U7): set by a click on a card, cleared by a
-    // click on empty canvas. The board mappings panel (U9) highlights its rows.
-    std::optional<NodeId> selectedNode() const noexcept { return selectedNode_; }
-
     // Select a card from outside the canvas (a row in the board mappings panel)
     // or clear the selection. onSelectionChanged fires on every change, from
     // either side.

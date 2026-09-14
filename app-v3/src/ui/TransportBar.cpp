@@ -27,7 +27,6 @@
 
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_processors/juce_audio_processors.h>
-#include <juce_audio_utils/juce_audio_utils.h>
 
 #include <algorithm>
 #include <functional>
@@ -59,9 +58,8 @@ constexpr int kGoToPatchBase = 1000;
 constexpr int kBoardFeatureBase = 500; // the board's feature switches, below kGoToPatchBase
 
 // Build a minimal graph that routes a TestToneProcessor straight to
-// the master output. Lifted from the previous MainWindow.cpp (the
-// transitional UI's onTestToneToggled handler). Prepared at the
-// current device's sample rate / buffer or 48k/512 fallback.
+// the master output, prepared at the current device's sample rate and
+// buffer size, or 48k/512 without a device.
 std::unique_ptr<juce::AudioProcessorGraph> buildTestToneGraph(juce::AudioDeviceManager& dm)
 {
     double sr = 48000.0;

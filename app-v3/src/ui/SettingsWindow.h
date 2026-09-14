@@ -20,8 +20,8 @@ namespace pedalboard3::ui
 // menu on the left of the top bar and from File > Settings. Each opens as a
 // dialog that owns its content.
 
-// The audio device and its channels (juce::AudioDeviceSelectorComponent), and
-// the Test Tone toggle. `testTone` is the top bar's shared on / off value, so
+// The audio device and its channels (ui::AudioSettingsPanel), and the Test
+// Tone toggle. `testTone` is the top bar's shared on / off value, so
 // the dialog, the Settings menu and the tone itself stay in step.
 void showAudioDevicesWindow(AppContext& ctx, juce::Value& testTone);
 

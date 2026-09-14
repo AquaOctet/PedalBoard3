@@ -1,5 +1,6 @@
 #include "FilePlayerWindow.h"
 
+#include "CardText.h"
 #include "ColourScheme.h"
 #include "engine/processors/FilePlayerProcessor.h"
 #include "session/Session.h"
@@ -18,12 +19,6 @@ juce::RangedAudioParameter* boolParameter(juce::AudioProcessor& processor, const
         if (auto* b = dynamic_cast<juce::AudioParameterBool*>(p); b != nullptr && b->paramID == id)
             return b;
     return nullptr;
-}
-
-juce::String minutesAndSeconds(double seconds)
-{
-    const int whole = juce::roundToInt(seconds);
-    return juce::String(whole / 60) + ":" + juce::String(whole % 60).paddedLeft('0', 2);
 }
 } // namespace
 
@@ -91,7 +86,8 @@ void FilePlayerEditor::timerCallback()
     else if (file == juce::File())
         info = "Choose a file, or drop one on the canvas.";
     else
-        info = minutesAndSeconds(player_.getLengthSeconds()) + "   " + file.getParentDirectory().getFullPathName();
+        info =
+            card::minutesAndSeconds(player_.getLengthSeconds()) + "   " + file.getParentDirectory().getFullPathName();
     infoLabel_.setText(info, juce::dontSendNotification);
 }
 

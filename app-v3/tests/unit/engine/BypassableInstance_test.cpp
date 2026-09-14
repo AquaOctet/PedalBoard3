@@ -1,7 +1,7 @@
 // Tests for pedalboard3::engine::BypassableInstance -- the ramped-bypass
-// wrapper around a hosted plugin. Phase 1.A scope: forward pass, ramped
-// bypass in both directions, MIDI channel filter, CPU metering. SEH/signal
-// crash isolation and the watchdog timer arrive in Phase 1.B.
+// wrapper around a hosted plugin: forward pass, ramped bypass in both
+// directions, MIDI channel filter, CPU metering. The watchdog has its own
+// file (BypassableInstance_watchdog_test.cpp).
 
 #include <catch2/catch_test_macros.hpp>
 

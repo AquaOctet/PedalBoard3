@@ -59,6 +59,10 @@ control::OscMapping defaultOscMapping(session::NodeId node, int ordinal);
 // live processor. Reads the hosted processor, so call it while Session is idle.
 juce::StringArray parameterNamesOf(session::Session&, session::NodeId);
 
+// An integer value bar (a CC number, an OSC argument), as the mapping rows and
+// the App Mappings rows show it.
+void configureIntSlider(juce::Slider& s, int minValue, int maxValue, int value, const juce::String& tooltip);
+
 class MidiMappingRow : public juce::Component
 {
 public:

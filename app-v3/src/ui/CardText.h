@@ -114,4 +114,12 @@ inline juce::String looperStatus(bool recording, bool playing, bool hasLoop)
     return juce::String(juce::CharPointer_UTF8("\xe2\x80\x94"));
 }
 
+// A play time as the cards and the File Player window show it: m:ss, rounded
+// down (59.6 s is 0:59, as a clock shows it), and never negative.
+inline juce::String minutesAndSeconds(double seconds)
+{
+    const int whole = static_cast<int>(std::floor(juce::jmax(0.0, seconds)));
+    return juce::String(whole / 60) + ":" + juce::String(whole % 60).paddedLeft('0', 2);
+}
+
 } // namespace pedalboard3::ui::card

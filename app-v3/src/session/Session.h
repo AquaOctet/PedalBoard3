@@ -322,14 +322,13 @@ public:
     bool isNodeBypassed(NodeId) const noexcept;
     int getNodeCount() const noexcept;
 
-    // ---- Polling primitives (lock-free / wait-event) -----------------------
+    // ---- Polling primitives (lock-free) ------------------------------------
 
     State getState() const noexcept { return state_.load(std::memory_order_acquire); }
     std::uint64_t getStateVersion() const noexcept { return stateVersion_.load(std::memory_order_acquire); }
     Status getStatus() const;
     juce::String getLastError() const;
 
-    bool waitForIdle(int timeoutMs);
     void dispatchPendingResult();
 
 private:
@@ -423,8 +422,6 @@ private:
     // (crash-hunt #7 identity guard). Requires statusMutex_.
     void stopListeningToLiveNodes();
 
-    static int stereoChannel(int ch) noexcept { return ch; }
-
     engine::AudioEngine& engine_;
     engine::PluginHost& host_;
     BuildFn buildFn_;
@@ -459,7 +456,6 @@ private:
     std::atomic<std::uint64_t> stateVersion_{0};
     std::atomic<std::uint64_t> patchGeneration_{0};
     std::atomic<std::uint64_t> mappingsRevision_{0};
-    juce::WaitableEvent idleEvent_{true /*manual reset*/};
     juce::ChangeBroadcaster parameterEdits_;
 
     std::unique_ptr<Worker> worker_;

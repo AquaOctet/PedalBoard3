@@ -6,9 +6,9 @@
 #   - No I/O on the audio thread.
 #   - Every processBlock implementation opens with `juce::ScopedNoDenormals nodn`.
 #
-# Phase 1.A: graph-swap primitive + BypassableInstance + OutputSanitiser.
-# Phase 1.B: SEH/signal crash isolation on top of BypassableInstance.
-# Phase 1.C: PluginHost + PluginScanner.
+# Here: the graph-swap runtime, BypassableInstance and its crash isolation,
+# OutputSanitiser, PluginHost and PluginScanner, the transport, and the
+# built-in processors.
 #
 # Built as a STATIC library (pb3_engine_core) so our strict warning flags
 # apply only to our own sources. JUCE 8 declares modules as INTERFACE
@@ -35,6 +35,8 @@ add_library(pb3_engine_core STATIC
     PluginHost.h
     PluginScanner.cpp
     PluginScanner.h
+    ScanInMessageLoop.h
+    ScanProtocol.h
     processors/LevelProcessor.cpp
     processors/OutputToggleProcessor.cpp
     processors/FilePlayerProcessor.cpp

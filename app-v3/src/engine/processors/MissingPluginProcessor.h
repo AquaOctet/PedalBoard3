@@ -19,7 +19,6 @@ public:
     MissingPluginProcessor(juce::PluginDescription identity, juce::String reason, juce::MemoryBlock state);
 
     const juce::String getName() const override { return identity_.name; }
-    const juce::PluginDescription& getIdentity() const noexcept { return identity_; }
     // Why it's a placeholder, as the card says it.
     const juce::String& getReason() const noexcept { return reason_; }
 

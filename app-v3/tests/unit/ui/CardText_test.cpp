@@ -116,3 +116,12 @@ TEST_CASE("CardText: a plugin that died says Crashed or Stopped, and what a clic
     REQUIRE(ui::card::linesFor(stalled, 0).kind ==
             "Too slow for the audio block" + ui::card::kDot + "click to restart");
 }
+
+TEST_CASE("CardText: play times read m:ss, rounded down and never negative", "[ui][card]")
+{
+    REQUIRE(ui::card::minutesAndSeconds(0.0) == "0:00");
+    REQUIRE(ui::card::minutesAndSeconds(59.6) == "0:59");
+    REQUIRE(ui::card::minutesAndSeconds(61.0) == "1:01");
+    REQUIRE(ui::card::minutesAndSeconds(3600.0) == "60:00");
+    REQUIRE(ui::card::minutesAndSeconds(-3.0) == "0:00");
+}

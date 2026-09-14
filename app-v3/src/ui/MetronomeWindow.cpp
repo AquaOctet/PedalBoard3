@@ -1,6 +1,7 @@
 #include "MetronomeWindow.h"
 
 #include "ColourScheme.h"
+#include "DialogStyle.h"
 #include "engine/processors/MetronomeProcessor.h"
 #include "session/Session.h"
 
@@ -22,12 +23,6 @@ Parameter* parameterOf(juce::AudioProcessor& processor, const juce::String& id)
     return nullptr;
 }
 
-void styleCaption(juce::Label& label, const juce::String& text)
-{
-    label.setText(text, juce::dontSendNotification);
-    label.setColour(juce::Label::textColourId, tokens::fgMuted);
-}
-
 juce::String sampleText(const juce::File& file)
 {
     return file == juce::File() ? juce::String("Built-in click") : file.getFileName();
@@ -37,13 +32,13 @@ juce::String sampleText(const juce::File& file)
 MetronomeEditor::MetronomeEditor(AppContext& ctx, engine::processors::MetronomeProcessor& metronome)
     : juce::AudioProcessorEditor(metronome), ctx_(ctx), metronome_(metronome)
 {
-    styleCaption(beatsLabel_, "Beats per bar");
+    dialogstyle::fieldLabel(beatsLabel_, "Beats per bar");
     beats_.setSliderStyle(juce::Slider::IncDecButtons);
     beats_.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 44, kRow - 4);
-    styleCaption(noteLabel_, "Note value");
+    dialogstyle::fieldLabel(noteLabel_, "Note value");
     for (const auto* value : {"1", "2", "4", "8", "16"})
         note_.addItem(value, note_.getNumItems() + 1);
-    styleCaption(levelLabel_, "Level");
+    dialogstyle::fieldLabel(levelLabel_, "Level");
     level_.setSliderStyle(juce::Slider::LinearHorizontal);
     level_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 70, kRow - 4);
     level_.setTextValueSuffix(" dB");
