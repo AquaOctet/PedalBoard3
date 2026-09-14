@@ -16,6 +16,7 @@
 #include "control/OscServer.h"
 #include "engine/AudioEngine.h"
 #include "engine/PluginHost.h"
+#include "session/AppCommands.h"
 #include "session/AppMappings.h"
 #include "session/BankDocument.h"
 #include "session/ControlHub.h"
@@ -27,6 +28,7 @@
 #include "session/TransportCommands.h"
 #include "ui/AboutWindow.h"
 #include "ui/Alert.h"
+#include "ui/AppMappingsWindow.h"
 #include "ui/BankSidebar.h"
 #include "ui/ColourScheme.h"
 #include "ui/DialogFrame.h"
@@ -367,13 +369,14 @@ int main(int argc, char** argv)
             {"dialog-plugin-list",
              [&]
              {
-                 return sized(std::make_unique<juce::PluginListComponent>(rig.pluginHost.getFormatManager(),
-                                                                          rig.pluginHost.getKnownPluginList(),
-                                                                          scratch.getChildFile("crashed_plugins.xml"),
-                                                                          nullptr,
-                                                                          false),
-                              720,
-                              520);
+                 auto list = std::make_unique<juce::PluginListComponent>(rig.pluginHost.getFormatManager(),
+                                                                         rig.pluginHost.getKnownPluginList(),
+                                                                         scratch.getChildFile("crashed_plugins.xml"),
+                                                                         nullptr,
+                                                                         false);
+                 list->getTableListBox().setRowHeight(28); // as TransportBar opens it (UI chrome U7)
+                 list->getTableListBox().setHeaderHeight(28);
+                 return sized(std::move(list), 720, 520);
              }},
         };
         for (const auto& [name, make] : dialogs)
@@ -381,6 +384,29 @@ int main(int argc, char** argv)
             const auto content = make();
             out.addDialog(name, dialogTitle(name), *content);
         }
+
+        // App Mappings, with the app's commands registered as MainWindow
+        // describes them (a few of their default keys), so the Keyboard tab
+        // has rows (UI chrome U7).
+        juce::ApplicationCommandManager commands;
+        for (const auto& command : session::kAppCommands)
+        {
+            const juce::String id(command.id);
+            const auto prefix = id.upToFirstOccurrenceOf(".", false, false);
+            juce::ApplicationCommandInfo info(command.juceCommandId);
+            info.setInfo(command.name, command.name, prefix.substring(0, 1).toUpperCase() + prefix.substring(1), 0);
+            if (id == session::appcommands::kNextPatch)
+                info.addDefaultKeypress(juce::KeyPress::pageDownKey, juce::ModifierKeys());
+            else if (id == session::appcommands::kPreviousPatch)
+                info.addDefaultKeypress(juce::KeyPress::pageUpKey, juce::ModifierKeys());
+            else if (id == session::appcommands::kSave)
+                info.addDefaultKeypress('s', juce::ModifierKeys::commandModifier);
+            else if (id == session::appcommands::kPlayPause)
+                info.addDefaultKeypress(juce::KeyPress::spaceKey, juce::ModifierKeys());
+            commands.registerCommand(info);
+        }
+        const auto appMappings = ui::makeAppMappingsContent(rig.context, *commands.getKeyMappings());
+        out.addDialog("dialog-app-mappings", "App Mappings", *appMappings);
 
         // Alerts, as the app raises them (UI chrome U5).
         using ui::alert::Role;

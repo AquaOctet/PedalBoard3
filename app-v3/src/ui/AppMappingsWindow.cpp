@@ -455,18 +455,26 @@ private:
 
 } // namespace
 
+std::unique_ptr<juce::Component> makeAppMappingsContent(AppContext& ctx, juce::KeyPressMappingSet& keyMappings)
+{
+    auto tabs = std::make_unique<juce::TabbedComponent>(juce::TabbedButtonBar::TabsAtTop);
+    auto keys = std::make_unique<juce::KeyMappingEditorComponent>(keyMappings, true);
+    // It copies its background into its tree when it's built, before it's in
+    // the dialog, so it's told the dialog's colours (UI chrome U7).
+    keys->setColours(tokens::bgWindow, tokens::fgMenu);
+    tabs->addTab("Keyboard", tokens::bgWindow, keys.release(), true);
+    tabs->addTab("MIDI / OSC", tokens::bgWindow, new AppControlsPanel(ctx), true);
+    tabs->setSize(760, 460);
+    return tabs;
+}
+
 AppMappingsWindow::AppMappingsWindow(AppContext& ctx,
                                      juce::KeyPressMappingSet& keyMappings,
                                      std::function<void()> onClose)
     : DialogFrame("App Mappings"), onClose_(std::move(onClose))
 {
-    auto* tabs = new juce::TabbedComponent(juce::TabbedButtonBar::TabsAtTop);
-    tabs->addTab("Keyboard", tokens::bgWindow, new juce::KeyMappingEditorComponent(keyMappings, true), true);
-    tabs->addTab("MIDI / OSC", tokens::bgWindow, new AppControlsPanel(ctx), true);
-    tabs->setSize(760, 460);
-
     setResizable(true, false);
-    setContentOwned(tabs, true);
+    setContentOwned(makeAppMappingsContent(ctx, keyMappings).release(), true);
     setResizeLimits(560, 300, 1600, 1200);
     centreWithSize(getWidth(), getHeight());
     setVisible(true);

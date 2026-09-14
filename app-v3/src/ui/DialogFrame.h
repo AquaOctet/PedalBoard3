@@ -63,8 +63,13 @@ public:
     void closeButtonPressed() override;
     bool keyPressed(const juce::KeyPress&) override;
 
+    // New content gets a LookAndFeel change: it was built, and may have laid
+    // itself out (tab widths, say), before it was in the frame, with the app's.
+    void childrenChanged() override;
+
 private:
     std::unique_ptr<Pb3DialogLookAndFeel> lookAndFeel_;
+    juce::Component::SafePointer<juce::Component> lastContent_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DialogFrame)
 };

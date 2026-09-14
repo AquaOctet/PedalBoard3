@@ -581,6 +581,23 @@ Pb3DialogLookAndFeel::Pb3DialogLookAndFeel()
     setColour(juce::TabbedComponent::outlineColourId, juce::Colours::transparentBlack);
     setColour(juce::TabbedButtonBar::tabOutlineColourId, juce::Colours::transparentBlack);
     setColour(juce::TabbedButtonBar::frontOutlineColourId, juce::Colours::transparentBlack);
+
+    // Tables, lists and trees (UI chrome U7). JUCE's Plugin List shades a
+    // selected row halfway between these two.
+    setColour(juce::ListBox::backgroundColourId, tokens::bgWindow);
+    setColour(juce::ListBox::textColourId, tokens::fgMenu);
+    setColour(juce::ListBox::outlineColourId, juce::Colours::transparentBlack);
+    setColour(juce::TableHeaderComponent::backgroundColourId, tokens::bgWindow);
+    setColour(juce::TableHeaderComponent::textColourId, tokens::fgSubtle);
+    setColour(juce::TableHeaderComponent::outlineColourId, tokens::borderDefault);
+    setColour(juce::TableHeaderComponent::highlightColourId, tokens::bgSecondary);
+    setColour(juce::TreeView::backgroundColourId, tokens::bgWindow);
+    setColour(juce::TreeView::linesColourId, tokens::borderDefault);
+    setColour(juce::TreeView::selectedItemBackgroundColourId, tokens::bgSecondary);
+    setColour(juce::TreeView::oddItemsColourId, juce::Colours::transparentBlack);
+    setColour(juce::TreeView::evenItemsColourId, juce::Colours::transparentBlack);
+    setColour(juce::KeyMappingEditorComponent::backgroundColourId, tokens::bgWindow);
+    setColour(juce::KeyMappingEditorComponent::textColourId, tokens::fgMenu);
 }
 
 void Pb3DialogLookAndFeel::drawButtonBackground(juce::Graphics& g,
@@ -788,5 +805,110 @@ void Pb3DialogLookAndFeel::drawTabbedButtonBarBackground(juce::TabbedButtonBar& 
 }
 
 void Pb3DialogLookAndFeel::drawTabAreaBehindFrontButton(juce::TabbedButtonBar&, juce::Graphics&, int, int) {}
+
+void Pb3DialogLookAndFeel::drawTableHeaderBackground(juce::Graphics& g, juce::TableHeaderComponent& header)
+{
+    g.fillAll(header.findColour(juce::TableHeaderComponent::backgroundColourId));
+    g.setColour(header.findColour(juce::TableHeaderComponent::outlineColourId));
+    g.fillRect(header.getLocalBounds().removeFromBottom(1));
+}
+
+void Pb3DialogLookAndFeel::drawTableHeaderColumn(juce::Graphics& g,
+                                                 juce::TableHeaderComponent& header,
+                                                 const juce::String& columnName,
+                                                 int /*columnId*/,
+                                                 int width,
+                                                 int height,
+                                                 bool isMouseOver,
+                                                 bool isMouseDown,
+                                                 int columnFlags)
+{
+    if (isMouseDown || isMouseOver)
+        g.fillAll(header.findColour(juce::TableHeaderComponent::highlightColourId)
+                      .withMultipliedAlpha(isMouseDown ? 1.0f : 0.6f));
+
+    auto area = juce::Rectangle<int>(width, height).reduced(10, 0).withTrimmedBottom(1);
+    const bool forwards = (columnFlags & juce::TableHeaderComponent::sortedForwards) != 0;
+    const bool sorted = forwards || (columnFlags & juce::TableHeaderComponent::sortedBackwards) != 0;
+    if (sorted)
+    {
+        // A small triangle: up sorted forwards, down backwards.
+        const auto box = area.removeFromRight(10).toFloat().withSizeKeepingCentre(7.0f, 4.0f);
+        juce::Path arrow;
+        if (forwards)
+            arrow.addTriangle(
+                box.getX(), box.getBottom(), box.getRight(), box.getBottom(), box.getCentreX(), box.getY());
+        else
+            arrow.addTriangle(box.getX(), box.getY(), box.getRight(), box.getY(), box.getCentreX(), box.getBottom());
+        g.setColour(tokens::fgSubtle);
+        g.fillPath(arrow);
+    }
+
+    g.setFont(fonts::caption(11.0f));
+    g.setColour(sorted ? tokens::fgMenu : header.findColour(juce::TableHeaderComponent::textColourId));
+    g.drawFittedText(columnName.toUpperCase(), area, juce::Justification::centredLeft, 1);
+}
+
+void Pb3DialogLookAndFeel::drawKeymapChangeButton(
+    juce::Graphics& g, int width, int height, juce::Button& button, const juce::String& keyDescription)
+{
+    const bool lit = button.isEnabled() && (button.isOver() || button.isDown());
+    const auto area = juce::Rectangle<int>(width, height).toFloat().reduced(1.0f, 2.0f);
+
+    if (keyDescription.isNotEmpty())
+    {
+        // A key as a small field, in mono.
+        g.setColour(lit ? tokens::bgSecondary.brighter(0.08f) : tokens::bgSecondary);
+        g.fillRoundedRectangle(area, 4.0f);
+        g.setFont(fonts::mono(11.0f));
+        g.setColour(tokens::fgField.withMultipliedAlpha(button.isEnabled() ? 1.0f : 0.5f));
+        g.drawFittedText(keyDescription, area.toNearestInt().reduced(4, 0), juce::Justification::centred, 1);
+    }
+    else
+    {
+        // Add a key: a quiet plus.
+        if (lit)
+        {
+            g.setColour(tokens::bgSecondary);
+            g.fillRoundedRectangle(area, 4.0f);
+        }
+        const auto plus = area.withSizeKeepingCentre(9.0f, 9.0f);
+        juce::Path path;
+        path.addLineSegment({plus.getCentreX(), plus.getY(), plus.getCentreX(), plus.getBottom()}, 1.4f);
+        path.addLineSegment({plus.getX(), plus.getCentreY(), plus.getRight(), plus.getCentreY()}, 1.4f);
+        g.setColour(lit ? tokens::fgPrimary : tokens::fgSubtle);
+        g.fillPath(path);
+    }
+
+    if (button.hasKeyboardFocus(false))
+    {
+        g.setColour(tokens::accentPrimary.withAlpha(0.6f));
+        g.drawRoundedRectangle(area, 4.0f, 1.0f);
+    }
+}
+
+void Pb3DialogLookAndFeel::drawTreeviewPlusMinusBox(juce::Graphics& g,
+                                                    const juce::Rectangle<float>& area,
+                                                    juce::Colour /*backgroundColour*/,
+                                                    bool isOpen,
+                                                    bool isMouseOver)
+{
+    // A chevron, pointing right while closed and down while open.
+    const auto box = area.withSizeKeepingCentre(8.0f, 8.0f);
+    juce::Path chevron;
+    if (isOpen)
+        chevron.addTriangle(
+            box.getX(), box.getY() + 2.0f, box.getRight(), box.getY() + 2.0f, box.getCentreX(), box.getBottom() - 1.0f);
+    else
+        chevron.addTriangle(
+            box.getX() + 2.0f, box.getY(), box.getX() + 2.0f, box.getBottom(), box.getRight() - 1.0f, box.getCentreY());
+    g.setColour(isMouseOver ? tokens::fgPrimary : tokens::fgSubtle);
+    g.fillPath(chevron);
+}
+
+bool Pb3DialogLookAndFeel::areLinesDrawnForTreeView(juce::TreeView&)
+{
+    return false;
+}
 
 } // namespace pedalboard3::ui
