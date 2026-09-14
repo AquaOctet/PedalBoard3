@@ -44,6 +44,11 @@ public:
     Preferences();
     // The settings live in `settingsFile` rather than the user's (tests).
     explicit Preferences(juce::File settingsFile);
+
+    // The user's settings file, which Preferences() opens (%APPDATA%\Pedalboard
+    // 3\Pedalboard 3.settings on Windows). Tests never open it: they pass a file of
+    // their own, and tests/support/RealSettingsGuard fails a run that changes it.
+    static juce::File defaultSettingsFile();
     ~Preferences() override;
 
     // Hand to JUCE components that take a PropertiesFile* (e.g.

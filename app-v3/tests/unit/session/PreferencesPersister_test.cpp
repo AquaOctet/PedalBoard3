@@ -9,11 +9,10 @@
 // written it to disk. PreferencesPersister calls prefs_.flush() right
 // after setKnownPluginList() to make the blacklist crash-durable.
 //
-// We can't easily redirect JUCE's storage path, so these tests touch
-// the developer's real user settings file under a synthetic key/value
-// nobody else writes. Each test scrubs after itself; if a test aborts
-// the next run starts clean because the synthetic basename never
-// matches anything outside this file.
+// Each test gives Preferences a settings file of its own in a temp folder
+// (support/TempSettings.h). These tests used to write the developer's real
+// settings and scrub the plugin list, session and app mappings out of it
+// after every test.
 //
 // Catch2 + JUCE timing: KnownPluginList::addToBlacklist calls
 // sendChangeMessage (async, requires a MessageManager). Tests don't
@@ -30,6 +29,7 @@
 #include "session/Preferences.h"
 #include "session/PreferencesPersister.h"
 #include "session/Session.h"
+#include "support/TempSettings.h"
 
 #include <juce_data_structures/juce_data_structures.h>
 
@@ -39,32 +39,6 @@ namespace
 {
 
 constexpr auto kSyntheticBlacklistPath = "/test/pb3-persister-synthetic-blacklist.vst3";
-
-// Best-effort cleanup helper for tests that scribble on the user's
-// real preferences file. Drops the keys our tests touch on construction
-// AND destruction so a previously aborted test can't poison the run.
-struct PrefsScrubber
-{
-    explicit PrefsScrubber(session::Preferences& p) : prefs_(p) { scrub(); }
-    ~PrefsScrubber() { scrub(); }
-
-    void scrub()
-    {
-        if (auto* store = prefs_.getStore())
-        {
-            store->removeValue("knownPluginList");
-            store->removeValue("activePluginDescription");
-            store->removeValue("activePatch");
-            store->removeValue("activeBank");
-            store->removeValue("appMappings");
-            store->removeValue("activeBankFile");
-            store->removeValue("activeBankModified");
-        }
-        prefs_.flush();
-    }
-
-    session::Preferences& prefs_;
-};
 
 // True iff the given KnownPluginList XML carries `path` in its
 // <BLACKLISTED id="..."> children. Schema per
@@ -86,8 +60,8 @@ bool xmlContainsBlacklistEntry(const juce::XmlElement& list, const juce::String&
 TEST_CASE("PreferencesPersister: a KnownPluginList change writes XML and eagerly flushes",
           "[session][preferences-persister]")
 {
-    session::Preferences prefs;
-    PrefsScrubber scrub{prefs};
+    pb3test::TempSettings settings;
+    session::Preferences prefs(settings.file());
 
     engine::AudioEngine eng;
     eng.initialise();
@@ -118,7 +92,7 @@ TEST_CASE("PreferencesPersister: a KnownPluginList change writes XML and eagerly
     // relied on lazy auto-save, the new instance would either see
     // nothing or see an older snapshot.
     {
-        session::Preferences fresh;
+        session::Preferences fresh(settings.file());
         auto reread = fresh.getKnownPluginList();
         REQUIRE(reread != nullptr);
         REQUIRE(xmlContainsBlacklistEntry(*reread, kSyntheticBlacklistPath));
@@ -128,8 +102,8 @@ TEST_CASE("PreferencesPersister: a KnownPluginList change writes XML and eagerly
 TEST_CASE("PreferencesPersister: change before construction is ignored, change after is captured",
           "[session][preferences-persister]")
 {
-    session::Preferences prefs;
-    PrefsScrubber scrub{prefs};
+    pb3test::TempSettings settings;
+    session::Preferences prefs(settings.file());
 
     engine::AudioEngine eng;
     eng.initialise();
@@ -173,8 +147,8 @@ TEST_CASE("PreferencesPersister: change before construction is ignored, change a
 TEST_CASE("PreferencesPersister: lifetime -- outliving the persister with a Session change is safe",
           "[session][preferences-persister][lifetime]")
 {
-    session::Preferences prefs;
-    PrefsScrubber scrub{prefs};
+    pb3test::TempSettings settings;
+    session::Preferences prefs(settings.file());
 
     engine::AudioEngine eng;
     eng.initialise();
@@ -198,8 +172,8 @@ TEST_CASE("PreferencesPersister: lifetime -- outliving the persister with a Sess
 TEST_CASE("PreferencesPersister: an AppMappings change writes the app mappings to Preferences",
           "[session][preferences-persister][app-mappings]")
 {
-    session::Preferences prefs;
-    PrefsScrubber scrub{prefs};
+    pb3test::TempSettings settings;
+    session::Preferences prefs(settings.file());
 
     engine::AudioEngine eng;
     eng.initialise();

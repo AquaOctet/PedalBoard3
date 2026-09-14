@@ -20,6 +20,7 @@
 #include "session/BankDocument.h"
 #include "session/EditHistory.h"
 #include "session/Preferences.h"
+#include "session/PreparedGraph.h"
 #include "session/Session.h"
 #include "SettingsWindow.h"
 #include "SignalCanvas.h"
@@ -576,6 +577,30 @@ void TransportBar::openPluginList()
 namespace
 {
 
+// After a scan: the open board's plugins that weren't in the scanned list
+// (placeholders, "Not found: install it, or scan for plugins") and now are get
+// loaded. The board keeps its file and unsaved state, and each plugin its saved
+// settings (a placeholder holds them). Returns how many were loaded.
+int loadNewlyFoundPlugins(AppContext& ctx)
+{
+    auto& doc = ctx.bankDocument;
+    auto bank = doc.snapshotForSave();
+    const int before = session::unresolvedNodeCount(bank);
+    if (before == 0)
+        return 0;
+    const int after = session::resolvePluginNodes(bank, ctx.pluginHost);
+    if (after >= before)
+        return 0;
+    session::dropUnsafeNodes(bank, ctx.pluginHost);
+
+    const auto file = doc.currentFile();
+    const bool modified = doc.isModified();
+    const bool readOnly = doc.isReadOnly();
+    doc.loadBank(std::move(bank), file, readOnly);
+    doc.restoreIdentity(file, modified, readOnly);
+    return before - after;
+}
+
 // Self-deleting ThreadWithProgressWindow that owns its own PluginScanner
 // and posts the post-scan summary on the message thread. We can't use
 // ThreadWithProgressWindow::runThread() — that's gated by
@@ -641,6 +666,8 @@ public:
             ctx_.preferences.setKnownPluginList(*xml);
         ctx_.preferences.flush();
 
+        const int loaded = loadNewlyFoundPlugins(ctx_);
+
         const auto& blacklist = ctx_.pluginHost.getKnownPluginList().getBlacklistedFiles();
         juce::String summary;
         if (userPressedCancel)
@@ -669,6 +696,9 @@ public:
             if (const int n = countOf(outcome); n > 0)
                 summary += juce::String(label) + ": " + juce::String(n) + "\n";
         summary += "On the blacklist: " + juce::String(blacklist.size());
+        if (loaded > 0)
+            summary += "\n\nLoaded " + juce::String(loaded) + (loaded == 1 ? " plugin" : " plugins") +
+                       " this board was missing.";
 
         alert::show(alert::message(userPressedCancel ? "Scan cancelled" : "Scan complete", summary));
 
