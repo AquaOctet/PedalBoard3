@@ -88,12 +88,31 @@ make release     # optimized preset for the host OS
 ./build.ps1 test                   # build + ctest
 ./build.ps1 run                    # launch the built app
 ./build.ps1 snapshots              # render every menu and dialog to build/ui-snapshots
+./build.ps1 package                # release build, then the portable zip (and the installer, with Inno Setup)
 ./build.ps1 configure              # configure only
 ./build.ps1 clean                  # remove this config's build folder
 ```
 
 `make` on Windows still needs a VS developer shell (it can't load the VS env);
 prefer `build.ps1` there.
+
+### macOS
+
+- **Setup:** Xcode's command-line tools (`xcode-select --install`) and
+  `brew install cmake ninja just pkg-config`, then `just build`, `just test`
+  and `just run`. The handoff doc (`docs/status/2026-09-14-handoff.md`) has the
+  whole list, including glab and the Claude Code plugins.
+- **What differs on a Mac:**
+  - The crash guard is off (M5 KD1), so a plugin that crashes takes the app
+    down.
+  - The app has a real menu bar (`MainWindow` is the MenuBarModel): File,
+    Edit, Settings, Plugins and Window, with About in the app menu.
+  - Audio Units, AUv3 included, scan inside the helper's message loop
+    (`engine/ScanInMessageLoop.h`).
+  - Fonts load through CoreText. See "Cross-platform gotchas".
+- **UI snapshots:** after a build, run
+  `build/macos-dev/src/pb3-ui-snapshots_artefacts/Debug/pb3-ui-snapshots build/ui-snapshots`.
+- **The macOS package:** `just release`, then `tools/package.sh build/macos-universal`.
 
 ### Windows: ASIO (optional low-latency drivers, SDK-gated)
 
@@ -121,11 +140,51 @@ Without the SDK, Windows builds use WASAPI/DirectSound only (no error).
   it took: the next `build:windows` log prints
   `Pedalboard 3: ASIO SDK found … — enabling JUCE_ASIO=1`.
 
+## Working agreement
+
+The maintainer's standing rules. They apply on every machine. Agent memory
+doesn't move between machines, so the rules live here.
+
+- **A human merges.** Agents never merge an MR, push `main`, force-push,
+  tag, release or sign.
+- **The issue comes first.** File or find the issue before opening an MR, and
+  put `Closes #N` in the MR's first description, because MRs are often
+  merged within minutes.
+- **GitLab changes other than the branch push and the MR need the
+  maintainer's OK.** That covers new issues, notes on issues, milestones,
+  labels and starting pipelines.
+- **Ship through `ship-mr`** (see `CLAUDE.md`): push the feature branch, open
+  or update the MR, then watch its pipeline.
+- **Report every CI job.** A pipeline says "success" even when an
+  `allow_failure` job (Windows, macOS) failed. List every job, retried ones
+  included, before saying CI passed. Manual release jobs on main are
+  expected, not errors.
+- **Releases are made by hand, from main only.** Merge requests have no
+  release jobs and there are no tag pipelines. Starting a main pipeline or
+  clicking a release job needs the maintainer's say-so
+  (`docs/releases/README.md`).
+- **A merge to main starts no pipeline.** Judge a merged change by its MR's
+  pipeline; don't wait for one on main.
+- **Don't install software on the maintainer's machine without asking.**
+  Installing in CI is fine.
+- **Tests never touch real user data.** They use
+  `tests/support/TempSettings.h`, and `RealSettingsGuard` fails a run that
+  changes the real settings. If it fires, find the test that opened the real
+  file; don't loosen the guard.
+- **Stacked MRs:** one merged before its parent lands in the parent's
+  branch, not main. Say so when handing over a stack. Merge main into a
+  branch to update it; never rebase or force-push a pushed branch.
+- **Don't click system dialogs the app raises** (a firewall prompt, for
+  example). Report them to the maintainer.
+- **On Windows, check that the app isn't running before a release rebuild**
+  (`Get-Process 'Pedalboard 3'`). If it is, the link fails with `LNK1168`.
+  Never kill the maintainer's copy.
+
 ## What an agent may run without confirmation
 
 - `cmake --preset linux-*`, `cmake --build`, `ctest`
 - `just build`, `just test`, `just format`
-- `./build.ps1 build`, `./build.ps1 test`, `./build.ps1 snapshots` (Windows)
+- `./build.ps1 build`, `./build.ps1 test`, `./build.ps1 snapshots`, `./build.ps1 package` (Windows)
 - `git status`, `git diff`, `git log`
 - `grep`, `rg`, `glob`
 - Edits anywhere under `app-v3/` and `docs/`
@@ -142,8 +201,8 @@ Without the SDK, Windows builds use WASAPI/DirectSound only (no error).
 
 ## Agent-native verification matrix
 
-What an agent on this Linux dev server can verify, plus what a human can do
-on a local Mac, vs. what still needs the Windows QA desktop:
+What CI and an agent can check on each kind of machine, and what needs a
+person at a Windows PC:
 
 | Verifiable on Linux dev (CI + agent) | Verifiable on macOS (local dev Mac) | Requires Windows QA |
 |---|---|---|
@@ -175,6 +234,34 @@ audio drivers and the Windows crash guard (structured exception handling,
   `chore(ci):`, `docs(plan):`). Keep the first line under 72 chars.
 - **Tests:** mirror `src/` structure under `tests/unit/` with `_test.cpp` suffix.
 
+## Cross-platform gotchas
+
+Code that builds on one platform can fail on another. Each of these cost a CI
+round:
+
+- **64-bit integer spellings.** `juce::int64` is `long long`, but
+  `std::int64_t` is `long` on Linux. So `juce::jmin(reader->lengthInSamples,
+  someInt64)` fails there. Spell out the type: `juce::jmin<std::int64_t>(...)`.
+  The same goes for `jmax`, `jlimit`, `std::min` and `std::max`.
+- **libc names.** A free function called `signal`, `time`, `index` or
+  `select` collides with libc on Linux and macOS. Use distinct names.
+- **clang-format versions.** CI's `lint:format` uses the Linux image's
+  clang-format 18, and other versions format a few constructs differently.
+  For example, declare `struct sigaction` through
+  `using SigAction = struct sigaction;` rather than `struct sigaction name{};`.
+  CI is the judge.
+- **GCC folds `1 / x`.** To provoke SIGFPE in a test, make both operands
+  `volatile`.
+- **Typeface names.** On Windows, a memory-loaded font reports its WWS
+  family: "Barlow" with style "Semi Condensed Bold". CoreText and FreeType
+  keep "Barlow Semi Condensed". Match on `getName() + " " + getStyle()`.
+- **Windows builds go through `./build.ps1`,** which loads the Visual Studio
+  environment. A bare `cmake --build` fails, and ctest then runs an old
+  binary.
+- **MSVC `C2471: cannot update program database`** during a big rebuild
+  means that target's debug database is stuck. Delete the target's
+  `CMakeFiles/<target>.dir` folder under the build folder and build again.
+
 ## Repo layout (current)
 
 ```
@@ -187,7 +274,9 @@ audio drivers and the Windows crash guard (structured exception handling,
 ├── .gitlab-ci.yml
 ├── docs/
 │   ├── plans/               # /ce-plan output
-│   └── reviews/
+│   ├── releases/            # release notes, and how to cut a release
+│   ├── reviews/
+│   └── status/              # dated handoff and status notes
 ├── source code/             # READ-ONLY: original Pedalboard2 v2
 ├── legacy/                  # Pedalboard2 binaries, end-user docs, readme, to-do
 ├── vercel-ui-demo/          # UI mockup (design source)
@@ -210,7 +299,9 @@ audio drivers and the Windows crash guard (structured exception handling,
 │   └── tests/
 │       ├── unit/            # mirrors src/
 │       └── support/         # shared test helpers
-├── build.ps1                # Windows build / test / run / snapshots
+├── installer/windows/       # the Inno Setup script for the Windows installer
+├── tools/                   # packaging scripts (package.ps1, package.sh)
+├── build.ps1                # Windows build / test / run / snapshots / package
 └── justfile, Makefile       # build wrappers (the Linux CI image recipe lives in ci-cd)
 ```
 
@@ -223,9 +314,14 @@ have the finish pass, the UI refresh and the UI chrome pass. Next is the first
 public beta, 1.0.0-beta.1 (M7), then the signed v1.0.0 release (M8). The
 GitLab milestones and issues track what's open.
 
-### Dev toolchain note
+From 2026-09-14 development continues on a MacBook.
+`docs/status/2026-09-14-handoff.md` has the state, the next steps in order
+and the open decisions. The GitLab board is the source of truth for open
+work: milestones M7 (public beta), M8 (v1.0.0) and 1.x.
 
-This Linux dev server does not ship `cmake`, `ninja`, or `clang-format` on
+### Linux dev server toolchain
+
+The Linux dev server does not ship `cmake`, `ninja`, or `clang-format` on
 PATH by default. Install them into the user site with pip and add
 `~/.local/bin` to PATH:
 
@@ -240,6 +336,10 @@ use the `make` wrappers or the raw `cmake` commands above.
 
 ## Memory
 
-Structured memory lives outside the repo (`~/.claude/projects/.../memory/`).
-Session-specific decisions (scope, CLAP policy, infra timing) are already
-captured there as of 2026-04-12.
+Agent memory is kept per machine (`~/.claude/projects/.../memory/`) and
+doesn't travel with the repo. Anything a future session on another machine
+needs belongs in the repo:
+- the rules: this file and `CLAUDE.md`;
+- design decisions: the plans in `docs/plans/`;
+- where things stand: `docs/status/`;
+- open work: the GitLab board.
