@@ -17,7 +17,15 @@ multi-patch banks with Program Change switching, the mappings UI, hardening
 (crash guard, `.pdl` safety) and the parity tail (transport, File Player,
 Recorder, Looper, Metronome). So have the finish pass (file workflow, window
 memory, undo), the UI refresh and the UI chrome pass. Next is the first public
-beta, 1.0.0-beta.1 (M7).
+beta, 1.0.0-beta.1 (M7). The version, the release pipeline, the Windows
+installer and the portable zip are in place. The beta now waits on the
+hands-on pass and a few decisions.
+
+- **Where things stand and what's next:**
+  [`docs/status/2026-09-14-handoff.md`](docs/status/2026-09-14-handoff.md)
+- **Open work:** the GitLab milestones M7 (public beta), M8 (v1.0.0) and 1.x.
+- **Releases:** made by hand, from main only. See
+  [`docs/releases/README.md`](docs/releases/README.md).
 
 The roadmap is
 [`docs/plans/2026-07-02-001-feat-road-to-1-0-release-plan.md`](docs/plans/2026-07-02-001-feat-road-to-1-0-release-plan.md),
@@ -37,6 +45,7 @@ itself; it needs Visual Studio with the C++ workload.
 ./build.ps1 test                   # build, then run the unit tests
 ./build.ps1 run                    # launch the built app
 ./build.ps1 snapshots              # render every menu and dialog to build/ui-snapshots
+./build.ps1 package                # release build, then the portable zip (and the installer, with Inno Setup)
 ./build.ps1 configure              # configure only
 ./build.ps1 clean                  # remove this config's build folder
 ```
@@ -47,7 +56,8 @@ ASIO is optional: see "Windows: ASIO" in [AGENTS.md](AGENTS.md).
 
 `just` picks the host's preset: `linux-dev` on Linux, `macos-dev` on macOS.
 The `Makefile` has the same build, test, run, release, format and clean
-targets for machines without `just`.
+targets for machines without `just`. On macOS you need Xcode's command-line
+tools (`xcode-select --install`) and `brew install cmake ninja just pkg-config`.
 
 ```bash
 just build          # configure + build the host's dev preset
@@ -95,17 +105,23 @@ builds with `JUCE_USE_CURL=0` and `JUCE_WEB_BROWSER=0` (`app-v3/CMakeLists.txt`)
 │   └── tests/               # Catch2: unit/ mirrors src/, support/ holds helpers
 ├── docs/
 │   ├── plans/               # product plans (ce-plan output)
-│   └── reviews/
+│   ├── releases/            # release notes, and how to cut a release
+│   ├── reviews/
+│   └── status/              # dated handoff and status notes
 ├── legacy/                  # Pedalboard2 binaries, docs, readme, to-do
 ├── source code/             # READ-ONLY original Pedalboard2 v2 code
 ├── vercel-ui-demo/          # UI mockup (design source)
 ├── .gitlab-ci.yml
-├── build.ps1                # Windows build / test / run / snapshots
+├── installer/windows/       # the Inno Setup script for the Windows installer
+├── tools/                   # packaging scripts (package.ps1, package.sh)
+├── build.ps1                # Windows build / test / run / snapshots / package
 ├── justfile, Makefile       # build wrappers (Linux / macOS)
 └── CMakePresets.json
 ```
 
 ## Licence
+
+No LICENSE file is committed yet; the final choice is #47. The plan so far:
 
 - Code: **AGPLv3** (matches JUCE 8's open-source licence track; Pedalboard2
   upstream was GPLv3).
