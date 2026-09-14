@@ -458,17 +458,15 @@ private:
 AppMappingsWindow::AppMappingsWindow(AppContext& ctx,
                                      juce::KeyPressMappingSet& keyMappings,
                                      std::function<void()> onClose)
-    : juce::DocumentWindow("App Mappings", tokens::bgWindow, juce::DocumentWindow::closeButton),
-      onClose_(std::move(onClose))
+    : DialogFrame("App Mappings"), onClose_(std::move(onClose))
 {
     auto* tabs = new juce::TabbedComponent(juce::TabbedButtonBar::TabsAtTop);
     tabs->addTab("Keyboard", tokens::bgWindow, new juce::KeyMappingEditorComponent(keyMappings, true), true);
     tabs->addTab("MIDI / OSC", tokens::bgWindow, new AppControlsPanel(ctx), true);
     tabs->setSize(760, 460);
 
-    setUsingNativeTitleBar(true);
-    setContentOwned(tabs, true);
     setResizable(true, false);
+    setContentOwned(tabs, true);
     setResizeLimits(560, 300, 1600, 1200);
     centreWithSize(getWidth(), getHeight());
     setVisible(true);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AppContext.h"
+#include "DialogFrame.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -20,9 +21,10 @@ namespace pedalboard3::ui
 //              source, learn, delete); edits apply live and persist through
 //              PreferencesPersister.
 //
-// MainWindow owns at most one and drops it from `onClose`, the EditorWindow
+// In the dialog frame (UI chrome U4). MainWindow owns at most one and drops it
+// from `onClose`, the EditorWindow
 // contract. Closing the window cancels a learn it armed.
-class AppMappingsWindow : public juce::DocumentWindow
+class AppMappingsWindow : public DialogFrame
 {
 public:
     AppMappingsWindow(AppContext& ctx, juce::KeyPressMappingSet& keyMappings, std::function<void()> onClose);

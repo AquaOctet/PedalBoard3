@@ -1,4 +1,5 @@
 #include "TransportBar.h"
+#include "DialogFrame.h"
 #include "FeatureSettingsWindows.h"
 #include "Pb3LookAndFeel.h"
 #include "PluginBrowser.h"
@@ -591,14 +592,7 @@ void TransportBar::openPluginList()
                                                                      /*allowAsyncScanning*/ false);
     listComponent->setSize(720, 520);
 
-    juce::DialogWindow::LaunchOptions options;
-    options.content.setOwned(listComponent.release());
-    options.dialogTitle = "Plugin List";
-    options.dialogBackgroundColour = tokens::bgPopover;
-    options.escapeKeyTriggersCloseButton = true;
-    options.useNativeTitleBar = true;
-    options.resizable = true;
-    options.launchAsync();
+    DialogFrame::launchModal("Plugin List", std::move(listComponent), true);
 }
 
 namespace

@@ -1,7 +1,9 @@
 #include "FeatureSettingsWindows.h"
 
 #include "ColourScheme.h"
+#include "DialogFrame.h"
 #include "engine/Recordings.h"
+#include "Fonts.h"
 #include "session/FeatureGate.h"
 #include "session/Preferences.h"
 #include "session/TransportCommands.h"
@@ -19,10 +21,12 @@ constexpr int kPad = 16;
 constexpr int kLabelWidth = 170;
 constexpr int kRowHeight = 28;
 
+// A section caption, as the mockup's (UI chrome U4): uppercase Barlow
+// Condensed, letter-spaced.
 void styleCaption(juce::Label& label, const juce::String& text)
 {
-    label.setText(text, juce::dontSendNotification);
-    label.setFont(juce::Font(juce::FontOptions(12.0f).withStyle("Bold")));
+    label.setText(text.toUpperCase(), juce::dontSendNotification);
+    label.setFont(fonts::caption(12.0f));
     label.setColour(juce::Label::textColourId, tokens::fgMuted);
 }
 
@@ -36,14 +40,7 @@ void styleHint(juce::Label& label, const juce::String& text)
 
 void launch(juce::Component* content, const juce::String& title)
 {
-    juce::DialogWindow::LaunchOptions options;
-    options.content.setOwned(content);
-    options.dialogTitle = title;
-    options.dialogBackgroundColour = tokens::bgPopover;
-    options.escapeKeyTriggersCloseButton = true;
-    options.useNativeTitleBar = true;
-    options.resizable = false;
-    options.launchAsync();
+    DialogFrame::launchModal(title, std::unique_ptr<juce::Component>(content), false);
 }
 
 // The top every feature window shares: "Enable <feature>" and what it does,
