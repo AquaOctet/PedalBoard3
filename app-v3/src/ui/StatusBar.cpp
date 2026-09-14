@@ -41,7 +41,7 @@ StatusBar::StatusBar(AppContext& ctx) : ctx_(ctx), stateDotColour_(tokens::statu
     deviceLabel_.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(deviceLabel_);
 
-    rightLabel_.setText(juce::String("v") + JUCE_APPLICATION_VERSION_STRING + "-pre", juce::dontSendNotification);
+    rightLabel_.setText(juce::String("v") + JUCE_APPLICATION_VERSION_STRING, juce::dontSendNotification);
     rightLabel_.setColour(juce::Label::textColourId, tokens::fgMuted);
     rightLabel_.setFont(juce::Font(juce::FontOptions(11.0f)));
     rightLabel_.setJustificationType(juce::Justification::centredRight);

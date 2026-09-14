@@ -127,10 +127,12 @@ target_include_directories(pb3_app_core PUBLIC
 
 # JUCE_APPLICATION_NAME_STRING is referenced from App.h, so any translation
 # unit that includes App.h needs it. PUBLIC makes it visible through the
-# linkage chain (App.h → pb3_app_core → Pedalboard3/main.cpp).
+# linkage chain (App.h → pb3_app_core → Pedalboard3/main.cpp). The version is
+# the full one with its pre-release label (PB3_VERSION_STRING); JUCE's own
+# VERSION is numbers only.
 target_compile_definitions(pb3_app_core PUBLIC
     JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:Pedalboard3,JUCE_PRODUCT_NAME>"
-    JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:Pedalboard3,JUCE_VERSION>"
+    JUCE_APPLICATION_VERSION_STRING="${PB3_VERSION_STRING}"
 )
 
 target_link_libraries(pb3_app_core

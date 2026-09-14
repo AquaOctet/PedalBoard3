@@ -1,0 +1,104 @@
+#!/usr/bin/env pwsh
+# Pedalboard 3 - the Windows packages, made from a release build (#88).
+#
+# In -OutDir it makes:
+#   Pedalboard3-<version>-windows-x64.zip        the portable app: unzip anywhere and run
+#   Pedalboard3-<version>-windows-x64-setup.exe  the installer (installer/windows/Pedalboard3.iss),
+#                                                when Inno Setup's ISCC.exe is given or found
+# Both ship the same files: the app, the scanner helper, the third-party
+# licences and, when there are some, the release notes.
+#
+# The version is the build's own (pb3-version.txt, written by CMake). In a tag
+# pipeline the tag must be v<version>, and the release notes
+# docs/releases/v<version>.md must exist.
+#
+# Usage (from a VS developer shell, so dumpbin can check the runtime):
+#   ./tools/package.ps1 [-BuildDir build/windows-ci] [-OutDir build/packages] [-Iscc <path to ISCC.exe>]
+# ./build.ps1 package does the release build first and then runs this.
+[CmdletBinding()]
+param(
+    [string]$BuildDir = 'build/windows-ci',
+    [string]$OutDir = 'build/packages',
+    [string]$Iscc = ''
+)
+
+$ErrorActionPreference = 'Stop'
+Set-Location -LiteralPath (Split-Path -Parent $PSScriptRoot)
+
+$versionFile = Join-Path $BuildDir 'pb3-version.txt'
+if (-not (Test-Path -LiteralPath $versionFile)) {
+    throw "No $versionFile. Configure and build $BuildDir first (./build.ps1 build -Config release)."
+}
+$version = (Get-Content -LiteralPath $versionFile -Raw).Trim()
+$notes = "docs/releases/v$version.md"
+if ($env:CI_COMMIT_TAG) {
+    if ($env:CI_COMMIT_TAG -ne "v$version") {
+        throw "The tag $($env:CI_COMMIT_TAG) doesn't match the build's version, $version. Tag v$version, or change the version in app-v3/CMakeLists.txt."
+    }
+    if (-not (Test-Path -LiteralPath $notes)) { throw "A release needs its notes: $notes is missing." }
+}
+
+$bin = Join-Path $BuildDir 'src/Pedalboard3_artefacts/RelWithDebInfo'
+$exes = @('Pedalboard 3.exe', 'pb3-scanner-helper.exe')
+foreach ($exe in $exes) {
+    if (-not (Test-Path -LiteralPath (Join-Path $bin $exe))) { throw "Missing $bin/$exe. Build $BuildDir first." }
+}
+
+# A clean PC has no VC++ runtime, so both exes must carry their own (the static
+# runtime, set in app-v3/CMakeLists.txt). dumpbin comes with the VS developer shell.
+$dumpbin = Get-Command dumpbin.exe -ErrorAction SilentlyContinue
+if ($dumpbin) {
+    foreach ($exe in $exes) {
+        $deps = & $dumpbin.Source /nologo /dependents (Join-Path $bin $exe) | Out-String
+        # Every exe imports KERNEL32; without it dumpbin read nothing, and an
+        # empty list would pass the check below without checking anything.
+        if ($LASTEXITCODE -ne 0 -or $deps -notmatch '(?i)kernel32\.dll') {
+            throw "dumpbin couldn't read the imports of $exe, so the runtime check can't be trusted:`n$deps"
+        }
+        $runtime = [regex]::Matches($deps, '(?im)^\s+((?:msvcp|vcruntime|concrt)\S*\.dll|api-ms-win-crt-\S+\.dll|ucrtbase\S*\.dll)\s*$') |
+            ForEach-Object { $_.Groups[1].Value }
+        if ($runtime) {
+            throw "$exe needs the VC++ runtime DLLs ($($runtime -join ', ')), so it won't start on a clean PC. Release builds must link the runtime statically."
+        }
+    }
+    Write-Host 'Runtime check: neither exe needs the VC++ runtime DLLs.'
+} else {
+    Write-Warning 'dumpbin is not on PATH, so the runtime check was skipped. Run this from a VS developer shell.'
+}
+
+# The portable folder: what the zip holds, and what the installer installs.
+$name = "Pedalboard3-$version-windows-x64"
+New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
+$stage = Join-Path $OutDir $name
+if (Test-Path -LiteralPath $stage) { Remove-Item -Recurse -Force -LiteralPath $stage }
+New-Item -ItemType Directory -Force -Path (Join-Path $stage 'licences') | Out-Null
+foreach ($exe in $exes) { Copy-Item -LiteralPath (Join-Path $bin $exe) -Destination $stage }
+# Third-party licences: every embedded font's OFL, named after its folder.
+foreach ($licence in Get-ChildItem -Path 'app-v3/resources/fonts/*/OFL.txt') {
+    Copy-Item -LiteralPath $licence.FullName -Destination (Join-Path $stage "licences/$($licence.Directory.Name)-OFL.txt")
+}
+if (Test-Path -LiteralPath $notes) { Copy-Item -LiteralPath $notes -Destination (Join-Path $stage 'Release notes.md') }
+
+$zip = Join-Path $OutDir "$name.zip"
+if (Test-Path -LiteralPath $zip) { Remove-Item -Force -LiteralPath $zip }
+Compress-Archive -Path $stage -DestinationPath $zip
+Write-Host "Portable: $zip" -ForegroundColor Green
+
+# The installer, from the same folder.
+if (-not $Iscc) {
+    $found = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+    if ($found) { $Iscc = $found.Source }
+    elseif (Test-Path -LiteralPath "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe") { $Iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
+}
+if ($Iscc) {
+    $icon = Join-Path $BuildDir 'src/Pedalboard3_artefacts/JuceLibraryCode/icon.ico'
+    & $Iscc /Qp "/DAppVersion=$version" "/DNumericVersion=$($version -replace '-.*$', '')" `
+        "/DStageDir=$((Resolve-Path -LiteralPath $stage).Path)" `
+        "/DIconFile=$((Resolve-Path -LiteralPath $icon).Path)" `
+        "/DOutputDir=$((Resolve-Path -LiteralPath $OutDir).Path)" `
+        'installer/windows/Pedalboard3.iss'
+    if ($LASTEXITCODE -ne 0) { throw "ISCC failed ($LASTEXITCODE)." }
+    Write-Host "Installer: $(Join-Path $OutDir "$name-setup.exe")" -ForegroundColor Green
+} else {
+    Write-Warning 'Inno Setup (ISCC.exe) not found, so no installer. Pass -Iscc, or let CI build it.'
+}

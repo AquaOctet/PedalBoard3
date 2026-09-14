@@ -14,6 +14,21 @@ project(Pedalboard3
     HOMEPAGE_URL "https://gitlab.com/void-realm-solutions/pedalboard-3"
     LANGUAGES   C CXX)
 
+# The release version. project() takes numbers only, and so does JUCE's VERSION
+# (the Windows file version, the macOS bundle version), so the pre-release label
+# lives here. The app, .pdl files and the packages show PB3_VERSION_STRING; an
+# empty suffix makes a plain release. A release is tagged v<PB3_VERSION_STRING>
+# (docs/releases/README.md).
+set(PB3_VERSION_SUFFIX "beta.1")
+if(PB3_VERSION_SUFFIX)
+    set(PB3_VERSION_STRING "${PROJECT_VERSION}-${PB3_VERSION_SUFFIX}")
+else()
+    set(PB3_VERSION_STRING "${PROJECT_VERSION}")
+endif()
+# For the packaging scripts (tools/package.ps1, tools/package.sh).
+file(CONFIGURE OUTPUT "${CMAKE_BINARY_DIR}/pb3-version.txt" CONTENT "${PB3_VERSION_STRING}
+")
+
 # -----------------------------------------------------------------------------
 # Language settings
 # -----------------------------------------------------------------------------
@@ -43,6 +58,15 @@ option(PB3_LINT_ONLY      "Configure for lint only, skip heavy deps"  OFF)
 # -----------------------------------------------------------------------------
 # Dependencies via CPM
 # -----------------------------------------------------------------------------
+# Release builds carry the MSVC runtime inside the exe (/MT), so the installer
+# and the portable zip start on a PC without the VC++ Redistributable (#88).
+# Debug keeps the DLL runtime (/MDd); it only runs where Visual Studio is. Set
+# before any dependency so JUCE and every other target take it;
+# tools/package.ps1 checks the exes with dumpbin.
+if(MSVC)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:DebugDLL>")
+endif()
+
 include(cmake/CPM.cmake)
 
 if(NOT PB3_LINT_ONLY)
@@ -211,7 +235,7 @@ target_compile_definitions(pb3_juce_config INTERFACE
     # target that links pb3_juce_config (engine, session, control, app,
     # the scanner helper) — so a version bump here is never a second
     # literal to remember to update elsewhere (e.g. .pdl's appVersion attr).
-    PB3_APP_VERSION="${PROJECT_VERSION}"
+    PB3_APP_VERSION="${PB3_VERSION_STRING}"
     # Plugin-host format selection — drives juce::AudioPluginFormatManager::addDefaultFormats().
     JUCE_PLUGINHOST_VST3=1
     $<$<PLATFORM_ID:Linux>:JUCE_PLUGINHOST_LV2=1>

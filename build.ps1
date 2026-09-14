@@ -12,12 +12,14 @@
 #   ./build.ps1 test                 # build, then run the unit tests
 #   ./build.ps1 run                  # launch the built app
 #   ./build.ps1 snapshots            # render every menu and dialog to build/ui-snapshots
+#   ./build.ps1 package              # release build, then the portable zip in build/packages
+#                                    # (and the installer, when Inno Setup is installed)
 #   ./build.ps1 configure            # configure only
 #   ./build.ps1 clean                # remove this config's build dir
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('build', 'configure', 'test', 'run', 'clean', 'snapshots')]
+    [ValidateSet('build', 'configure', 'test', 'run', 'clean', 'snapshots', 'package')]
     [string]$Task = 'build',
 
     # 'debug' -> windows-dev (Debug, fast iteration; needs VS to run, which you have)
@@ -30,6 +32,8 @@ $ErrorActionPreference = 'Stop'
 # The script lives at the repo root; run everything from there regardless of CWD.
 Set-Location -LiteralPath $PSScriptRoot
 
+# Packages always come from the release build.
+if ($Task -eq 'package') { $Config = 'release' }
 $preset = if ($Config -eq 'release') { 'windows-ci' } else { 'windows-dev' }
 $cmakeConfig = if ($Config -eq 'release') { 'RelWithDebInfo' } else { 'Debug' }
 $buildDir = "build/$preset"
@@ -112,6 +116,12 @@ switch ($Task) {
         $tool = "$buildDir/src/pb3-ui-snapshots_artefacts/$cmakeConfig/pb3-ui-snapshots.exe"
         & $tool 'build/ui-snapshots'
         if ($LASTEXITCODE -ne 0) { throw "pb3-ui-snapshots failed ($LASTEXITCODE)" }
+    }
+    'package' {
+        # The Windows packages (#88): the portable zip, and the installer when
+        # Inno Setup's ISCC.exe is found. CI builds both on every release.
+        Invoke-Build
+        & ./tools/package.ps1 -BuildDir $buildDir
     }
     'clean' {
         if (Test-Path -LiteralPath $buildDir) { Remove-Item -Recurse -Force -LiteralPath $buildDir }
