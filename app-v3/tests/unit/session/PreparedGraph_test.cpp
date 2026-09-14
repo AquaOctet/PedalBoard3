@@ -337,3 +337,32 @@ TEST_CASE("PreparedGraph: a node's MIDI channel filter is applied to its wrapper
     REQUIRE(pg.nodes[1].bypass->getMidiChannel() == 5);
     REQUIRE(pg.nodes[2].bypass->getMidiChannel() == 0);
 }
+
+TEST_CASE("PreparedGraph: a plugin a later scan finds stops counting as unresolved, with the scanned file",
+          "[session][prepared][missing]")
+{
+    engine::PluginHost host;
+
+    session::PatchBank bank;
+    session::PatchNode node;
+    node.id = 1;
+    node.desc.pluginFormatName = "VST3";
+    node.desc.name = "Rescan EQ";
+    node.desc.manufacturerName = "Pedalboard 3 Tests";
+    node.desc.uniqueId = 0x1234abcd;
+    bank.patches[0].nodes.push_back(node);
+
+    // A board's plugin that isn't in the scanned list: a placeholder, unresolved.
+    REQUIRE(session::unresolvedNodeCount(bank) == 1);
+    REQUIRE(session::resolvePluginNodes(bank, host) == 1);
+    REQUIRE(session::unresolvedNodeCount(bank) == 1);
+
+    // A scan adds it: the same board now finds it, with the scanned file.
+    auto scanned = node.desc;
+    scanned.fileOrIdentifier = "/scanned/Rescan EQ.vst3";
+    host.getKnownPluginList().addType(scanned);
+    REQUIRE(session::resolvePluginNodes(bank, host) == 0);
+    REQUIRE(session::unresolvedNodeCount(bank) == 0);
+    REQUIRE(bank.patches[0].nodes[0].desc.fileOrIdentifier == "/scanned/Rescan EQ.vst3");
+    REQUIRE(bank.patches[0].nodes[0].missingReason.isEmpty());
+}

@@ -12,6 +12,7 @@
 
 set(PB3_TEST_SOURCES
     smoke_test.cpp
+    support/RealSettingsGuard.cpp
     unit/engine/OutputSanitiser_test.cpp
     unit/engine/BypassableInstance_test.cpp
     unit/engine/BypassableInstance_watchdog_test.cpp

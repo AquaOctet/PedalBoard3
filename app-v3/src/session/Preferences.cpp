@@ -71,7 +71,12 @@ std::unique_ptr<juce::XmlElement> settingsXml(juce::PropertiesFile& store)
 
 } // namespace
 
-Preferences::Preferences() : Preferences(makeOptions().getDefaultFile()) {}
+juce::File Preferences::defaultSettingsFile()
+{
+    return makeOptions().getDefaultFile();
+}
+
+Preferences::Preferences() : Preferences(defaultSettingsFile()) {}
 
 Preferences::Preferences(juce::File settingsFile) : file_(std::move(settingsFile))
 {

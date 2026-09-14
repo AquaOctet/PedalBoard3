@@ -299,6 +299,16 @@ int resolvePluginNodes(PatchBank& bank, const engine::PluginHost& host)
     return missing;
 }
 
+int unresolvedNodeCount(const PatchBank& bank)
+{
+    int unresolved = 0;
+    for (const auto& patch : bank.patches)
+        for (const auto& node : patch.nodes)
+            if (node.kind == NodeKind::Plugin && hasPluginIdentity(node) && node.desc.fileOrIdentifier.isEmpty())
+                ++unresolved;
+    return unresolved;
+}
+
 int dropUnsafeNodes(PatchBank& bank, const engine::PluginHost& host)
 {
     int dropped = 0;

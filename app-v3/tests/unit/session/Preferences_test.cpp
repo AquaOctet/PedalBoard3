@@ -1,20 +1,18 @@
 // Tests for pedalboard3::session::Preferences -- the per-user persistence
 // store backed by juce::ApplicationProperties.
 //
-// We can't easily redirect JUCE's storage path inside a unit test (the
-// PropertiesFile::Options API doesn't expose an absolute-path override
-// without going through the platform helpers). Instead these tests
-// exercise round-trip semantics on the live store: write XML, read it
-// back, verify content matches. They DO touch the user's real settings
-// directory, so they use a unique top-level XML element name nobody
-// else writes. Cleanup runs at end of each test. The M5 U7 cases give
-// Preferences a file of their own (Preferences(File)) instead.
+// Every test gives Preferences a settings file of its own in a temp folder
+// (support/TempSettings.h), never the user's real one. These tests used to
+// round-trip on the live store and "clean up" after themselves, which wiped
+// the developer's plugin list and saved session on every run;
+// support/RealSettingsGuard.cpp now fails any run that touches it.
 
 #include <catch2/catch_test_macros.hpp>
 
 #include "session/DefaultBank.h"
 #include "session/PdlSerializer.h"
 #include "session/Preferences.h"
+#include "support/TempSettings.h"
 
 #include <juce_data_structures/juce_data_structures.h>
 
@@ -26,18 +24,6 @@ using namespace pedalboard3;
 
 namespace
 {
-
-// Replace any value the test wrote with an empty marker so it doesn't
-// pollute developers' real Preferences file across runs.
-void scrubKey(session::Preferences& p, const juce::String& topElement)
-{
-    juce::XmlElement empty(topElement);
-    if (topElement == "DEVICESETUP")
-        p.setAudioDeviceState(empty);
-    else if (topElement == "KNOWNPLUGINS")
-        p.setKnownPluginList(empty);
-    p.flush();
-}
 
 juce::PluginDescription makeFakeDesc()
 {
@@ -61,7 +47,8 @@ juce::PluginDescription makeFakeDesc()
 
 TEST_CASE("Preferences: getStore returns a usable PropertiesFile after construction", "[session][preferences]")
 {
-    session::Preferences prefs;
+    pb3test::TempSettings settings;
+    session::Preferences prefs(settings.file());
     REQUIRE(prefs.getStore() != nullptr);
     // It should be writeable (the OS-conventional path is created lazily).
     prefs.getStore()->setValue("__pb3_unit_test_smoke__", "ok");
@@ -73,7 +60,8 @@ TEST_CASE("Preferences: getStore returns a usable PropertiesFile after construct
 
 TEST_CASE("Preferences: AudioDeviceState round-trips through the store", "[session][preferences]")
 {
-    session::Preferences prefs;
+    pb3test::TempSettings settings;
+    session::Preferences prefs(settings.file());
 
     juce::XmlElement state("DEVICESETUP");
     state.setAttribute("deviceType", "TestDevice");
@@ -88,13 +76,12 @@ TEST_CASE("Preferences: AudioDeviceState round-trips through the store", "[sessi
     REQUIRE(roundTripped->getStringAttribute("deviceType") == "TestDevice");
     REQUIRE(roundTripped->getStringAttribute("audioOutputDeviceName") == "Bus 1/2");
     REQUIRE(roundTripped->getStringAttribute("sampleRate") == "48000");
-
-    scrubKey(prefs, "DEVICESETUP");
 }
 
 TEST_CASE("Preferences: KnownPluginList round-trips through the store", "[session][preferences]")
 {
-    session::Preferences prefs;
+    pb3test::TempSettings settings;
+    session::Preferences prefs(settings.file());
 
     juce::XmlElement list("KNOWNPLUGINS");
     auto* entry = list.createNewChildElement("PLUGIN");
@@ -111,13 +98,12 @@ TEST_CASE("Preferences: KnownPluginList round-trips through the store", "[sessio
     REQUIRE(recovered != nullptr);
     REQUIRE(recovered->getStringAttribute("name") == "Fake VST3");
     REQUIRE(recovered->getStringAttribute("format") == "VST3");
-
-    scrubKey(prefs, "KNOWNPLUGINS");
 }
 
 TEST_CASE("Preferences: OSC port defaults to 9000 and round-trips", "[session][preferences]")
 {
-    session::Preferences prefs;
+    pb3test::TempSettings settings;
+    session::Preferences prefs(settings.file());
 
     // Default when unset -- scrub first in case a previous aborted run left
     // a value behind (this test's own cleanup could not run).
@@ -137,7 +123,8 @@ TEST_CASE("Preferences: OSC port defaults to 9000 and round-trips", "[session][p
 
 TEST_CASE("Preferences: OSC multicast address defaults to empty and round-trips", "[session][preferences]")
 {
-    session::Preferences prefs;
+    pb3test::TempSettings settings;
+    session::Preferences prefs(settings.file());
 
     if (auto* store = prefs.getStore())
         store->removeValue("oscMulticastAddress");
@@ -155,8 +142,9 @@ TEST_CASE("Preferences: OSC multicast address defaults to empty and round-trips"
 
 TEST_CASE("Preferences: destroying and reconstructing preserves stored values", "[session][preferences]")
 {
+    pb3test::TempSettings settings;
     {
-        session::Preferences first;
+        session::Preferences first(settings.file());
         juce::XmlElement state("DEVICESETUP");
         state.setAttribute("audioOutputDeviceName", "PersistAcrossInstances");
         first.setAudioDeviceState(state);
@@ -164,17 +152,17 @@ TEST_CASE("Preferences: destroying and reconstructing preserves stored values", 
     }
 
     {
-        session::Preferences second;
+        session::Preferences second(settings.file());
         auto state = second.getAudioDeviceState();
         REQUIRE(state != nullptr);
         REQUIRE(state->getStringAttribute("audioOutputDeviceName") == "PersistAcrossInstances");
-        scrubKey(second, "DEVICESETUP");
     }
 }
 
 TEST_CASE("Preferences: flush is idempotent", "[session][preferences]")
 {
-    session::Preferences prefs;
+    pb3test::TempSettings settings;
+    session::Preferences prefs(settings.file());
     prefs.flush();
     prefs.flush();
     prefs.flush();
@@ -183,7 +171,8 @@ TEST_CASE("Preferences: flush is idempotent", "[session][preferences]")
 
 TEST_CASE("Preferences: getters return nullptr when no value is stored", "[session][preferences]")
 {
-    session::Preferences prefs;
+    pb3test::TempSettings settings;
+    session::Preferences prefs(settings.file());
     // Make sure any stale data from a prior test run is cleared.
     prefs.getStore()->removeValue("audioDeviceState");
     prefs.getStore()->removeValue("knownPluginList");
@@ -197,7 +186,8 @@ TEST_CASE("Preferences: getters return nullptr when no value is stored", "[sessi
 
 TEST_CASE("Preferences: ActivePluginDescription round-trips through the store", "[session][preferences]")
 {
-    session::Preferences prefs;
+    pb3test::TempSettings settings;
+    session::Preferences prefs(settings.file());
     prefs.clearActivePluginDescription();
     prefs.flush();
 
@@ -220,14 +210,15 @@ TEST_CASE("Preferences: ActivePluginDescription round-trips through the store", 
 
 TEST_CASE("Preferences: ActivePluginDescription persists across instance reconstruction", "[session][preferences]")
 {
+    pb3test::TempSettings settings;
     {
-        session::Preferences first;
+        session::Preferences first(settings.file());
         first.setActivePluginDescription(makeFakeDesc());
         first.flush();
     }
 
     {
-        session::Preferences second;
+        session::Preferences second(settings.file());
         auto desc = second.getActivePluginDescription();
         REQUIRE(desc != nullptr);
         REQUIRE(desc->fileOrIdentifier == "/nonexistent/Pedalboard3UnitTestSynth.vst3");
@@ -238,7 +229,8 @@ TEST_CASE("Preferences: ActivePluginDescription persists across instance reconst
 
 TEST_CASE("Preferences: clearActivePluginDescription drops the value", "[session][preferences]")
 {
-    session::Preferences prefs;
+    pb3test::TempSettings settings;
+    session::Preferences prefs(settings.file());
     prefs.setActivePluginDescription(makeFakeDesc());
     prefs.flush();
     REQUIRE(prefs.getActivePluginDescription() != nullptr);
@@ -250,7 +242,8 @@ TEST_CASE("Preferences: clearActivePluginDescription drops the value", "[session
 
 TEST_CASE("Preferences: malformed ActivePluginDescription XML returns nullptr (no crash)", "[session][preferences]")
 {
-    session::Preferences prefs;
+    pb3test::TempSettings settings;
+    session::Preferences prefs(settings.file());
 
     // Write something that is *not* a <PLUGIN> root -- loadFromXml should
     // refuse it and the getter should return nullptr instead of UB.
@@ -267,7 +260,8 @@ TEST_CASE("Preferences: malformed ActivePluginDescription XML returns nullptr (n
 
 TEST_CASE("Preferences: ActivePluginDescription is XXE-safe (AC-1.D.2-K)", "[session][preferences][security]")
 {
-    session::Preferences prefs;
+    pb3test::TempSettings settings;
+    session::Preferences prefs(settings.file());
 
     // Construct a payload that, on a DTD-resolving parser, would expand
     // &x; into the contents of /etc/passwd. juce::parseXML(const String&)
@@ -336,7 +330,8 @@ session::Patch makeFakeChain()
 
 TEST_CASE("Preferences: ActivePatch round-trips through the store", "[session][preferences][patch]")
 {
-    session::Preferences prefs;
+    pb3test::TempSettings settings;
+    session::Preferences prefs(settings.file());
     prefs.clearActivePatch();
     prefs.flush();
     REQUIRE(prefs.getActivePatch() == nullptr);
@@ -363,13 +358,14 @@ TEST_CASE("Preferences: ActivePatch round-trips through the store", "[session][p
 
 TEST_CASE("Preferences: ActivePatch persists across instance reconstruction", "[session][preferences][patch]")
 {
+    pb3test::TempSettings settings;
     {
-        session::Preferences first;
+        session::Preferences first(settings.file());
         first.setActivePatch(makeFakeChain());
         first.flush();
     }
     {
-        session::Preferences second;
+        session::Preferences second(settings.file());
         auto p = second.getActivePatch();
         REQUIRE(p != nullptr);
         REQUIRE(p->nodes.size() == 2);
@@ -381,7 +377,8 @@ TEST_CASE("Preferences: ActivePatch persists across instance reconstruction", "[
 
 TEST_CASE("Preferences: clearActivePatch drops the value", "[session][preferences][patch]")
 {
-    session::Preferences prefs;
+    pb3test::TempSettings settings;
+    session::Preferences prefs(settings.file());
     prefs.setActivePatch(makeFakeChain());
     prefs.flush();
     REQUIRE(prefs.getActivePatch() != nullptr);
@@ -393,7 +390,8 @@ TEST_CASE("Preferences: clearActivePatch drops the value", "[session][preference
 
 TEST_CASE("Preferences: malformed ActivePatch XML returns nullptr", "[session][preferences][patch]")
 {
-    session::Preferences prefs;
+    pb3test::TempSettings settings;
+    session::Preferences prefs(settings.file());
     juce::XmlElement bogus("NOT_AN_ACTIVE_PATCH");
     prefs.getStore()->setValue("activePatch", &bogus);
     prefs.flush();
@@ -405,7 +403,8 @@ TEST_CASE("Preferences: malformed ActivePatch XML returns nullptr", "[session][p
 
 TEST_CASE("Preferences: ActivePatch with structural corruption is rejected", "[session][preferences][patch][validate]")
 {
-    session::Preferences prefs;
+    pb3test::TempSettings settings;
+    session::Preferences prefs(settings.file());
 
     juce::XmlElement root("ACTIVE_PATCH");
     root.setAttribute("name", "Bad");
@@ -436,7 +435,8 @@ TEST_CASE("Preferences: ActivePatch with structural corruption is rejected", "[s
 
 TEST_CASE("Preferences: ActiveBank round-trips and supersedes the legacy ActivePatch", "[session][preferences][bank]")
 {
-    session::Preferences prefs;
+    pb3test::TempSettings settings;
+    session::Preferences prefs(settings.file());
     prefs.clearActiveBank();
     prefs.flush();
     REQUIRE(prefs.getActiveBank() == nullptr);
@@ -469,7 +469,8 @@ TEST_CASE("Preferences: ActiveBank round-trips and supersedes the legacy ActiveP
 
 TEST_CASE("Preferences: a legacy ActivePatch restores as a one-patch bank", "[session][preferences][bank]")
 {
-    session::Preferences prefs;
+    pb3test::TempSettings settings;
+    session::Preferences prefs(settings.file());
     prefs.clearActiveBank();
     prefs.setActivePatch(makeFakeChain());
     prefs.flush();
@@ -487,7 +488,8 @@ TEST_CASE("Preferences: a legacy ActivePatch restores as a one-patch bank", "[se
 
 TEST_CASE("Preferences: a bank with a corrupt patch is rejected", "[session][preferences][bank]")
 {
-    session::Preferences prefs;
+    pb3test::TempSettings settings;
+    session::Preferences prefs(settings.file());
     prefs.clearActiveBank();
 
     auto* store = prefs.getStore();
@@ -509,7 +511,8 @@ TEST_CASE("Preferences: a bank with a corrupt patch is rejected", "[session][pre
 
 TEST_CASE("Preferences: app mappings XML round-trips through the store", "[session][preferences][app-mappings]")
 {
-    session::Preferences prefs;
+    pb3test::TempSettings settings;
+    session::Preferences prefs(settings.file());
     juce::XmlElement xml("APP_MAPPINGS");
     xml.setAttribute("probe", 7);
     prefs.setAppMappings(xml);
@@ -527,7 +530,8 @@ TEST_CASE("Preferences: app mappings XML round-trips through the store", "[sessi
 
 TEST_CASE("Preferences: key mappings XML round-trips through the store", "[session][preferences][key-mappings]")
 {
-    session::Preferences prefs;
+    pb3test::TempSettings settings;
+    session::Preferences prefs(settings.file());
     juce::XmlElement xml("KEYMAPPINGS");
     xml.setAttribute("basedOnDefaults", true);
     prefs.setKeyMappings(xml);
@@ -546,7 +550,8 @@ TEST_CASE("Preferences: key mappings XML round-trips through the store", "[sessi
 TEST_CASE("Preferences: the active bank's file and unsaved flag round-trip and clear with the bank",
           "[session][preferences][bank]")
 {
-    session::Preferences prefs;
+    pb3test::TempSettings settings;
+    session::Preferences prefs(settings.file());
     const auto file = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("gig.pdl");
 
     prefs.setActiveBankIdentity(file, true);
@@ -575,7 +580,8 @@ TEST_CASE("Preferences: the active bank's file and unsaved flag round-trip and c
 
 TEST_CASE("DefaultBank: the default lives beside the settings file", "[session][default-bank]")
 {
-    session::Preferences prefs;
+    pb3test::TempSettings settings;
+    session::Preferences prefs(settings.file());
     REQUIRE(prefs.getStore() != nullptr);
     const auto file = session::defaultBankFile(prefs);
     REQUIRE(file.getFileName() == "default.pdl");
@@ -609,7 +615,8 @@ TEST_CASE("DefaultBank: New starts from the default bank, or one empty patch", "
 TEST_CASE("DefaultBank: Don't Save at quit reverts the persisted bank to the saved file, or clears it",
           "[session][default-bank][preferences]")
 {
-    session::Preferences prefs;
+    pb3test::TempSettings settings;
+    session::Preferences prefs(settings.file());
     const auto dir = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("pb3-revert-test");
     dir.deleteRecursively();
     const auto saved = dir.getChildFile("gig.pdl");
@@ -643,22 +650,17 @@ TEST_CASE("DefaultBank: Don't Save at quit reverts the persisted bank to the sav
 
 TEST_CASE("Preferences: the window state round-trips", "[session][preferences][window]")
 {
-    session::Preferences prefs;
-    const auto previous = prefs.getWindowState(); // the developer's real window; put it back
-
+    pb3test::TempSettings settings;
+    session::Preferences prefs(settings.file());
     prefs.setWindowState("120 80 1280 720");
     prefs.flush();
     REQUIRE(prefs.getWindowState() == "120 80 1280 720");
-
-    prefs.setWindowState(previous);
-    prefs.flush();
 }
 
 TEST_CASE("Preferences: a panel's shown flag round-trips, with a fallback until set", "[session][preferences][window]")
 {
-    session::Preferences prefs;
-    const bool previous = prefs.getPanelShown("patches", true); // the developer's real setting; put it back
-
+    pb3test::TempSettings settings;
+    session::Preferences prefs(settings.file());
     REQUIRE(prefs.getPanelShown("pb3-test-panel-never-set", true));
     REQUIRE_FALSE(prefs.getPanelShown("pb3-test-panel-never-set", false));
 
@@ -666,57 +668,43 @@ TEST_CASE("Preferences: a panel's shown flag round-trips, with a fallback until 
     REQUIRE_FALSE(prefs.getPanelShown("patches", true));
     prefs.setPanelShown("patches", true);
     REQUIRE(prefs.getPanelShown("patches", false));
-
-    prefs.setPanelShown("patches", previous);
-    prefs.flush();
 }
 
 TEST_CASE("Preferences: the plugin browser's recents round-trip in order", "[session][preferences][browser]")
 {
-    session::Preferences prefs;
-    const auto previous = prefs.getRecentPlugins(); // the developer's real list; put it back
-
+    pb3test::TempSettings settings;
+    session::Preferences prefs(settings.file());
     prefs.setRecentPlugins({"plugin:b", "internal:LevelProcessor", "plugin:a"});
     REQUIRE(prefs.getRecentPlugins() == juce::StringArray{"plugin:b", "internal:LevelProcessor", "plugin:a"});
     prefs.setRecentPlugins({});
     REQUIRE(prefs.getRecentPlugins().isEmpty());
-
-    prefs.setRecentPlugins(previous);
-    prefs.flush();
 }
 
 TEST_CASE("Preferences: Open Recent's files round-trip in order", "[session][preferences]")
 {
-    session::Preferences prefs;
-    const auto previous = prefs.getRecentFiles(); // the developer's real list; put it back
-
+    pb3test::TempSettings settings;
+    session::Preferences prefs(settings.file());
     prefs.setRecentFiles({"C:/boards/Live.pdl", "/home/me/Rehearsal.pdl"});
     REQUIRE(prefs.getRecentFiles() == juce::StringArray{"C:/boards/Live.pdl", "/home/me/Rehearsal.pdl"});
     prefs.setRecentFiles({});
     REQUIRE(prefs.getRecentFiles().isEmpty());
-
-    prefs.setRecentFiles(previous);
-    prefs.flush();
 }
 
 TEST_CASE("Preferences: the MMC switch round-trips", "[session][preferences][mmc]")
 {
-    session::Preferences prefs;
-    const bool previous = prefs.getMmcTransport(); // the developer's real setting; put it back
-
+    pb3test::TempSettings settings;
+    session::Preferences prefs(settings.file());
     prefs.setMmcTransport(true);
     REQUIRE(prefs.getMmcTransport());
     prefs.setMmcTransport(false);
     REQUIRE_FALSE(prefs.getMmcTransport());
-
-    prefs.setMmcTransport(previous);
-    prefs.flush();
 }
 
 TEST_CASE("Preferences: a planted file never leaks through an entity in a saved description (M5 U1)",
           "[session][preferences][security]")
 {
-    session::Preferences prefs;
+    pb3test::TempSettings settings;
+    session::Preferences prefs(settings.file());
     const auto secret =
         juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("pb3_secret", ".txt");
     REQUIRE(secret.replaceWithText("PB3-PLANTED-SECRET-MARKER"));

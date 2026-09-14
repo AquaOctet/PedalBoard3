@@ -147,6 +147,12 @@ bool isNodeSafeForChain(const engine::PluginHost& host, const PatchNode& node);
 // only.
 int resolvePluginNodes(PatchBank& bank, const engine::PluginHost& host);
 
+// How many plugin nodes in `bank` aren't matched to a scanned plugin: read from a
+// board (an identity, no file) and not found, blocked or an instrument when
+// resolvePluginNodes last ran. A plugin scan that brings the count down has
+// plugins for the open board to load (TransportBar's rescan).
+int unresolvedNodeCount(const PatchBank& bank);
+
 // Drop every node isNodeSafeForChain rejects from every patch in `bank` (each
 // slot is one switch away from live), rebuilding a linear chain over the
 // survivors of any patch that lost one so its connections stay valid. Run
