@@ -26,6 +26,7 @@
 #include "session/Session.h"
 #include "session/TransportCommands.h"
 #include "ui/AboutWindow.h"
+#include "ui/Alert.h"
 #include "ui/BankSidebar.h"
 #include "ui/ColourScheme.h"
 #include "ui/DialogFrame.h"
@@ -381,27 +382,33 @@ int main(int argc, char** argv)
             out.addDialog(name, dialogTitle(name), *content);
         }
 
-        // Alerts, as the app raises them.
-        const std::unique_ptr<juce::AlertWindow> unsaved(lookAndFeel.createAlertWindow(
-            "Unsaved changes",
-            "Save the changes to \"Friday Set\" before quitting? Changes you don't save are lost.",
-            "Save",
-            "Don't Save",
-            "Cancel",
-            juce::MessageBoxIconType::QuestionIcon,
-            3,
-            nullptr));
-        out.addComponent("alert-unsaved-changes", *unsaved);
-        const std::unique_ptr<juce::AlertWindow> message(
-            lookAndFeel.createAlertWindow("Default saved",
-                                          "File > New now starts from this board.",
-                                          "OK",
-                                          {},
-                                          {},
-                                          juce::MessageBoxIconType::InfoIcon,
-                                          1,
-                                          nullptr));
-        out.addComponent("alert-message", *message);
+        // Alerts, as the app raises them (UI chrome U5).
+        using ui::alert::Role;
+        const auto unsaved = ui::alert::makePanel(
+            {"Unsaved changes",
+             "Save the changes to \"Friday Set\" before quitting? Changes you don't save are lost.",
+             {{"Save", 1, Role::Main}, {"Don't Save", 2, Role::Other}, {"Cancel", 0, Role::Cancel}},
+             {}});
+        out.addDialog("alert-unsaved-changes", "Unsaved changes", *unsaved);
+        const auto rename = ui::alert::makePanel({"Rename Patch",
+                                                  "Name for patch 3:",
+                                                  {{"Rename", 1, Role::Main}, {"Cancel", 0, Role::Cancel}},
+                                                  {{"name", "Verse Clean"}}});
+        out.addDialog("alert-rename-patch", "Rename Patch", *rename);
+        const auto remove =
+            ui::alert::makePanel({"Remove Patch",
+                                  "Remove \"Verse Clean\" and its 3 plugins from the bank? This can't be undone.",
+                                  {{"Remove", 1, Role::Main, true}, {"Cancel", 0, Role::Cancel}},
+                                  {}});
+        out.addDialog("alert-remove-patch", "Remove Patch", *remove);
+        const auto message =
+            ui::alert::makePanel(ui::alert::message("Default saved", "File > New now starts from this board."));
+        out.addDialog("alert-message", "Default saved", *message);
+
+        // What JUCE still raises itself, such as the plugin scan's progress window.
+        const std::unique_ptr<juce::AlertWindow> progress(lookAndFeel.createAlertWindow(
+            "Scanning for plugins", "Pro-Q 3.vst3", "Cancel", {}, {}, juce::MessageBoxIconType::NoIcon, 1, nullptr));
+        out.addComponent("alert-juce-progress", *progress);
 
         std::printf("%d surfaces in %s\n", out.count(), out.folder().getFullPathName().toRawUTF8());
         failures = out.failures();

@@ -1,5 +1,7 @@
 #include "TransportControls.h"
 
+#include "Alert.h"
+
 #include "engine/processors/MetronomeProcessor.h"
 #include "engine/Transport.h"
 #include "engine/TransportMath.h"
@@ -252,34 +254,22 @@ void TransportControls::openTempoPopover()
 void TransportControls::promptTimeSignature()
 {
     const auto& transport = ctx_.transportCommands.transport();
-    prompt_ = std::make_unique<juce::AlertWindow>(
-        "Time Signature",
-        "Beats per bar / note value, such as 5/8. Up to 16 beats of a 1, 2, 4, 8 or 16 note.",
-        juce::MessageBoxIconType::NoIcon);
-    prompt_->addTextEditor("signature", signatureText(transport.getNumerator(), transport.getDenominator()));
-    prompt_->addButton("Set", 1, juce::KeyPress(juce::KeyPress::returnKey));
-    prompt_->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
-
     juce::Component::SafePointer<TransportControls> safeThis(this);
-    prompt_->enterModalState(
-        true,
-        juce::ModalCallbackFunction::create(
-            [safeThis](int result)
-            {
-                auto* self = safeThis.getComponent();
-                if (self == nullptr || self->prompt_ == nullptr)
-                    return;
-                if (result == 1)
+    alert::show({"Time Signature",
+                 "Beats per bar / note value, such as 5/8. Up to 16 beats of a 1, 2, 4, 8 or 16 note.",
+                 {{"Set", 1, alert::Role::Main}, {"Cancel", 0, alert::Role::Cancel}},
+                 {{"signature", signatureText(transport.getNumerator(), transport.getDenominator())}}},
+                [safeThis](const alert::Response& response)
                 {
-                    const auto text = self->prompt_->getTextEditorContents("signature");
+                    auto* self = safeThis.getComponent();
+                    if (self == nullptr || response.result != 1)
+                        return;
+                    const auto text = response.field("signature");
                     const int numerator = text.upToFirstOccurrenceOf("/", false, false).getIntValue();
                     const int denominator = text.fromFirstOccurrenceOf("/", false, false).getIntValue();
                     self->ctx_.session.setTimeSignature(numerator, denominator); // invalid: ignored
                     self->refresh();
-                }
-                self->prompt_.reset();
-            }),
-        false);
+                });
 }
 
 } // namespace pedalboard3::ui

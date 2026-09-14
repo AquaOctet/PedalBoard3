@@ -1,4 +1,5 @@
 #include "FileActions.h"
+#include "Alert.h"
 #include "session/SafeXml.h"
 
 #include "engine/PluginHost.h"
@@ -23,10 +24,9 @@ juce::File documentsFolder()
     return juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("Pedalboard 3");
 }
 
-void showMessage(juce::MessageBoxIconType icon, const juce::String& title, const juce::String& message)
+void showMessage(const juce::String& title, const juce::String& message)
 {
-    juce::AlertWindow::showAsync(
-        juce::MessageBoxOptions{}.withIconType(icon).withTitle(title).withMessage(message).withButton("OK"), nullptr);
+    alert::show(alert::message(title, message));
 }
 
 // Resolve an imported (e.g. Pedalboard2/VST2) plugin descriptor to an installed
@@ -164,8 +164,7 @@ void FileActions::openFile(const juce::File& file)
     auto loaded = loadOpenedBank(file, ctx_.pluginHost);
     if (loaded.bank == nullptr)
     {
-        showMessage(juce::MessageBoxIconType::WarningIcon,
-                    "Couldn't open patch",
+        showMessage("Couldn't open patch",
                     loaded.error.isNotEmpty() ? loaded.error : juce::String("Couldn't read the patch file."));
         return;
     }
@@ -177,9 +176,7 @@ void FileActions::openFile(const juce::File& file)
     // Surface import notes (Pedalboard2 conversion: dropped state, skipped
     // plugins, etc.) once the chain is in.
     if (!loaded.warnings.isEmpty())
-        showMessage(juce::MessageBoxIconType::InfoIcon,
-                    "Patch imported",
-                    "Imported with notes:\n\n - " + loaded.warnings.joinIntoString("\n - "));
+        showMessage("Patch imported", "Imported with notes:\n\n - " + loaded.warnings.joinIntoString("\n - "));
 }
 
 void FileActions::loadIntoDocument(session::PatchBank bank, const juce::File& file, bool readOnly)
@@ -220,24 +217,21 @@ void FileActions::saveAs(std::function<void(bool saved)> done)
     // A board a newer version wrote (M5 U4, plan KD7): this version can't keep
     // what it doesn't understand, so say so before writing a copy.
     juce::WeakReference<FileActions> weak(this);
-    juce::AlertWindow::showAsync(
-        juce::MessageBoxOptions{}
-            .withIconType(juce::MessageBoxIconType::WarningIcon)
-            .withTitle("Save a copy?")
-            .withMessage("This board was saved by a newer version of Pedalboard 3. The copy is saved in this "
-                         "version's format, which can't hold everything the newer version understands, so some of "
-                         "its settings may not come through. The original file isn't changed.")
-            .withButton("Save a Copy")
-            .withButton("Cancel"),
-        [weak, done](int result)
-        {
-            if (weak == nullptr)
-                return;
-            if (result == 1)
-                weak->chooseSaveFile(done);
-            else if (done)
-                done(false);
-        });
+    alert::show({"Save a copy?",
+                 "This board was saved by a newer version of Pedalboard 3. The copy is saved in this version's "
+                 "format, which can't hold everything the newer version understands, so some of its settings may "
+                 "not come through. The original file isn't changed.",
+                 {{"Save a Copy", 1, alert::Role::Main}, {"Cancel", 0, alert::Role::Cancel}},
+                 {}},
+                [weak, done](const alert::Response& response)
+                {
+                    if (weak == nullptr)
+                        return;
+                    if (response.result == 1)
+                        weak->chooseSaveFile(done);
+                    else if (done)
+                        done(false);
+                });
 }
 
 void FileActions::chooseSaveFile(std::function<void(bool saved)> done)
@@ -280,7 +274,7 @@ void FileActions::writeTo(const juce::File& file, const std::function<void(bool)
         rememberRecent(file);
     }
     else
-        showMessage(juce::MessageBoxIconType::WarningIcon, "Couldn't save", result.getErrorMessage());
+        showMessage("Couldn't save", result.getErrorMessage());
 
     if (done)
         done(result.wasOk());
@@ -291,20 +285,18 @@ void FileActions::saveAsDefault()
     const auto result =
         session::pdl::writeBank(ctx_.bankDocument.snapshotForSave(), session::defaultBankFile(ctx_.preferences));
     if (result.wasOk())
-        showMessage(juce::MessageBoxIconType::InfoIcon, "Default saved", "File > New now starts from this board.");
+        showMessage("Default saved", "File > New now starts from this board.");
     else
-        showMessage(juce::MessageBoxIconType::WarningIcon, "Couldn't save the default", result.getErrorMessage());
+        showMessage("Couldn't save the default", result.getErrorMessage());
 }
 
 void FileActions::resetDefault()
 {
     const auto file = session::defaultBankFile(ctx_.preferences);
     if (!file.existsAsFile() || file.deleteFile())
-        showMessage(juce::MessageBoxIconType::InfoIcon, "Default reset", "File > New now starts with one empty patch.");
+        showMessage("Default reset", "File > New now starts with one empty patch.");
     else
-        showMessage(juce::MessageBoxIconType::WarningIcon,
-                    "Couldn't reset the default",
-                    "Couldn't delete " + file.getFullPathName());
+        showMessage("Couldn't reset the default", "Couldn't delete " + file.getFullPathName());
 }
 
 bool FileActions::hasDefault() const
@@ -325,34 +317,28 @@ void FileActions::confirmDiscard(const juce::String& beforeWhat, std::function<v
         return;
     }
 
-    prompt_ = std::make_unique<juce::AlertWindow>("Unsaved changes",
-                                                  "Save the changes to \"" +
-                                                      boardDisplayName(ctx_.bankDocument.currentFile()) + "\" before " +
-                                                      beforeWhat + "? Changes you don't save are lost.",
-                                                  juce::MessageBoxIconType::QuestionIcon);
-    prompt_->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));
-    prompt_->addButton("Don't Save", 2);
-    prompt_->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
-
     juce::WeakReference<FileActions> weak(this);
-    prompt_->enterModalState(true,
-                             juce::ModalCallbackFunction::create(
-                                 [weak, proceed = std::move(proceed)](int result)
-                                 {
-                                     if (weak == nullptr)
-                                         return;
-                                     weak->prompt_.reset();
-                                     if (result == 1)
-                                         weak->save(
-                                             [proceed](bool saved)
-                                             {
-                                                 if (saved)
-                                                     proceed(false);
-                                             });
-                                     else if (result == 2)
-                                         proceed(true);
-                                 }),
-                             false);
+    prompt_ = alert::show(
+        {"Unsaved changes",
+         "Save the changes to \"" + boardDisplayName(ctx_.bankDocument.currentFile()) + "\" before " + beforeWhat +
+             "? Changes you don't save are lost.",
+         {{"Save", 1, alert::Role::Main}, {"Don't Save", 2, alert::Role::Other}, {"Cancel", 0, alert::Role::Cancel}},
+         {}},
+        [weak, proceed = std::move(proceed)](const alert::Response& response)
+        {
+            if (weak == nullptr)
+                return;
+            weak->prompt_ = nullptr;
+            if (response.result == 1)
+                weak->save(
+                    [proceed](bool saved)
+                    {
+                        if (saved)
+                            proceed(false);
+                    });
+            else if (response.result == 2)
+                proceed(true);
+        });
 }
 
 juce::Array<juce::File> FileActions::recentFiles() const
@@ -369,8 +355,7 @@ void FileActions::openRecent(const juce::File& file)
     if (!file.existsAsFile())
     {
         ctx_.preferences.setRecentFiles(session::boardfiles::removeRecent(ctx_.preferences.getRecentFiles(), file));
-        showMessage(juce::MessageBoxIconType::WarningIcon,
-                    "Couldn't open patch",
+        showMessage("Couldn't open patch",
                     "\"" + file.getFullPathName() +
                         "\" isn't there any more, so it has been removed from Open Recent.");
         return;

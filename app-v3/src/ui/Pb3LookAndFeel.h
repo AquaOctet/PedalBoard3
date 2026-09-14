@@ -131,6 +131,18 @@ public:
     void drawResizableWindowBorder(
         juce::Graphics&, int w, int h, const juce::BorderSize<int>& border, juce::ResizableWindow&) override;
 
+    // The alerts JUCE still raises itself, such as the plugin scan's progress
+    // window (UI chrome U5): the dialog body and edge, no icon, Barlow. The app's
+    // own alerts are ui::alert.
+    void drawAlertBox(juce::Graphics&,
+                      juce::AlertWindow&,
+                      const juce::Rectangle<int>& textArea,
+                      juce::TextLayout&) override;
+    juce::Font getAlertWindowTitleFont() override;
+    juce::Font getAlertWindowMessageFont() override;
+    juce::Font getAlertWindowFont() override;
+    int getAlertWindowButtonHeight() override;
+
     // Popovers (the tempo pill's): the menu panel's colours and edge.
     void drawCallOutBoxBackground(juce::CallOutBox&, juce::Graphics&, const juce::Path&, juce::Image&) override;
 

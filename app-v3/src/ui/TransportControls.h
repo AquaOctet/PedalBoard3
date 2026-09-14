@@ -73,7 +73,6 @@ private:
     juce::TextButton tempoButton_;
     juce::Label position_;
     juce::TextButton clickButton_;
-    std::unique_ptr<juce::AlertWindow> prompt_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TransportControls)
 };

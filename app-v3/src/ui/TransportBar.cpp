@@ -1,4 +1,5 @@
 #include "TransportBar.h"
+#include "Alert.h"
 #include "DialogFrame.h"
 #include "FeatureSettingsWindows.h"
 #include "Pb3LookAndFeel.h"
@@ -366,26 +367,16 @@ void TransportBar::openPatchMenu()
 void TransportBar::promptRenamePatch()
 {
     const int index = ctx_.bankDocument.activeIndex();
-    dialog_ = std::make_unique<juce::AlertWindow>(
-        "Rename Patch", "Name for patch " + juce::String(index + 1) + ":", juce::MessageBoxIconType::NoIcon);
-    dialog_->addTextEditor("name", ctx_.bankDocument.activePatch().name);
-    dialog_->addButton("Rename", 1, juce::KeyPress(juce::KeyPress::returnKey));
-    dialog_->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
-
     juce::Component::SafePointer<TransportBar> safeThis(this);
-    dialog_->enterModalState(true,
-                             juce::ModalCallbackFunction::create(
-                                 [safeThis, index](int result)
-                                 {
-                                     auto* self = safeThis.getComponent();
-                                     if (self == nullptr || self->dialog_ == nullptr)
-                                         return;
-                                     if (result == 1)
-                                         self->ctx_.bankDocument.rename(index,
-                                                                        self->dialog_->getTextEditorContents("name"));
-                                     self->dialog_.reset();
-                                 }),
-                             false);
+    alert::show({"Rename Patch",
+                 "Name for patch " + juce::String(index + 1) + ":",
+                 {{"Rename", 1, alert::Role::Main}, {"Cancel", 0, alert::Role::Cancel}},
+                 {{"name", ctx_.bankDocument.activePatch().name}}},
+                [safeThis, index](const alert::Response& response)
+                {
+                    if (auto* self = safeThis.getComponent(); self != nullptr && response.result == 1)
+                        self->ctx_.bankDocument.rename(index, response.field("name"));
+                });
 }
 
 void TransportBar::confirmRemovePatch()
@@ -402,27 +393,17 @@ void TransportBar::confirmRemovePatch()
     }
 
     const auto noun = liveNodes == 1 ? juce::String("plugin") : juce::String("plugins");
-    dialog_ = std::make_unique<juce::AlertWindow>("Remove Patch",
-                                                  "Remove \"" + doc.activePatch().name + "\" and its " +
-                                                      juce::String(liveNodes) + " " + noun +
-                                                      " from the bank? This can't be undone.",
-                                                  juce::MessageBoxIconType::WarningIcon);
-    dialog_->addButton("Remove", 1);
-    dialog_->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
-
     juce::Component::SafePointer<TransportBar> safeThis(this);
-    dialog_->enterModalState(true,
-                             juce::ModalCallbackFunction::create(
-                                 [safeThis, index](int result)
-                                 {
-                                     auto* self = safeThis.getComponent();
-                                     if (self == nullptr)
-                                         return;
-                                     if (result == 1)
-                                         self->ctx_.bankDocument.remove(index);
-                                     self->dialog_.reset();
-                                 }),
-                             false);
+    alert::show({"Remove Patch",
+                 "Remove \"" + doc.activePatch().name + "\" and its " + juce::String(liveNodes) + " " + noun +
+                     " from the bank? This can't be undone.",
+                 {{"Remove", 1, alert::Role::Main, true}, {"Cancel", 0, alert::Role::Cancel}},
+                 {}},
+                [safeThis, index](const alert::Response& response)
+                {
+                    if (auto* self = safeThis.getComponent(); self != nullptr && response.result == 1)
+                        self->ctx_.bankDocument.remove(index);
+                });
 }
 
 void TransportBar::openPluginsMenu()
@@ -551,16 +532,10 @@ void TransportBar::openPluginList()
         const auto setAside =
             crashedFile.getParentDirectory().getNonexistentChildFile(crashedFile.getFileName(), ".corrupt", false);
         crashedFile.moveFileTo(setAside);
-        juce::AlertWindow::showAsync(juce::MessageBoxOptions{}
-                                         .withIconType(juce::MessageBoxIconType::WarningIcon)
-                                         .withTitle("Crash list couldn't be read")
-                                         .withMessage("The list of plugins that crashed a scan was damaged (" +
-                                                      crashList.error +
-                                                      "), so none of it was used. It has been "
-                                                      "set aside as \"" +
-                                                      setAside.getFileName() + "\".")
-                                         .withButton("OK"),
-                                     nullptr);
+        alert::show(alert::message("Crash list couldn't be read",
+                                   "The list of plugins that crashed a scan was damaged (" + crashList.error +
+                                       "), so none of it was used. It has been set aside as \"" +
+                                       setAside.getFileName() + "\"."));
     }
     for (const auto& path : crashList.paths)
     {
@@ -692,12 +667,7 @@ public:
                 summary += juce::String(label) + ": " + juce::String(n) + "\n";
         summary += "On the blacklist: " + juce::String(blacklist.size());
 
-        const auto opts = juce::MessageBoxOptions{}
-                              .withIconType(juce::MessageBoxIconType::InfoIcon)
-                              .withTitle(userPressedCancel ? "Scan cancelled" : "Scan complete")
-                              .withMessage(summary)
-                              .withButton("OK");
-        juce::AlertWindow::showAsync(opts, nullptr);
+        alert::show(alert::message(userPressedCancel ? "Scan cancelled" : "Scan complete", summary));
 
         if (onDone_)
             onDone_();
@@ -731,15 +701,11 @@ void TransportBar::rescanPlugins()
         // scanner constructs every plugin in the host process, so a
         // construction-crashing plugin not on the floor list takes the host
         // down. Scanning is simply unavailable until the helper is present.
-        const auto opts = juce::MessageBoxOptions{}
-                              .withIconType(juce::MessageBoxIconType::WarningIcon)
-                              .withTitle("Plugin scanning unavailable")
-                              .withMessage("pb3-scanner-helper binary was not found next to the host executable, "
-                                           "so out-of-process scanning is disabled. Reinstall Pedalboard 3 (or "
-                                           "rebuild so the helper is copied next to the app) to scan for plugins. "
-                                           "Already-known plugins remain usable.")
-                              .withButton("OK");
-        juce::AlertWindow::showAsync(opts, nullptr);
+        alert::show(alert::message("Plugin scanning unavailable",
+                                   "pb3-scanner-helper binary was not found next to the host executable, so "
+                                   "out-of-process scanning is disabled. Reinstall Pedalboard 3 (or rebuild so the "
+                                   "helper is copied next to the app) to scan for plugins. Already-known plugins "
+                                   "remain usable."));
         return;
     }
 

@@ -1,5 +1,7 @@
 #include "FeaturePrompt.h"
 
+#include "Alert.h"
+
 #include "session/BankDocument.h"
 #include "session/FeatureGate.h"
 
@@ -30,23 +32,19 @@ void FeaturePrompt::changeListenerCallback(juce::ChangeBroadcaster*)
 
     const bool several = features.size() > 1;
     const auto names = session::featureListText(features);
-    const auto options = juce::MessageBoxOptions()
-                             .withIconType(juce::MessageBoxIconType::QuestionIcon)
-                             .withTitle(several ? juce::String("Turn these features on?") : "Turn " + names + " on?")
-                             .withMessage("This board uses " + names + ", which " + (several ? "are" : "is") +
-                                          " off in Settings. Turn " + (several ? "them" : "it") + " on?")
-                             .withButton("Turn On")
-                             .withButton("Not Now");
-
     juce::WeakReference<FeaturePrompt> weak(this);
-    juce::AlertWindow::showAsync(options,
-                                 [weak, features](int result)
-                                 {
-                                     if (weak == nullptr || result != 1)
-                                         return; // Not Now, or dismissed: nothing changes
-                                     for (const auto feature : features)
-                                         weak->ctx_.features.setEnabled(feature, true);
-                                 });
+    alert::show({several ? juce::String("Turn these features on?") : "Turn " + names + " on?",
+                 "This board uses " + names + ", which " + (several ? "are" : "is") + " off in Settings. Turn " +
+                     (several ? "them" : "it") + " on?",
+                 {{"Turn On", 1, alert::Role::Main}, {"Not Now", 0, alert::Role::Cancel}},
+                 {}},
+                [weak, features](const alert::Response& response)
+                {
+                    if (weak == nullptr || response.result != 1)
+                        return; // Not Now, or dismissed: nothing changes
+                    for (const auto feature : features)
+                        weak->ctx_.features.setEnabled(feature, true);
+                });
 }
 
 } // namespace pedalboard3::ui
