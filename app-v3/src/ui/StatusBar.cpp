@@ -41,13 +41,6 @@ StatusBar::StatusBar(AppContext& ctx) : ctx_(ctx), stateDotColour_(tokens::statu
     deviceLabel_.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(deviceLabel_);
 
-    rightLabel_.setText(juce::String("v") + JUCE_APPLICATION_VERSION_STRING, juce::dontSendNotification);
-    rightLabel_.setColour(juce::Label::textColourId, tokens::fgMuted);
-    rightLabel_.setFont(juce::Font(juce::FontOptions(11.0f)));
-    rightLabel_.setJustificationType(juce::Justification::centredRight);
-    rightLabel_.setInterceptsMouseClicks(false, false);
-    addAndMakeVisible(rightLabel_);
-
     ctx_.session.addChangeListener(this);
     if (auto* dm = ctx_.audioEngine.getDeviceManager())
         dm->addChangeListener(this);
@@ -80,10 +73,6 @@ void StatusBar::resized()
 {
     auto bounds = getLocalBounds().reduced(kBarPadding, 4);
     bounds.removeFromLeft(kDotSize + kDotTextGap); // space for the painted dot
-
-    auto right = bounds.removeFromRight(140);
-    rightLabel_.setBounds(right);
-    bounds.removeFromRight(kBarPadding);
 
     auto left = bounds.removeFromLeft(280);
     leftLabel_.setBounds(left);

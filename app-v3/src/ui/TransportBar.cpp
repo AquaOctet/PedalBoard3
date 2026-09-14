@@ -795,26 +795,6 @@ juce::PopupMenu TransportBar::makeFileMenu(juce::ApplicationCommandManager* menu
     menu.addSeparator();
     menu.addItem("Save as Default", [this] { files_.saveAsDefault(); });
     menu.addItem("Reset Default", files_.hasDefault(), false, [this] { files_.resetDefault(); });
-    menu.addSeparator();
-    if (menuBarCommands == nullptr)
-    {
-        // On macOS the menu bar has these in Settings and Window.
-        menu.addSubMenu("Settings", makeSettingsMenu());
-        menu.addItem("Patch Bank",
-                     true,
-                     isPatchBankShown && isPatchBankShown(),
-                     [this]
-                     {
-                         if (onTogglePatchBank)
-                             onTogglePatchBank();
-                     });
-    }
-    menu.addItem("App Mappings...",
-                 [this]
-                 {
-                     if (onOpenAppMappings)
-                         onOpenAppMappings();
-                 });
     if (menuBarCommands == nullptr)
     {
         // On macOS About is in the app menu.
@@ -833,6 +813,13 @@ juce::PopupMenu TransportBar::makeSettingsMenu()
     menu.addItem("Tempo / BPM Settings...", [this] { showTempoSettingsWindow(ctx_); });
     menu.addItem("Metronome Settings...", [this] { showMetronomeSettingsWindow(ctx_); });
     menu.addItem("Looper Settings...", [this] { showLooperSettingsWindow(ctx_); });
+    menu.addSeparator();
+    menu.addItem("App Mappings...",
+                 [this]
+                 {
+                     if (onOpenAppMappings)
+                         onOpenAppMappings();
+                 });
     menu.addSeparator();
     menu.addItem("Test Tone", true, toneActive_, [this] { testTone_ = !toneActive_; });
     return menu;

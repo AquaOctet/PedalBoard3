@@ -70,8 +70,8 @@ public:
 
         // The body's side panel (UI refresh U4 / U6): the patch bank on the
         // left. Its three-bar toggle, top-left under File, collapses it to an
-        // icon strip and opens it again at any window size (and File > Patch
-        // Bank does the same); below the fold width it folds on its own and the
+        // icon strip and opens it again at any window size (so does Window >
+        // Patch Bank on macOS); below the fold width it folds on its own and the
         // toggle slides it open over the canvas.
         addChildComponent(bankSidebar_);
         addChildComponent(patchRail_);
@@ -277,7 +277,7 @@ public:
         }
     }
 
-    // The bank's three-bar toggle and File > Patch Bank. On a wide window,
+    // The bank's three-bar toggle, and Window > Patch Bank on macOS. On a wide window,
     // open or collapse the docked panel (remembered); on a narrow one, slide
     // it open over the canvas or shut.
     void togglePatchBank()

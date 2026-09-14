@@ -34,7 +34,7 @@ BankSidebar::BankSidebar(AppContext& ctx) : ctx_(ctx)
     addAndMakeVisible(list_);
 
     collapseButton_.setShape(panelToggleIcon(), false, true, false);
-    collapseButton_.setTooltip("Collapse the patch bank to its strip (File > Patch Bank does the same)");
+    collapseButton_.setTooltip("Collapse the patch bank to its strip");
     collapseButton_.onClick = [this]
     {
         if (onCollapse)
