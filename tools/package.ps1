@@ -95,11 +95,20 @@ if ($pdbs.Count -gt 0) {
     Write-Warning "No PDBs under $BuildDir, so no symbols archive. A RelWithDebInfo build writes them."
 }
 
-# The installer, from the same folder.
+# The installer, from the same folder. Inno Setup doesn't put ISCC.exe on PATH,
+# and winget installs it per-user rather than into Program Files, so look in
+# all three places before giving up.
 if (-not $Iscc) {
     $found = Get-Command ISCC.exe -ErrorAction SilentlyContinue
     if ($found) { $Iscc = $found.Source }
-    elseif (Test-Path -LiteralPath "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe") { $Iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
+    else {
+        $candidates = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+            "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
+            "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"   # winget's default
+        )
+        $Iscc = $candidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    }
 }
 if ($Iscc) {
     $icon = Join-Path $BuildDir 'src/Pedalboard3_artefacts/JuceLibraryCode/icon.ico'
@@ -111,5 +120,5 @@ if ($Iscc) {
     if ($LASTEXITCODE -ne 0) { throw "ISCC failed ($LASTEXITCODE)." }
     Write-Host "Installer: $(Join-Path $OutDir "$name-setup.exe")" -ForegroundColor Green
 } else {
-    Write-Warning 'Inno Setup (ISCC.exe) not found, so no installer. Pass -Iscc, or let CI build it.'
+    Write-Warning 'Inno Setup (ISCC.exe) not found, so no installer. Install it (winget install JRSoftware.InnoSetup), pass -Iscc, or let CI build it.'
 }
