@@ -5,6 +5,8 @@
 # pb3_apply_strict_warnings() without touching JUCE INTERFACE_SOURCES.
 
 add_library(pb3_session_core STATIC
+    AppLog.cpp
+    AppLog.h
     Preferences.cpp
     Preferences.h
     PreparedGraph.cpp
@@ -92,6 +94,7 @@ target_link_libraries(pb3_session_core
 )
 
 pb3_apply_strict_warnings(pb3_session_core
+    AppLog.cpp
     Preferences.cpp
     PreparedGraph.cpp
     Session.cpp

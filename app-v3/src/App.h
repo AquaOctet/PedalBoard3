@@ -61,8 +61,11 @@ private:
     // Construction order (also reverse destruction order). Each member's
     // dtor depends on the ones below it being still alive.
     //
-    // lookAndFeel is constructed first and destroyed last: every other
-    // UI element (MainWindow, dialogs, alerts) reads juce::Desktop's
+    // The logger is first and so dies last: everything below it can write
+    // to the log while it is being torn down (CV-U2).
+    std::unique_ptr<juce::FileLogger> logger;
+    // lookAndFeel is constructed next and destroyed next-to-last: every
+    // other UI element (MainWindow, dialogs, alerts) reads juce::Desktop's
     // default LookAndFeel pointer during draw, so the pointer must
     // outlive any visible Component.
     std::unique_ptr<ui::Pb3LookAndFeel> lookAndFeel;

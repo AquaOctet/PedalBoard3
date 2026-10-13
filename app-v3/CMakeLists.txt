@@ -24,6 +24,24 @@ if(PB3_VERSION_SUFFIX)
 else()
     set(PB3_VERSION_STRING "${PROJECT_VERSION}")
 endif()
+# Which commit this build came from, for the log header and any crash report
+# (crash-visibility plan KD4). Read at configure time, so a rebuild without a
+# reconfigure keeps the old value; "unknown" outside a git checkout.
+set(PB3_BUILD_ID "unknown")
+find_package(Git QUIET)
+if(GIT_FOUND)
+    execute_process(COMMAND "${GIT_EXECUTABLE}" rev-parse --short=12 HEAD
+                    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+                    OUTPUT_VARIABLE PB3_GIT_SHA
+                    OUTPUT_STRIP_TRAILING_WHITESPACE
+                    ERROR_QUIET
+                    RESULT_VARIABLE PB3_GIT_RESULT)
+    if(PB3_GIT_RESULT EQUAL 0 AND PB3_GIT_SHA)
+        set(PB3_BUILD_ID "${PB3_GIT_SHA}")
+    endif()
+endif()
+message(STATUS "Pedalboard3: build id ${PB3_BUILD_ID}")
+
 # For the packaging scripts (tools/package.ps1, tools/package.sh).
 file(CONFIGURE OUTPUT "${CMAKE_BINARY_DIR}/pb3-version.txt" CONTENT "${PB3_VERSION_STRING}
 ")
@@ -234,6 +252,8 @@ target_compile_definitions(pb3_juce_config INTERFACE
     # the scanner helper) — so a version bump here is never a second
     # literal to remember to update elsewhere (e.g. .pdl's appVersion attr).
     PB3_APP_VERSION="${PB3_VERSION_STRING}"
+    # The commit, so a log or a crash report names the build it came from.
+    PB3_BUILD_ID="${PB3_BUILD_ID}"
     # Plugin-host format selection — drives juce::AudioPluginFormatManager::addDefaultFormats().
     JUCE_PLUGINHOST_VST3=1
     $<$<PLATFORM_ID:Linux>:JUCE_PLUGINHOST_LV2=1>

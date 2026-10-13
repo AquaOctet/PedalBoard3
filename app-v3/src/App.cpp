@@ -1,6 +1,7 @@
 #include "App.h"
 
 #include "platform/CrashGuard.h"
+#include "session/AppLog.h"
 #include "session/BoardFiles.h"
 #include "session/DefaultBank.h"
 
@@ -9,6 +10,11 @@ namespace pedalboard3
 
 void App::initialise(const juce::String& /*commandLine*/)
 {
+    // A log file before anything else: until this, every writeToLog call in
+    // the app went nowhere, because nothing installed a logger (CV-U2).
+    logger = session::applog::createLogger(session::Preferences::defaultSettingsFile());
+    juce::Logger::setCurrentLogger(logger.get());
+
     // The plugin crash guard's signal handlers (M5 U5; Linux only, a no-op
     // elsewhere), before any audio or plugin code runs.
     platform::installCrashGuard();
@@ -33,6 +39,13 @@ void App::initialise(const juce::String& /*commandLine*/)
         // device land here. Window stays open; user can pick a device
         // via Audio Settings once hardware is available.
         juce::Logger::writeToLog("Pedalboard 3: audio init warning — " + result.getErrorMessage());
+    }
+    else if (auto* dm = engine->getDeviceManager())
+    {
+        if (auto* device = dm->getCurrentAudioDevice())
+            juce::Logger::writeToLog("Pedalboard 3: audio device " + device->getName() + ", " +
+                                     juce::String(static_cast<int>(device->getCurrentSampleRate())) + " Hz, " +
+                                     juce::String(device->getCurrentBufferSizeSamples()) + " samples");
     }
 
     pluginHost = std::make_unique<engine::PluginHost>();
@@ -187,6 +200,10 @@ void App::shutdown()
     // tooltip/redraw on the way out dereferences a dangling ptr.
     juce::LookAndFeel::setDefaultLookAndFeel(nullptr);
     lookAndFeel.reset();
+
+    // Last, so anything above can still log on the way out.
+    juce::Logger::setCurrentLogger(nullptr);
+    logger.reset();
 }
 
 void App::systemRequestedQuit()
