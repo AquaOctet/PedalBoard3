@@ -22,7 +22,11 @@ and `.pdl` format only; do not edit.
 - **Tests:** Catch2 v3 unit tests, headless (`app-v3/tests/`)
 - **CI:** GitLab CI; see the `workflow:` block in `.gitlab-ci.yml`.
   - Every merge request push runs a pipeline: lint, then build and unit tests
-    on Linux, Windows and macOS.
+    on Linux, Windows and macOS — **when the push touched code**. A merge
+    request that only edits docs runs one `no-build` job instead. The
+    `.code-paths` list in `.gitlab-ci.yml` decides, and it is an allow-list:
+    add a new directory to it when you add one, or its changes will skip the
+    gate.
   - On main a pipeline runs only when someone starts it by hand (Build >
     Pipelines > Run pipeline). It holds the release jobs, each a manual
     click: the platform builds, then release:gitlab, which tags the commit
