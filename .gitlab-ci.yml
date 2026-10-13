@@ -255,8 +255,9 @@ build:windows:
     - |
       # Fetch the Steinberg ASIO SDK from the project's private generic package
       # registry so the Windows build can enable JUCE_ASIO=1 (see the ASIO block
-      # in app-v3/CMakeLists.txt and AGENTS.md "Windows: ASIO"). The SDK is GPLv3
-      # but kept out of git; a maintainer uploads it once to
+      # in app-v3/CMakeLists.txt and AGENTS.md "Windows: ASIO"). The SDK is dual
+      # licensed (proprietary Steinberg ASIO License, or GPLv3 — we take GPLv3)
+      # and kept out of git; a maintainer uploads it once to
       # packages/generic/asio-sdk/<ver>/asio-sdk.zip. Best-effort: if the package
       # isn't there (not yet uploaded, or a fork without registry access) the build
       # continues with WASAPI/DirectSound only — this step never fails the job.

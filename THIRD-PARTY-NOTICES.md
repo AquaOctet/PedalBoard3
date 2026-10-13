@@ -52,6 +52,26 @@ Barlow Condensed and Barlow Semi Condensed (Jeremy Tribby) and JetBrains Mono
 `.ttf` files in `app-v3/resources/fonts/`, and the packaging scripts copy all
 three into `licences/` inside every release archive.
 
+### ASIO SDK — Steinberg ASIO License **or** GPLv3
+
+Low-latency Windows audio, **in the released Windows builds**. Pedalboard 3 takes the
+**GPLv3** option, which is why the Windows binary is as copyleft as the rest.
+
+The SDK is not in this repository — `app-v3/asio_sdk/` is gitignored — but that is a
+source-tree policy rather than a statement about the binary: the `build:windows` and
+`release:windows` jobs fetch it from the project's GitLab generic package registry
+before configure, and `app-v3/CMakeLists.txt` then defines `JUCE_ASIO=1`. The fetch is
+best-effort, so a build without the package (a fork, say) simply has WASAPI and
+DirectSound and no ASIO. The job log says which happened:
+`Pedalboard 3: ASIO SDK found … — enabling JUCE_ASIO=1`.
+
+Its `LICENSE.txt` ((c) 2025 Steinberg Media Technologies GmbH) offers the same
+proprietary-or-GPLv3 choice as VST3, and the proprietary option requires a License
+Agreement signed by Steinberg. Some individual helper files in the SDK carry their
+own BSD 3-Clause header instead.
+
+A developer building locally provides their own copy and is bound by the same terms.
+
 ## Build and test only — not in the released app
 
 | Component | Version | Licence | Why it isn't shipped |
@@ -60,16 +80,6 @@ three into `licences/` inside every release archive.
 | CPM.cmake | 0.40.2 | MIT | A CMake script; runs at configure time |
 
 ## Off by default — not in any official build
-
-### ASIO SDK — Steinberg ASIO License **or** GPLv3
-
-Low-latency Windows audio. The SDK is **not in this repository**: `app-v3/asio_sdk/`
-is gitignored, so no CI build and no published release has ever contained ASIO
-support. A developer who drops the SDK there gets `JUCE_ASIO=1` in their own local
-build and is bound by Steinberg's terms. Its `LICENSE.txt` ((c) 2025 Steinberg Media
-Technologies GmbH) offers the same proprietary-or-GPLv3 choice as VST3; the
-proprietary option requires a License Agreement signed by Steinberg. Some individual
-helper files in the SDK carry their own BSD 3-Clause header instead.
 
 ### CLAP
 
@@ -96,7 +106,9 @@ be licensed separately, and each of these would have to be settled first:
 - **JUCE** — a commercial JUCE licence instead of the AGPLv3 option.
 - **VST3** — a VST3 SDK 3.8 or newer under MIT, or a signed Steinberg agreement.
   The SDK that JUCE 8.0.4 bundles cannot go into a closed binary.
-- **ASIO** — a License Agreement signed by Steinberg, for the same reason.
+- **ASIO** — a License Agreement signed by Steinberg, for the same reason. The
+  Windows build uses the GPLv3 option today, so ASIO support cannot simply be
+  carried over into a closed build.
 
 This is why the paid work is planned as a separate process rather than as code
 inside the AGPLv3 application.
