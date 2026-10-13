@@ -14,6 +14,7 @@ namespace pedalboard3::ui
 {
 
 class AppMappingsWindow;
+class RootComponent;
 
 // Path γ MainWindow — a thin juce::DocumentWindow shell whose content
 // is a vertical stack of TransportBar (h:48), juce::Viewport wrapping
@@ -66,7 +67,6 @@ private:
     juce::PopupMenu getMenuForIndex(int topLevelMenuIndex, const juce::String& menuName) override;
     void menuItemSelected(int, int) override {} // every item carries its own action or command
 
-    class RootComponent;
     AppContext& ctx_;
     juce::String appName_;
     // Declared before root_ and the window: both reference it, so it must be

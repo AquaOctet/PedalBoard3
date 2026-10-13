@@ -7,7 +7,9 @@
 //
 // It builds the subsystems the UI reaches for, as App does, with settings in a
 // throwaway folder and a few made-up plugins, patches and recent files so the
-// menus have something in them, and no main window. Menus are laid out and
+// menus have something in them. The main window is the real RootComponent at a
+// few sizes and panel states, with built-in nodes on the board, which is why
+// RootComponent lives in its own header (#90). Menus are laid out and
 // drawn the way JUCE's own menu window does it (ItemComponent,
 // HeaderItemComponent and MenuWindow in juce_PopupMenu.cpp), with one item
 // highlighted; everything else is a component snapshot. A dev tool, not shipped.
@@ -37,6 +39,8 @@
 #include "ui/FileActions.h"
 #include "ui/MappingsDialog.h"
 #include "ui/Pb3LookAndFeel.h"
+#include "ui/PluginBrowser.h"
+#include "ui/RootComponent.h"
 #include "ui/SettingsWindow.h"
 #include "ui/SignalCanvas.h"
 #include "ui/TransportBar.h"
@@ -44,9 +48,11 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <chrono>
 #include <cstdio>
 #include <functional>
 #include <memory>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -82,8 +88,12 @@ struct Rig
     }
 
     session::Preferences preferences;
-    engine::AudioEngine audioEngine;
+    // pluginHost before audioEngine, so the engine (and the graph holding the
+    // built-in processors) is destroyed first and the disk thread outlives its
+    // clients — the same order App::shutdown uses, for the reason set out in
+    // engine/DiskThread.h.
     engine::PluginHost pluginHost;
+    engine::AudioEngine audioEngine;
     session::Session liveSession;
     session::BankDocument bankDocument;
     session::FeatureGate featureGate;
@@ -141,6 +151,68 @@ void seed(Rig& rig)
                                     boards.getChildFile("Home Rig.pdl").getFullPathName()});
     rig.featureGate.setEnabled(session::Feature::Tempo, true);
     rig.featureGate.setEnabled(session::Feature::Metronome, true);
+}
+
+// Let the session finish whatever it is building, then hand the result to the
+// components. It rebuilds the graph on a background thread and an add is
+// refused while it is busy — which is why the first attempt at a board
+// snapshot came out empty, with the status bar still reading "Loading...".
+//
+// This is the headless tests' pump (pumpUntilIdle in BankDocument_test.cpp):
+// dispatchPendingResult() collects the background thread's work on this
+// thread, so no message loop is needed — just as well, since
+// JUCE_MODAL_LOOPS_PERMITTED is off and runDispatchLoopUntil doesn't exist in
+// this build. dispatchPendingMessages() then delivers the change message to
+// the canvas and the status bar now rather than on the next message-loop turn
+// that a console app never takes.
+bool settle(Rig& rig, int timeoutMs = 5000)
+{
+    const auto idle = [&rig] { return rig.liveSession.getState() == session::Session::State::Idle; };
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
+    bool settled = false;
+    while (std::chrono::steady_clock::now() < deadline)
+    {
+        rig.liveSession.dispatchPendingResult();
+        if (idle())
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            rig.liveSession.dispatchPendingResult();
+            if (idle())
+            {
+                settled = true;
+                break;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    rig.liveSession.dispatchPendingMessages();
+    rig.bankDocument.dispatchPendingMessages();
+    return settled;
+}
+
+// A board with cards on it. Built-ins only: they instantiate without a plugin
+// on disk, so the canvas looks like a real chain on any machine, a bare CI
+// runner included. They go on through addBrowserEntry, the same path the Add
+// Plugin menu and a browser drag take, so these snapshots can't drift from
+// what adding a node actually does.
+//
+// Returns how many went on. The caller checks it: a board snapshot that
+// quietly came out empty would be worse than no snapshot, because it would
+// look like a deliberate "empty board" shot.
+int fillBoard(Rig& rig)
+{
+    // Metronome rather than Looper: seed() turns the Metronome feature on, and
+    // builtInAvailable() refuses a node whose feature is off.
+    int added = 0;
+    for (const char* type : {"LevelProcessor", "FilePlayerProcessor", "VuMeterProcessor", "MetronomeProcessor"})
+    {
+        if (!settle(rig))
+            break;
+        if (ui::addBrowserEntry(rig.context, juce::String("internal:") + type, std::nullopt))
+            ++added;
+    }
+    settle(rig);
+    return added;
 }
 
 // A menu as JUCE's menu window lays it out: each item's ideal size (a section
@@ -319,6 +391,13 @@ int main(int argc, char** argv)
     const auto folder = juce::File::getCurrentWorkingDirectory().getChildFile(argc > 1 ? juce::String::fromUTF8(argv[1])
                                                                                        : juce::String("ui-snapshots"));
 
+    juce::SystemStats::setApplicationCrashHandler(
+        [](void*)
+        {
+            std::fprintf(stderr, "\nCRASH\n%s\n", juce::SystemStats::getStackBacktrace().toRawUTF8());
+            std::fflush(stderr);
+        });
+
     const juce::ScopedJuceInitialiser_GUI scopedJuce;
     ui::Pb3LookAndFeel lookAndFeel;
     juce::LookAndFeel::setDefaultLookAndFeel(&lookAndFeel);
@@ -436,6 +515,41 @@ int main(int argc, char** argv)
         const std::unique_ptr<juce::AlertWindow> progress(lookAndFeel.createAlertWindow(
             "Scanning for plugins", "Pro-Q 3.vst3", "Cancel", {}, {}, juce::MessageBoxIconType::NoIcon, 1, nullptr));
         out.addComponent("alert-juce-progress", *progress);
+
+        // The main window (#90). Until now every dialog had a snapshot and the
+        // one surface people actually look at had none, which is a fair part of
+        // why the dialogs got a chrome pass and the window didn't. An empty
+        // board, a board with cards, both side panels collapsed to their rails,
+        // and the narrow width where BodyLayout folds them on its own.
+        {
+            const auto shoot = [&out](const juce::String& name, ui::RootComponent& root, int width, int height)
+            {
+                root.setSize(width, height);
+                root.setVisible(true);
+                out.add(name, root.createComponentSnapshot(root.getLocalBounds(), true, 1.0f));
+            };
+
+            settle(rig); // the seeded bank is still building when we get here
+            ui::RootComponent root(rig.context);
+            shoot("window-empty", root, 1280, 800);
+
+            const auto added = fillBoard(rig);
+            if (added != 4)
+                std::printf("WARNING window-board has %d of 4 nodes; the session refused the rest\n", added);
+            shoot("window-board", root, 1280, 800);
+
+            // A panel's open state is read from Preferences in the constructor,
+            // so a fresh root is how you snapshot it collapsed.
+            rig.preferences.setPanelShown("patches", false);
+            rig.preferences.setPanelShown("browser", false);
+            ui::RootComponent collapsed(rig.context);
+            shoot("window-panels-collapsed", collapsed, 1280, 800);
+
+            rig.preferences.setPanelShown("patches", true);
+            rig.preferences.setPanelShown("browser", true);
+            ui::RootComponent narrow(rig.context);
+            shoot("window-narrow", narrow, 900, 640);
+        }
 
         std::printf("%d surfaces in %s\n", out.count(), out.folder().getFullPathName().toRawUTF8());
         failures = out.failures();
