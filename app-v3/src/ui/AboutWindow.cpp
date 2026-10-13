@@ -65,7 +65,7 @@ public:
     {
         const juce::String dot(juce::CharPointer_UTF8(" \xc2\xb7 "));
         addLine({{"The revamp of "}, {"Pedalboard2", kPedalboard2Url}, {" by Niall Moody,"}});
-        addLine({{"recompiled with love and a lot of tokens by aquaOctet."}});
+        addLine({{"recompiled with love and a lot of tokens by aquaOctet at OpenZephyr LLC."}});
         addLine({{"aquaoctet.com", kAquaOctetUrl},
                  {dot},
                  {"github.com/AquaOctet", kAquaOctetGitHubUrl},
@@ -82,7 +82,7 @@ public:
         addLine({{"Version " JUCE_APPLICATION_VERSION_STRING, {}, Style::Mono},
                  {dot},
                  {"Check for updates", kReleasesUrl}});
-        addLine({{"Built with JUCE.", {}, Style::Muted}});
+        addLine({{"Copyright 2026 OpenZephyr LLC", {}, Style::Muted}, {dot}, {"Built with JUCE.", {}, Style::Muted}});
 
         closeButton_.onClick = [this]
         {
