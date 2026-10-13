@@ -74,14 +74,21 @@ default:
 # someone starts by hand (see workflow). The three platform builds package
 # what they build; release:gitlab, one more click once they've passed,
 # publishes. Nothing releases from a merge request or a pushed tag.
-# allow_failure keeps an un-clicked job from leaving the pipeline "blocked".
+#
+# They must pass (#33, the release half, decided 2026-10-13): a red Windows or
+# macOS release job fails the pipeline and release:gitlab never runs, so a
+# platform that didn't build can't be published. What `allow_failure: false`
+# costs on a manual job is that a pipeline where only some were clicked stays
+# "blocked" instead of green; a release clicks all three. Merge-request builds
+# may still fail without blocking a merge; making those required is the rest
+# of #33.
 # They live in the last stages so a pending manual job never blocks the
 # earlier ones (a manual-pending job in an early stage blocks downstream
 # stages even with `optional: true` on `needs:`).
 .rules-release: &rules-release
   - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     when: manual
-    allow_failure: true
+    allow_failure: false
 
 # Build caches: CPM's dependency sources (JUCE, Catch2, ...), shared by every
 # job, and the compiler cache, keyed per job so Debug (build:*) and
