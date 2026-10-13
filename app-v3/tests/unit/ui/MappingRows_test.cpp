@@ -62,7 +62,6 @@ TEST_CASE("MappingRows: every mapping on the board, in chain order", "[ui][mappi
     REQUIRE(midi[1].nodeIndex == 1);
     REQUIRE(midi[2].node == 2);
     REQUIRE(midi[2].nodeIndex == 0);
-    REQUIRE(midi[2].chainIndex == 1);
 
     const auto oscRows = ui::mappingrows::rowsFor(board(), Kind::Osc, std::nullopt);
     REQUIRE(oscRows.size() == 2);

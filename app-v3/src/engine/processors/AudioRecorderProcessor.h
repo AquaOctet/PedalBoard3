@@ -35,8 +35,6 @@ class AudioRecorderProcessor final : public ProcessorBase,
                                      private juce::TimeSliceClient
 {
 public:
-    static constexpr int kBitsPerSample = TakeWriter::kBitsPerSample;
-
     explicit AudioRecorderProcessor(DiskThread& disk);
     ~AudioRecorderProcessor() override;
 

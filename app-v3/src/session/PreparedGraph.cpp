@@ -80,7 +80,7 @@ PluginBuild pluginOrPlaceholder(std::unique_ptr<juce::AudioProcessor> loaded,
     const auto placeholder = [&node](juce::String reason)
     {
         PluginBuild built;
-        built.processor = std::make_unique<engine::processors::MissingPluginProcessor>(node.desc, reason, node.state);
+        built.processor = std::make_unique<engine::processors::MissingPluginProcessor>(node.desc, node.state);
         built.missingReason = std::move(reason);
         return built;
     };

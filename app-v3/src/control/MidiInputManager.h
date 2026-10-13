@@ -73,8 +73,6 @@ public:
     // enough to run unconditionally on the message thread.
     static constexpr int kDrainIntervalMs = 8;
 
-    int droppedCount() const noexcept { return fifo_.droppedCount(); }
-
     // MIDI on or off (optional-features plan KD6; session::InputGates drives
     // it). Off unregisters every device callback, ignores device changes and
     // drops whatever is queued, so no MIDI reaches anything. On registers the

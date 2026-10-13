@@ -16,11 +16,9 @@ namespace pedalboard3::engine::processors
 class MissingPluginProcessor final : public juce::AudioProcessor
 {
 public:
-    MissingPluginProcessor(juce::PluginDescription identity, juce::String reason, juce::MemoryBlock state);
+    MissingPluginProcessor(juce::PluginDescription identity, juce::MemoryBlock state);
 
     const juce::String getName() const override { return identity_.name; }
-    // Why it's a placeholder, as the card says it.
-    const juce::String& getReason() const noexcept { return reason_; }
 
     void prepareToPlay(double, int) override {}
     void releaseResources() override {}
@@ -46,7 +44,6 @@ public:
 
 private:
     juce::PluginDescription identity_;
-    juce::String reason_;
     juce::MemoryBlock state_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MissingPluginProcessor)
