@@ -261,6 +261,19 @@ round:
 - **MSVC `C2471: cannot update program database`** during a big rebuild
   means that target's debug database is stuck. Delete the target's
   `CMakeFiles/<target>.dir` folder under the build folder and build again.
+- **JUCE writes the Windows version resource once.** `COMPANY_NAME` and
+  `COMPANY_COPYRIGHT` are baked into
+  `build/<preset>/src/<target>_artefacts/JuceLibraryCode/<target>_resources.rc`
+  the first time a target is built, and changing them in CMake does **not**
+  regenerate it: the exe relinks, keeps the old company in its file
+  properties, and nothing warns. Delete that `.rc` and build again. CI never
+  sees this, because it caches only `.cpm-cache/` and `.ccache/` and builds
+  the tree from scratch — which makes it purely a local trap, and the worst
+  kind: a locally packaged installer can carry the wrong publisher while CI's
+  is right. Check with
+  `(Get-Item '…\Pedalboard 3.exe').VersionInfo` before trusting a local
+  package (hit 2026-10-13: an installer built with `AquaOctet` and no
+  copyright, from a `.rc` generated in July).
 
 ## Repo layout (current)
 
