@@ -199,9 +199,6 @@ void App::systemRequestedQuit()
 
 void App::restoreActivePatchIfAny()
 {
-    if (preferences == nullptr || pluginHost == nullptr || session == nullptr || bankDocument == nullptr)
-        return;
-
     auto saved = preferences->getActiveBank();
     // Nothing to restore (first run, or the last quit discarded an untitled
     // board): open the user's default bank, if they saved one (finish pass KD2).

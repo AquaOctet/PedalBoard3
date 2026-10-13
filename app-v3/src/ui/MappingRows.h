@@ -25,8 +25,7 @@ struct Row
 {
     Kind kind{Kind::Midi};
     session::NodeId node{0};
-    int chainIndex{0}; // the node's place in the chain (Patch::nodes)
-    int nodeIndex{0};  // its place among the node's mappings of this kind (Session::getNodeMappings order)
+    int nodeIndex{0}; // its place among the node's mappings of this kind (Session::getNodeMappings order)
     juce::String plugin;
     control::MidiMapping midi; // Kind::Midi
     control::OscMapping osc;   // Kind::Osc
@@ -65,7 +64,6 @@ inline std::vector<Row> rowsFor(const session::Patch& patch,
         Row base;
         base.kind = kind;
         base.node = node.id;
-        base.chainIndex = static_cast<int>(chain);
         base.plugin = nameOf(node);
         base.selected = selected == node.id;
 

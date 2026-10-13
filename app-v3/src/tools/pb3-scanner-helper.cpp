@@ -31,9 +31,8 @@
 //     with SIGSEGV / SIGABRT / SIGILL / etc. The parent observes the
 //     crash (a non-zero exit, or no sentinel) and blacklists the path.
 //
-// This file deliberately uses JUCE_CONSOLE_APPLICATION_MAIN so we don't
-// pull in any GUI dependency. Helper builds as a console binary that
-// ships alongside the main app.
+// A console binary with its own main() and no GUI of its own, built and
+// shipped beside the app.
 
 #include "engine/ScanInMessageLoop.h" // the scan, with a message loop running (#3)
 #include "engine/ScanProtocol.h"      // kScanOkSentinel — shared with engine::PluginScanner

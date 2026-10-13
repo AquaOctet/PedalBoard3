@@ -18,7 +18,7 @@ namespace pedalboard3::control
 // Threading: not internally synchronised. The intended use is a single MIDI
 // consumer thread calling process(); setMappings()/reset() happen on the
 // message thread while MIDI input is paused, mirroring how the engine swaps
-// patches. (The live-input wiring lands with that work.)
+// patches.
 class MidiRouter
 {
 public:

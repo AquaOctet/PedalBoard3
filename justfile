@@ -110,4 +110,4 @@ clean:
 
 # Open the current plan.
 plan:
-    $${EDITOR:-less} docs/plans/2026-04-12-001-feat-pedalboard-3-rewrite-plan.md
+    ${EDITOR:-less} docs/plans/2026-04-12-001-feat-pedalboard-3-rewrite-plan.md

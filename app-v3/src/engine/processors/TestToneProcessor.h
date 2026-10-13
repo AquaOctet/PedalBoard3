@@ -50,7 +50,6 @@ public:
 
     // Controls ---------------------------------------------------------------
     void setEnabled(bool shouldBeEnabled) noexcept;
-    bool isEnabled() const noexcept { return enabled_.load(std::memory_order_relaxed); }
 
     // 20 Hz – 20 kHz. Values outside this range are clamped.
     void setFrequency(float hz) noexcept;

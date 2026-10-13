@@ -47,7 +47,6 @@ public:
     // pauses the transport, so it can't keep playing with no controls on
     // screen. On by default.
     void setEnabled(bool enabled);
-    bool isEnabled() const noexcept { return enabled_; }
 
     engine::Transport& transport() noexcept { return transport_; }
 

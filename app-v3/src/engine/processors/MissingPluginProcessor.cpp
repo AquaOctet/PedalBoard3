@@ -3,13 +3,11 @@
 namespace pedalboard3::engine::processors
 {
 
-MissingPluginProcessor::MissingPluginProcessor(juce::PluginDescription identity,
-                                               juce::String reason,
-                                               juce::MemoryBlock state)
+MissingPluginProcessor::MissingPluginProcessor(juce::PluginDescription identity, juce::MemoryBlock state)
     : juce::AudioProcessor(BusesProperties()
                                .withInput("Input", juce::AudioChannelSet::stereo(), true)
                                .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
-      identity_(std::move(identity)), reason_(std::move(reason)), state_(std::move(state))
+      identity_(std::move(identity)), state_(std::move(state))
 {
 }
 

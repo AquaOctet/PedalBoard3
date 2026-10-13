@@ -83,6 +83,10 @@ public:
     // Returns nullptr on first run, malformed XML, or a structurally
     // invalid patch (validatePatch != Ok). The caller is responsible for
     // the further KnownPluginList cross-check + crash-loop guard.
+    // Nothing in the app writes this any more: the active bank superseded it,
+    // and getActiveBank falls back to reading it for a settings file an older
+    // build wrote. The setter and clearer stay for the tests that cover that
+    // fallback.
     std::unique_ptr<Patch> getActivePatch();
     void setActivePatch(const Patch& patch);
     void clearActivePatch();
