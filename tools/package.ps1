@@ -78,6 +78,19 @@ if (Test-Path -LiteralPath $zip) { Remove-Item -Force -LiteralPath $zip }
 Compress-Archive -Path $stage -DestinationPath $zip
 Write-Host "Portable: $zip" -ForegroundColor Green
 
+# Debug symbols, beside the packages and never inside them. A crash dump can
+# only be read with the PDBs from this exact build: they are matched by the
+# PDB's GUID and age, which change on every link.
+$symbols = Join-Path $OutDir "$name-symbols.zip"
+if (Test-Path -LiteralPath $symbols) { Remove-Item -Force -LiteralPath $symbols }
+$pdbs = @(Get-ChildItem -Path (Join-Path $bin '*.pdb'), (Join-Path $BuildDir 'src/pb3-scanner-helper_artefacts/RelWithDebInfo/*.pdb') -File -ErrorAction SilentlyContinue)
+if ($pdbs.Count -gt 0) {
+    Compress-Archive -Path $pdbs.FullName -DestinationPath $symbols
+    Write-Host "Symbols: $symbols ($([math]::Round((Get-Item $symbols).Length / 1MB)) MB)" -ForegroundColor Green
+} else {
+    Write-Warning "No PDBs under $BuildDir, so no symbols archive. A RelWithDebInfo build writes them."
+}
+
 # The installer, from the same folder.
 if (-not $Iscc) {
     $found = Get-Command ISCC.exe -ErrorAction SilentlyContinue

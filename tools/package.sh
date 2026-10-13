@@ -72,3 +72,32 @@ else
     tar -C "$out" -czf "$out/$name.tar.gz" "$name"
     echo "Package: $out/$name.tar.gz"
 fi
+
+# Debug symbols, beside the package and never inside it. A crash can only be
+# read with the symbols from this exact build: they are matched by the dSYM's
+# UUID or the ELF build id, which change on every link.
+symbols="$out/$name-symbols"
+rm -rf "$symbols"
+mkdir -p "$symbols"
+if [ "$platform" = "macos-universal" ]; then
+    if command -v dsymutil >/dev/null 2>&1; then
+        dsymutil "$stage/Pedalboard 3.app/Contents/MacOS/Pedalboard 3" -o "$symbols/Pedalboard 3.dSYM"
+        dsymutil "$stage/Pedalboard 3.app/Contents/MacOS/pb3-scanner-helper" -o "$symbols/pb3-scanner-helper.dSYM"
+    else
+        echo "dsymutil not found, so no symbols archive." >&2
+    fi
+elif command -v objcopy >/dev/null 2>&1; then
+    for exe in "Pedalboard 3" "pb3-scanner-helper"; do
+        objcopy --only-keep-debug "$bin/$exe" "$symbols/$exe.debug"
+    done
+else
+    echo "objcopy not found, so the unstripped binaries go in as they are." >&2
+    for exe in "Pedalboard 3" "pb3-scanner-helper"; do cp "$bin/$exe" "$symbols/"; done
+fi
+
+if [ -n "$(ls -A "$symbols" 2>/dev/null)" ]; then
+    rm -f "$out/$name-symbols.tar.gz"
+    tar -C "$out" -czf "$out/$name-symbols.tar.gz" "$name-symbols"
+    echo "Symbols: $out/$name-symbols.tar.gz"
+fi
+rm -rf "$symbols"
