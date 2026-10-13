@@ -36,6 +36,15 @@ execution: code
   - `siglongjmp` out of a handler abandons whatever locks the Objective-C runtime or the CoreAudio HAL held, so the process is undefined afterwards: a later editor repaint can deadlock.
   - No comparable host does this in process: Bitwig and Carla host plugins in a child process, Ardour declines crash protection, and JUCE's maintainers decline to add it.
   - Accepted mitigations, all in U4: keep catching SIGBUS as well as SIGSEGV; touch the thread-local guard state before arming, since a macOS TLS first touch can allocate; and after any catch on macOS, mark the session "restart recommended" and say so in the UI.
+  - **The price, which U1 and U3 pay.** Recovering in process on macOS means no system `.ips` report for that fault, because the system writes one only when a core-generating signal goes unhandled. LLVM also disabled `sigaltstack` on Apple platforms because Darwin's `backtrace()` doesn't work with it, so a report written from the handler loses its stack. On macOS, then, this unit trades away most of what U3 could say about a plugin fault. Everything U3 records about the *app's* own death is unaffected.
+  - Some crashes stay untrappable either way: a plugin that fails code signing is killed with SIGKILL, which no in-process guard can catch.
+
+- **KD7. What the guard can and cannot report on Apple Silicon.** Verify each of these on the Mac before relying on them; they come from reading xnu and Apple's libplatform, not from Apple documentation.
+  - **`sigsetjmp`'s savemask must be 1 on Darwin.** `CrashGuard_posix.cpp:171` passes 0 today. On Darwin a zero savemask routes to `_setjmp`/`_longjmp`, which skips the `__sigunaltstack` reset that `siglongjmp` performs, so the kernel keeps the thread marked as running on the alternate stack. After one recovery, the next fault on that thread is not delivered on the alternate stack and `sigaltstack` on it starts failing. Linux infers the on-stack state from the stack pointer and never shows this.
+    - Passing 1 costs a `sigprocmask` on every guarded call, and the guard wraps every `processBlock`, so that is a syscall per audio block. The alternative is to re-arm the alternate stack explicitly after a catch. Settle it with a test that faults twice on the same thread and checks the second is still caught on the alternate stack.
+  - **`Fault::DivideByZero` is unreachable on arm64:** integer division by zero doesn't trap there, and `si_code` is hardcoded on Apple's arm64 path, so the fault names the UI shows will be coarser than on Windows.
+  - **A stack overflow on the audio thread arrives as a plain SIGBUS** with none of the fix-up the kernel applies to the main thread, so it is caught but reported as a bus error.
+  - The alternate stack size is fine: 64 KiB clears Darwin's 32 KiB minimum.
 - **KD2. The reporter goes as far as a breadcrumb, no further (maintainer, 2026-10-13).** Publish symbols, write a log, and leave a last-session report. No fault handler writes the report.
 - **KD3. Reports stay on the user's machine.** The app shows the file and offers to reveal it; the user attaches it to an issue. Nothing is uploaded, and no endpoint is compiled in. This matches what Audacity, MuseScore, KiCad and OBS do: none upload without an explicit click.
 - **KD4. Build identity is the load-bearing field.** A report is worthless without it: the PDB GUID and age on Windows, the dSYM UUID on macOS, and `.note.gnu.build-id` on Linux. They change on every link, so U1 keys the symbol archive by version and U3 prints the identity in the report.
@@ -100,9 +109,11 @@ execution: code
 - **Dependencies:** none
 - **Files:**
   - `app-v3/src/engine/CMakeLists.txt`: build `platform/CrashGuard_posix.cpp` on Apple instead of `CrashGuard_none.cpp`.
-  - `app-v3/src/platform/CrashGuard_posix.cpp`: touch the thread-local guard state and alternate stack before arming on every thread that calls `guardedCall`, so a first touch can't allocate inside the handler.
+  - `app-v3/src/platform/CrashGuard_posix.cpp`:
+    - touch the thread-local guard state and alternate stack before arming on every thread that calls `guardedCall`, so a first touch can't allocate inside the handler;
+    - fix the savemask for Darwin (KD7), either by passing 1 to `sigsetjmp` or by re-arming the alternate stack after a catch, whichever the two-faults test proves out.
   - `app-v3/src/engine/BypassableInstance.cpp` and the session: after a catch on macOS, set a "restart recommended" flag on the session; the status bar says so once.
   - `app-v3/tests/unit/engine/CrashGuard_test.cpp`: the cases currently skipped on macOS run there.
   - `docs/releases/v1.0.0-beta.1.md`: the macOS note changes from "a crashing plugin takes the app down" to what it now does, with the caveat that recovery on macOS is best-effort and a restart is advised.
-- **Test scenarios:** the existing guard tests pass on the macOS runner; a plugin that crashes in `processBlock` becomes a placeholder and the app keeps running.
+- **Test scenarios:** the existing guard tests pass on the macOS runner; a plugin that crashes in `processBlock` becomes a placeholder and the app keeps running; **a thread that faults twice is caught both times**, which is what proves the savemask question settled (KD7).
 - **Verification:** the macOS CI job runs the guard tests green, and a hands-on check on Apple Silicon (#87) confirms the placeholder path. Note that the macOS CI job is still `allow_failure`, so a red guard test there is invisible: check it by hand until #33's merge-request half lands.
