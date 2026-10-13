@@ -57,6 +57,10 @@ else
     done
 fi
 
+# The app's own licence (AGPLv3) and what everything else is under. Shipping
+# both is an AGPL obligation, not a courtesy.
+cp LICENSE "$stage/LICENSE.txt"
+cp THIRD-PARTY-NOTICES.md "$stage/"
 # Third-party licences: every embedded font's OFL, named after its folder.
 for licence in app-v3/resources/fonts/*/OFL.txt; do
     cp "$licence" "$stage/licences/$(basename "$(dirname "$licence")")-OFL.txt"

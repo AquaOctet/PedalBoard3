@@ -67,6 +67,10 @@ $stage = Join-Path $OutDir $name
 if (Test-Path -LiteralPath $stage) { Remove-Item -Recurse -Force -LiteralPath $stage }
 New-Item -ItemType Directory -Force -Path (Join-Path $stage 'licences') | Out-Null
 foreach ($exe in $exes) { Copy-Item -LiteralPath (Join-Path $bin $exe) -Destination $stage }
+# The app's own licence (AGPLv3) and what everything else is under. Shipping
+# both is an AGPL obligation, not a courtesy.
+Copy-Item -LiteralPath 'LICENSE' -Destination (Join-Path $stage 'LICENSE.txt')
+Copy-Item -LiteralPath 'THIRD-PARTY-NOTICES.md' -Destination $stage
 # Third-party licences: every embedded font's OFL, named after its folder.
 foreach ($licence in Get-ChildItem -Path 'app-v3/resources/fonts/*/OFL.txt') {
     Copy-Item -LiteralPath $licence.FullName -Destination (Join-Path $stage "licences/$($licence.Directory.Name)-OFL.txt")
