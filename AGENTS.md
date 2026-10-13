@@ -295,7 +295,7 @@ round:
 │   ├── reviews/
 │   └── status/              # dated handoff and status notes
 ├── source code/             # READ-ONLY: original Pedalboard2 v2
-├── legacy/                  # Pedalboard2 binaries, end-user docs, readme, to-do
+├── legacy/                  # Pedalboard2 end-user docs, readme, to-do
 ├── vercel-ui-demo/          # UI mockup (design source)
 ├── app-v3/                  # the v3 code
 │   ├── CMakeLists.txt

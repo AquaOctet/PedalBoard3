@@ -108,7 +108,7 @@ builds with `JUCE_USE_CURL=0` and `JUCE_WEB_BROWSER=0` (`app-v3/CMakeLists.txt`)
 │   ├── releases/            # release notes, and how to cut a release
 │   ├── reviews/
 │   └── status/              # dated handoff and status notes
-├── legacy/                  # Pedalboard2 binaries, docs, readme, to-do
+├── legacy/                  # Pedalboard2 end-user docs, readme, to-do
 ├── source code/             # READ-ONLY original Pedalboard2 v2 code
 ├── vercel-ui-demo/          # UI mockup (design source)
 ├── .gitlab-ci.yml
