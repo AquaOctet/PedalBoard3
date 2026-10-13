@@ -12,8 +12,17 @@ namespace pedalboard3::engine
 // holds the audio formats they read and write.
 //
 // PluginHost owns it. It starts with PluginHost, because processors are
-// created on Session's worker thread, and stops when PluginHost goes, after
-// Session and every processor have gone.
+// created on Session's worker thread, and it must stop only once every
+// processor that registered with it has gone.
+//
+// That is a teardown order, and it is not the obvious one. The processors do
+// not belong to Session — Session's destructor says so, and leaves them be —
+// they belong to the graph, which AudioEngine owns. So **AudioEngine has to be
+// destroyed before PluginHost**, which is not reverse construction order.
+// Get it wrong and ~FilePlayerProcessor calls removeTimeSliceClient on a
+// destroyed thread: an access violation on the way out, only when a board had
+// one of these four nodes on it. App::shutdown does it in the right order and
+// says why.
 class DiskThread
 {
 public:

@@ -190,8 +190,16 @@ void App::shutdown()
     featureGate.reset();       // listens to bankDocument
     bankDocument.reset();
     session.reset();
-    pluginHost.reset();
+    // The engine BEFORE the host, which is not reverse construction order and
+    // has to be this way round. The built-in processors (File Player, Audio
+    // Recorder, Looper, Metronome) register themselves as time-slice clients
+    // of the one disk thread, and PluginHost owns that thread — but the
+    // processors themselves live in the graph, which the engine owns and which
+    // Session's destructor explicitly leaves alone ("the node processors
+    // outlive Session"). Destroy the host first and ~FilePlayerProcessor calls
+    // removeTimeSliceClient on a thread that is already gone.
     engine.reset();
+    pluginHost.reset();
     preferences.reset();
 
     // Drop the default LookAndFeel pointer BEFORE destroying the
