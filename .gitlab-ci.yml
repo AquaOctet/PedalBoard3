@@ -472,7 +472,7 @@ release:macos:
     - !reference [build:macos, script]
     - tools/package.sh build/macos-universal packages
   artifacts:
-    paths: [ packages/*.zip ]
+    paths: [ packages/*.zip, packages/*-symbols.tar.gz ]
     expire_in: 2 weeks
     when: on_success
 
@@ -564,3 +564,15 @@ release:gitlab:
         - name: "Linux (x64)"
           url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/pedalboard3/${PB3_VERSION}/Pedalboard3-${PB3_VERSION}-linux-x64.tar.gz"
           link_type: package
+        # Debug symbols: needed to read a crash from this build, and useless
+        # for any other, since they are matched by PDB GUID, dSYM UUID or
+        # build id. Not inside the packages: most people never need them.
+        - name: "Windows debug symbols (x64)"
+          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/pedalboard3/${PB3_VERSION}/Pedalboard3-${PB3_VERSION}-windows-x64-symbols.zip"
+          link_type: other
+        - name: "macOS debug symbols"
+          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/pedalboard3/${PB3_VERSION}/Pedalboard3-${PB3_VERSION}-macos-universal-symbols.tar.gz"
+          link_type: other
+        - name: "Linux debug symbols (x64)"
+          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/pedalboard3/${PB3_VERSION}/Pedalboard3-${PB3_VERSION}-linux-x64-symbols.tar.gz"
+          link_type: other
