@@ -22,7 +22,12 @@
 
 # When a pipeline runs at all:
 #   - every merge request push: the gate (lint, and build + unit tests on
-#     Linux, Windows and macOS);
+#     Linux, Windows and macOS) — but only when the push touched something
+#     that can change what is built. A merge request that only edits docs,
+#     release notes, the read-only v2 tree or the UI mockup runs the single
+#     `no-build` job instead of six platform jobs. `.code-paths` below is the
+#     list that decides, and it is an allow-list: a new directory holding
+#     code has to be added to it;
 #   - main, only when someone starts a pipeline by hand (Build > Pipelines >
 #     Run pipeline, or `glab ci run -b main`). It holds just the release
 #     jobs, each a click of its own: the platform builds, then release:gitlab,
@@ -62,12 +67,45 @@ default:
       - stuck_or_timeout_failure
       - scheduler_failure
 
+# What the gate considers "code": the only paths whose change can alter what
+# gets built, tested or packaged. A merge request that touches none of them —
+# docs, release notes, the read-only v2 tree, the UI mockup — skips the build
+# and test jobs entirely and runs `no-build` instead.
+#
+# This is an allow-list, so a NEW top-level directory holding code would be
+# missed and its merge request would skip the gate. Add it here when you add
+# it. The reverse mistake is the cheap one: a path listed here that turns out
+# to be inert only costs a pipeline.
+#
+# `.gitlab-ci.yml` is on the list so a change to the pipeline always proves
+# itself, and `.gitignore` is, because it decides what the build can see.
+.code-paths: &code-paths
+  - app-v3/**/*
+  - tools/**/*
+  - installer/**/*
+  - CMakePresets.json
+  - build.ps1
+  - justfile
+  - Makefile
+  - .clang-format
+  - .gitignore
+  - .gitlab-ci.yml
+
 # The gate (lint, and build + unit tests on each platform): every merge
-# request push. Not main: a merge was already green on its MR, and a pipeline
-# started by hand on main is for the release builds (see workflow). Windows
-# and macOS set allow_failure on the job, which keeps a slow SaaS runner off
-# an MR's critical path.
+# request push that touches code. Not main: a merge was already green on its
+# MR, and a pipeline started by hand on main is for the release builds (see
+# workflow). Windows and macOS set allow_failure on the job, which keeps a
+# slow SaaS runner off an MR's critical path.
 .rules-gate: &rules-gate
+  - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    changes: *code-paths
+
+# The other half: a merge request that changed nothing on the list above.
+# The first rule takes the code case out, so what is left is docs-only.
+.rules-docs-only: &rules-docs-only
+  - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    changes: *code-paths
+    when: never
   - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
 
 # Release jobs, from main only (#88): each is a manual click in a pipeline
@@ -187,6 +225,26 @@ default:
   # patch is what lets juceaide load without it.
   - cmake --version
   - ninja --version
+
+# ===========================================================================
+# DOCS-ONLY
+# ===========================================================================
+# A docs-only merge request still gets a pipeline, and it is green. Without
+# this job the whole pipeline would be empty, which GitLab reports as "no
+# pipeline" rather than a pass — fine while
+# `only_allow_merge_if_pipeline_succeeds` is off, misleading the moment it is
+# turned on (#33). It runs the same image the Linux jobs do, so it needs no
+# registry access of its own and no cache.
+no-build:
+  stage: lint
+  image: "${CI_LINUX_IMAGE}"
+  rules: *rules-docs-only
+  cache: []
+  variables:
+    GIT_DEPTH: "1"
+  script:
+    - echo "No code, build or packaging file changed, so the build and test jobs were skipped."
+    - echo "The list that decides this is .code-paths in .gitlab-ci.yml."
 
 # ===========================================================================
 # LINT
