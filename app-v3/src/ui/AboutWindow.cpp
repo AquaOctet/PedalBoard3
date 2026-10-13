@@ -29,6 +29,9 @@ constexpr const char* kGitLabUrl = "https://gitlab.com/void-realm-solutions/peda
 constexpr const char* kGitHubUrl = "https://github.com/AquaOctet/PedalBoard3";
 constexpr const char* kIssuesUrl = "https://github.com/AquaOctet/PedalBoard3/issues";
 constexpr const char* kReleasesUrl = "https://github.com/AquaOctet/PedalBoard3/releases";
+// gnu.org rather than the repository: the licence text is public and permanent,
+// and it stays reachable while the repository is still private (#92).
+constexpr const char* kLicenceUrl = "https://www.gnu.org/licenses/agpl-3.0.html";
 
 constexpr int kWidth = 540;
 constexpr int kMarginX = 26;
@@ -83,6 +86,11 @@ public:
                  {dot},
                  {"Check for updates", kReleasesUrl}});
         addLine({{"Copyright 2026 OpenZephyr LLC", {}, Style::Muted}, {dot}, {"Built with JUCE.", {}, Style::Muted}});
+        addLine({{"Free software under the ", {}, Style::Muted},
+                 {"AGPLv3", kLicenceUrl},
+                 {". Source and third-party notices in the ", {}, Style::Muted},
+                 {"repository", kGitLabUrl},
+                 {".", {}, Style::Muted}});
 
         closeButton_.onClick = [this]
         {
