@@ -121,11 +121,33 @@ builds with `JUCE_USE_CURL=0` and `JUCE_WEB_BROWSER=0` (`app-v3/CMakeLists.txt`)
 
 ## Licence
 
-No LICENSE file is committed yet; the final choice is #47. The plan so far:
+Pedalboard 3 is free software under the **GNU Affero General Public License,
+version 3** — see [LICENSE](LICENSE). Copyright (c) 2026 OpenZephyr LLC.
 
-- Code: **AGPLv3** (matches JUCE 8's open-source licence track; Pedalboard2
-  upstream was GPLv3).
-- Original Pedalboard2 source (`source code/`) retained for reference under
-  its own GPLv3 licence (Niall Moody, 2013).
-- VST3 SDK: MIT (Steinberg, Oct 2025 relicence).
-- ASIO SDK: GPLv3 (Steinberg, Oct 2025 dual-licence).
+That means you can use, study, change and share it, and anything you build on it
+has to stay under the same licence. The "Affero" part adds one condition beyond
+the GPL: if you run a modified version as a network service, its users are
+entitled to its source too.
+
+AGPLv3 is not an arbitrary pick. JUCE 8's open-source track is AGPLv3, the VST3
+SDK that JUCE 8.0.4 bundles is Steinberg-proprietary or GPLv3, and the original
+Pedalboard2 was GPLv3-or-later. AGPLv3 is the licence all three fit under.
+
+- **What everything else is licensed under:**
+  [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). It covers JUCE, the VST3 and
+  LV2 SDKs, the embedded fonts, the test and build tooling, and the optional
+  ASIO SDK, and records which option is taken where a dependency offers a choice.
+- **The original Pedalboard2** (`source code/`) stays under its own GPLv3-or-later
+  licence (Niall Moody, 2009-2013). It is kept for reference only: nothing in it
+  is compiled and nothing in it is shipped.
+
+### Contributing, and paid features
+
+Contributions keep their own copyright and are taken under the AGPLv3 with a
+[Developer Certificate of Origin](CONTRIBUTING.md) sign-off — a one-line
+`git commit -s`, not a CLA. Nobody gets the right to relicense your code.
+
+Future paid features are built as separate components alongside this
+application, not as code inside it, so the app in this repository stays AGPLv3
+and complete. Where a closed component would need different licensing from
+Steinberg or JUCE, that is spelled out in the third-party notices.

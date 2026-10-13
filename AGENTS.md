@@ -116,8 +116,8 @@ prefer `build.ps1` there.
 
 ### Windows: ASIO (optional low-latency drivers, SDK-gated)
 
-ASIO is auto-detected and gated on the Steinberg ASIO SDK. The SDK is GPLv3
-(Steinberg's Oct 2025 relicence) but **kept out of git** by policy, so you
+ASIO is auto-detected and gated on the Steinberg ASIO SDK. The SDK is dual-licensed
+(the proprietary Steinberg ASIO License, or GPLv3) and **kept out of git** by policy, so you
 provide it — `app-v3/CMakeLists.txt` finds the directory containing
 `iasiodrv.h` anywhere under `app-v3/asio_sdk/` and then defines `JUCE_ASIO=1`.
 Without the SDK, Windows builds use WASAPI/DirectSound only (no error).

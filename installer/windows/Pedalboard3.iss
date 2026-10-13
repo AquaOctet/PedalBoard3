@@ -53,7 +53,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "{commonappdata}\Pedalboard3"
 
 [Files]
-; The portable folder: the app, the scanner helper, licences\ and the release notes.
+; The portable folder: the app, the scanner helper, LICENSE.txt, the third-party
+; notices, licences\ and the release notes.
 Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
