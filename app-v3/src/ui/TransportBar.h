@@ -4,6 +4,8 @@
 #include "AppContext.h"
 #include "CpuMeter.h"
 #include "DeviceBadge.h"
+#include "IconButton.h"
+#include "LatencyReadout.h"
 #include "TransportControls.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -19,13 +21,16 @@ class SignalCanvas;
 // TransportBar — fixed-height (48px) strip across the top of the
 // MainWindow:
 //
-//   left:   [File] (New, Open, Save, Save As, Save as Default, Reset
-//           Default, Settings, Patch Bank, App Mappings, About; the file
-//           actions are ui::FileActions), [Settings] (Audio Devices..., MIDI
-//           Settings..., OSC Settings... and the Test Tone switch; UI refresh
-//           U10), [Plugins] (Add Plugin, Plugin List..., Rescan) and [+],
-//           which opens the Add Plugin menu directly: KnownPluginList effects
-//           and built-in nodes, added through EditHistory (AC-UI-N; U1, #32).
+//   left:   a folder, a gear and a plug, each 36 px square, each opening the
+//           menu it used to spell out (#90: the words cost 178 px that the
+//           device badge and the patch name both wanted). [Folder] is New,
+//           Open, Save, Save As, Save as Default, Reset Default, Settings,
+//           Patch Bank, App Mappings, About; the file actions are
+//           ui::FileActions. [Gear] is Audio Devices..., MIDI Settings...,
+//           OSC Settings... and the Test Tone switch (UI refresh U10).
+//           [Plug] is Add Plugin, Plugin List..., Rescan. Then [+], which
+//           opens the Add Plugin menu directly: KnownPluginList effects and
+//           built-in nodes, added through EditHistory (AC-UI-N; U1, #32).
 //   centre: the patch strip (roadmap M3 U5): [<] [n/N  Name] [>]. The
 //           arrows step the bank; the name button opens the bank menu
 //           (new, duplicate, rename, remove, go to a patch). Every switch
@@ -36,8 +41,10 @@ class SignalCanvas;
 //           (its popover has Tap and the time signature), the position and
 //           the Metronome's click button. On a narrow window the position
 //           folds away, then the click button.
-//   right:  the MIDI / OSC activity lights and the CPU meter (UI refresh
-//           U3 / U2).
+//   right:  the MIDI / OSC activity lights, the round-trip latency and the
+//           CPU meter (UI refresh U3 / U2; latency is #90). The latency folds
+//           away first on a narrow window: the lights and the meter move
+//           second by second and it only moves when the device does.
 //
 // Between [+] and the patch strip sits the audio-device badge (#90): the
 // driver and rate as a chip, then the input and output devices with a mic and
@@ -120,12 +127,15 @@ private:
     SignalCanvas& canvas_;
     FileActions& files_;
 
-    juce::TextButton fileButton_{"File"};
+    // The three menus are icons, not words (#90). Their tooltips carry the
+    // name, and on macOS the menu bar still spells them out.
+    IconButton fileButton_{folderIcon(), "File"};
     juce::TextButton addPluginButton_{"+"};
-    juce::TextButton settingsButton_{"Settings"};
-    juce::TextButton pluginsButton_{"Plugins"};
+    IconButton settingsButton_{gearIcon(), "Settings"};
+    IconButton pluginsButton_{plugIcon(), "Plugins"};
     DeviceBadge deviceBadge_;
     ActivityLights activityLights_;
+    LatencyReadout latencyReadout_;
     CpuMeter cpuMeter_;
     TransportControls transportControls_;
 

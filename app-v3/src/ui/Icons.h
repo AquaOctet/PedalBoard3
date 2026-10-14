@@ -131,6 +131,86 @@ inline juce::Path panelSideIcon(PanelSide side)
     return p;
 }
 
+// The top bar's menu icons (#90, "less text, more icons"). The UI demo has no
+// File or Plugins menu to copy, so these follow lucide's drawing rules — a
+// 24-unit grid, outlines, no fill — and borrow its vocabulary where it has a
+// word for the thing: `plug` for plugins, `settings` for settings, `activity`
+// for the latency readout.
+
+// lucide "folder": the File menu is New / Open / Save / Save As.
+inline juce::Path folderIcon()
+{
+    juce::Path p;
+    p.startNewSubPath(3.0f, 19.0f);
+    p.lineTo(3.0f, 5.5f);
+    p.lineTo(9.5f, 5.5f);
+    p.lineTo(11.5f, 8.0f);
+    p.lineTo(21.0f, 8.0f);
+    p.lineTo(21.0f, 19.0f);
+    p.closeSubPath();
+    return scaledToIconBox(p);
+}
+
+// lucide "plug": two prongs, a body and a cord.
+inline juce::Path plugIcon()
+{
+    juce::Path p;
+    p.addRoundedRectangle(6.0f, 8.0f, 12.0f, 9.0f, 4.5f, 4.5f, false, false, true, true);
+    p.startNewSubPath(9.0f, 8.0f);
+    p.lineTo(9.0f, 2.0f);
+    p.startNewSubPath(15.0f, 8.0f);
+    p.lineTo(15.0f, 2.0f);
+    p.startNewSubPath(12.0f, 17.0f);
+    p.lineTo(12.0f, 22.0f);
+    return scaledToIconBox(p);
+}
+
+// lucide "settings": a gear. Generated rather than transcribed — the teeth
+// are regular, so a loop says what it is and a 40-point path literal does
+// not. Four vertices per tooth: up to the tip, along the flat top, back down,
+// then round the gap to the next one.
+inline juce::Path gearIcon()
+{
+    constexpr int teeth = 8;
+    constexpr float cx = 12.0f, cy = 12.0f, rRoot = 7.4f, rTip = 10.4f;
+    const float step = juce::MathConstants<float>::twoPi / static_cast<float>(teeth);
+
+    juce::Path p;
+    p.setUsingNonZeroWinding(false);
+    for (int i = 0; i < teeth; ++i)
+    {
+        const float a = static_cast<float>(i) * step;
+        const auto at = [&](float frac, float r)
+        { return juce::Point<float>(cx + r * std::cos(a + frac * step), cy + r * std::sin(a + frac * step)); };
+
+        const auto root0 = at(0.00f, rRoot);
+        if (i == 0)
+            p.startNewSubPath(root0);
+        else
+            p.lineTo(root0);
+        p.lineTo(at(0.12f, rTip));
+        p.lineTo(at(0.38f, rTip));
+        p.lineTo(at(0.50f, rRoot));
+    }
+    p.closeSubPath();
+    p.addEllipse(cx - 3.4f, cy - 3.4f, 6.8f, 6.8f); // the hub, a hole under even-odd
+    return scaledToIconBox(p);
+}
+
+// lucide "activity": the heartbeat line, which is what the demo puts beside
+// its latency readout.
+inline juce::Path activityIcon()
+{
+    juce::Path p;
+    p.startNewSubPath(2.0f, 12.0f);
+    p.lineTo(6.0f, 12.0f);
+    p.lineTo(9.0f, 3.5f);
+    p.lineTo(15.0f, 20.5f);
+    p.lineTo(18.0f, 12.0f);
+    p.lineTo(22.0f, 12.0f);
+    return scaledToIconBox(p);
+}
+
 // Stroke an outline icon centred in `area`, the way the badge and the panel
 // toggles want it: lucide's 2-unit stroke on its 24 grid, which is 1.17 at our
 // 14.

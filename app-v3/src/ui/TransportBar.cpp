@@ -40,12 +40,12 @@ namespace
 {
 constexpr int kBarPadding = 12;
 constexpr int kButtonGap = 6;
-constexpr int kFileButtonWidth = 64;
-constexpr int kAddButtonWidth = 36; // the square [+]
-constexpr int kActivityWidth = 104; // MIDI and OSC lights
+constexpr int kMenuButtonWidth = 36; // the square folder / gear / plug
+constexpr int kAddButtonWidth = 36;  // the square [+]
+constexpr int kActivityWidth = 104;  // MIDI and OSC lights
 constexpr int kCpuMeterWidth = 168;
-constexpr int kSettingsButtonWidth = 90;
-constexpr int kPluginsButtonWidth = 90;
+// Below this the latency readout folds away.
+constexpr int kLatencyHideBelow = 1180;
 // Patch strip (M3 U5): [<] [n/N  Name] [>].
 constexpr int kPatchArrowWidth = 28;
 constexpr int kPatchStripGap = 4;
@@ -53,9 +53,11 @@ constexpr int kPatchNameMaxWidth = 320;
 // The device badge folds the same way (#90): the output device goes first,
 // then the input, then the chip itself, so the bar never has to squeeze the
 // patch name down to nothing to make room for a readout.
-constexpr int kBadgeDropOutputBelow = 1600;
-constexpr int kBadgeDropInputBelow = 1400;
-constexpr int kBadgeHideBelow = 1040;
+// Lowered once the menus became icons (#90): that gave back 178 px, most of a
+// device name, so each fold now happens a window-size earlier.
+constexpr int kBadgeDropOutputBelow = 1420;
+constexpr int kBadgeDropInputBelow = 1200;
+constexpr int kBadgeHideBelow = 1000;
 // Below these window widths the transport pill folds its position away, then ♩.
 constexpr int kTransportFoldBelow = 1120;
 constexpr int kTransportFoldMoreBelow = 960;
@@ -131,8 +133,9 @@ void showMenuBelow(juce::PopupMenu menu, juce::Button& button, std::function<voi
 } // namespace
 
 TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas, FileActions& files)
-    : ctx_(ctx), canvas_(canvas), files_(files), activityLights_(ctx.controlHub), deviceBadge_(ctx),
-      cpuMeter_(ctx.audioEngine.getDeviceManager()), transportControls_(ctx)
+    : ctx_(ctx), canvas_(canvas), files_(files), deviceBadge_(ctx), activityLights_(ctx.controlHub),
+      latencyReadout_(ctx.audioEngine.getDeviceManager()), cpuMeter_(ctx.audioEngine.getDeviceManager()),
+      transportControls_(ctx)
 {
     setOpaque(true);
 
@@ -146,8 +149,9 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas, FileActions& f
     settingsButton_.onClick = [this] { showMenuBelow(makeSettingsMenu(), settingsButton_); };
     pluginsButton_.onClick = [this] { openPluginsMenu(); };
 
+    fileButton_.setTooltip("File: new, open, save, the patch bank, app mappings, about");
     settingsButton_.setTooltip(
-        "Audio devices, MIDI, OSC, Tempo / BPM, Metronome and Looper settings, and the test tone");
+        "Settings: audio devices, MIDI, OSC, Tempo / BPM, Metronome and Looper, and the test tone");
     testTone_.addListener(this);
 
     addAndMakeVisible(fileButton_);
@@ -156,12 +160,14 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas, FileActions& f
     deviceBadge_.onClick = [this] { showAudioDevicesWindow(ctx_, testTone_); };
     deviceBadge_.onLayoutChanged = [this] { resized(); };
     addAndMakeVisible(activityLights_);
+    addAndMakeVisible(latencyReadout_);
+    latencyReadout_.onLayoutChanged = [this] { resized(); };
     addAndMakeVisible(cpuMeter_);
     addAndMakeVisible(transportControls_);
     transportControls_.onLayoutChanged = [this] { resized(); };
     addAndMakeVisible(settingsButton_);
     addAndMakeVisible(pluginsButton_);
-    pluginsButton_.setTooltip("Add a plugin, the plugin list, rescan");
+    pluginsButton_.setTooltip("Plugins: add a plugin, the plugin list, rescan");
     addPluginButton_.setTooltip("Add plugin");
 
     prevPatchButton_.setTooltip("Previous patch");
@@ -244,9 +250,17 @@ void TransportBar::resized()
 {
     auto bounds = getLocalBounds().reduced(kBarPadding, 6);
 
-    // Right cluster: MIDI / OSC lights | CPU.
-    auto right = bounds.removeFromRight(kActivityWidth + kCpuMeterWidth + kButtonGap);
+    // Right cluster: MIDI / OSC lights | latency | CPU.
+    const bool latencyOn = getWidth() >= kLatencyHideBelow;
+    latencyReadout_.setVisible(latencyOn);
+    const int latencyWidth = latencyOn ? latencyReadout_.preferredWidth() + kButtonGap * 2 : 0;
+    auto right = bounds.removeFromRight(kActivityWidth + latencyWidth + kCpuMeterWidth + kButtonGap);
     activityLights_.setBounds(right.removeFromLeft(kActivityWidth));
+    if (latencyOn)
+    {
+        right.removeFromLeft(kButtonGap * 2);
+        latencyReadout_.setBounds(right.removeFromLeft(latencyReadout_.preferredWidth()));
+    }
     right.removeFromLeft(kButtonGap);
     cpuMeter_.setBounds(right.removeFromLeft(kCpuMeterWidth));
 
@@ -266,12 +280,12 @@ void TransportBar::resized()
         bounds.removeFromRight(kBarPadding);
     }
 
-    // Left cluster: File | Settings | Plugins | +.
-    fileButton_.setBounds(bounds.removeFromLeft(kFileButtonWidth));
+    // Left cluster: folder | gear | plug | +.
+    fileButton_.setBounds(bounds.removeFromLeft(kMenuButtonWidth));
     bounds.removeFromLeft(kButtonGap);
-    settingsButton_.setBounds(bounds.removeFromLeft(kSettingsButtonWidth));
+    settingsButton_.setBounds(bounds.removeFromLeft(kMenuButtonWidth));
     bounds.removeFromLeft(kButtonGap);
-    pluginsButton_.setBounds(bounds.removeFromLeft(kPluginsButtonWidth));
+    pluginsButton_.setBounds(bounds.removeFromLeft(kMenuButtonWidth));
     bounds.removeFromLeft(kButtonGap);
     addPluginButton_.setBounds(bounds.removeFromLeft(kAddButtonWidth));
     bounds.removeFromLeft(kBarPadding);
