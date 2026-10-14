@@ -53,13 +53,55 @@ TEST_CASE("CanvasLayout: Input and Output hug a chain saved far away, and the gr
     REQUIRE(l.autoPlaced.empty());
 }
 
-TEST_CASE("CanvasLayout: Input and Output sit on the vertical centre of cards on several rows", "[ui][canvas]")
+TEST_CASE("CanvasLayout: each endpoint sits on the card its cable runs to", "[ui][canvas]")
 {
+    // Two cards on different rows. Input belongs to the first in the chain and
+    // Output to the last, so they are on different rows too (#107). They used
+    // to share the centre of the union, which put both on a row neither card
+    // was on.
     const Saved saved{juce::Point<int>{0, 0}, juce::Point<int>{0, 300}};
     const auto l = canvas::layout(saved, {960, 800}, kM, std::nullopt);
-    const auto cards = cardAt(l, 0).getUnion(cardAt(l, 1));
-    REQUIRE(l.endpoints.input.getCentreY() == cards.getCentreY());
-    REQUIRE(l.endpoints.output.getCentreY() == cards.getCentreY());
+    REQUIRE(l.endpoints.input.getY() == cardAt(l, 0).getY());
+    REQUIRE(l.endpoints.output.getY() == cardAt(l, 1).getY());
+    REQUIRE(l.endpoints.input.getY() != l.endpoints.output.getY());
+}
+
+TEST_CASE("CanvasLayout: moving a middle card leaves both endpoints alone", "[ui][canvas]")
+{
+    // The bug this replaced: the endpoints took the centre of the union of
+    // every card, so dragging a card that connects to neither of them moved
+    // both — and the user cannot drag an endpoint back.
+    const Saved before{juce::Point<int>{0, 0},
+                       juce::Point<int>{kM.cardWidth + kM.gap, 0},
+                       juce::Point<int>{2 * (kM.cardWidth + kM.gap), 0}};
+    const auto l0 = canvas::layout(before, {1600, 800}, kM, std::nullopt);
+
+    // Same board, middle card dragged 100 px up.
+    const Saved after{juce::Point<int>{0, 0},
+                      juce::Point<int>{kM.cardWidth + kM.gap, -100},
+                      juce::Point<int>{2 * (kM.cardWidth + kM.gap), 0}};
+    const auto l1 = canvas::layout(after, {1600, 800}, kM, l0.offset);
+
+    REQUIRE(l1.endpoints.input.getY() == l0.endpoints.input.getY());
+    REQUIRE(l1.endpoints.output.getY() == l0.endpoints.output.getY());
+}
+
+TEST_CASE("CanvasLayout: moving an end card moves only its own endpoint", "[ui][canvas]")
+{
+    const Saved before{juce::Point<int>{0, 0},
+                       juce::Point<int>{kM.cardWidth + kM.gap, 0},
+                       juce::Point<int>{2 * (kM.cardWidth + kM.gap), 0}};
+    const auto l0 = canvas::layout(before, {1600, 800}, kM, std::nullopt);
+
+    // The first card moves up: Input follows it, Output does not.
+    const Saved after{juce::Point<int>{0, -100},
+                      juce::Point<int>{kM.cardWidth + kM.gap, 0},
+                      juce::Point<int>{2 * (kM.cardWidth + kM.gap), 0}};
+    const auto l1 = canvas::layout(after, {1600, 800}, kM, l0.offset);
+
+    REQUIRE(l1.endpoints.input.getY() == cardAt(l1, 0).getY());
+    REQUIRE(l1.endpoints.input.getY() < l0.endpoints.input.getY());
+    REQUIRE(l1.endpoints.output.getY() == l0.endpoints.output.getY());
 }
 
 TEST_CASE("CanvasLayout: a group larger than the view sits a margin from the top-left and scrolls", "[ui][canvas]")
