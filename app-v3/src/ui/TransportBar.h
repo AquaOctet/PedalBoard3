@@ -11,6 +11,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -122,6 +123,8 @@ private:
     // dialog): start or stop the tone.
     void valueChanged(juce::Value&) override;
     void updateAddPluginEnabled();
+    // Put the tone graph in, once the clearPatch it waits on has committed.
+    void startToneIfClearLanded();
     // Icon, colour and tooltip for the master mute (#106).
     void refreshMuteButton();
     void openPluginsMenu();
@@ -150,6 +153,15 @@ private:
     // dialog's toggle share it; valueChanged() starts or stops the tone.
     juce::Value testTone_{false};
     bool toneActive_{false}; // what is actually playing
+
+    // Switching the tone ON clears the patch first, and clearPatch() is async
+    // (#111). The tone graph can only go into the engine once that clear has
+    // landed, or the worker's empty patch arrives a moment later and swaps the
+    // tone straight back out. These two hold the wait: the flag says a tone is
+    // owed, and the version is the state counter at the moment the clear was
+    // asked for, so "Idle" means Idle AFTER the clear rather than Idle still.
+    bool tonePending_{false};
+    std::uint64_t toneRequestedAtVersion_{0};
 
     PatchStrip patchStrip_;
 

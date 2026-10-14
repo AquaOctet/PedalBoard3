@@ -262,7 +262,26 @@ void TransportBar::changeListenerCallback(juce::ChangeBroadcaster* source)
     // Session state may have transitioned; Add Plugin is enabled only
     // when Idle and Test Tone is off (otherwise the chain isn't the
     // live graph being driven by the engine).
+    startToneIfClearLanded();
     updateAddPluginEnabled();
+}
+
+void TransportBar::startToneIfClearLanded()
+{
+    if (!tonePending_)
+        return;
+    // Idle AND the counter has moved: the clear we asked for has been through
+    // the worker and committed. Idle alone would also be true in the gap
+    // before the worker starts, which is the window the bug lived in.
+    if (ctx_.session.getState() != session::Session::State::Idle ||
+        ctx_.session.getStateVersion() <= toneRequestedAtVersion_)
+        return;
+
+    tonePending_ = false;
+    if (!toneActive_)
+        return; // switched off while we waited
+
+    ctx_.audioEngine.loadGraph(buildTestToneGraph(*ctx_.audioEngine.getDeviceManager()));
 }
 
 void TransportBar::paint(juce::Graphics& g)
@@ -963,6 +982,12 @@ void TransportBar::valueChanged(juce::Value&)
         // switch/save while the tone plays cannot overwrite the slot with the
         // empty patch clearPatch installs (BankDocument re-enables it on its
         // next swap).
+        // Read the state counter BEFORE asking for the clear: "Idle" on its
+        // own is ambiguous here, because Session is still Idle for the moment
+        // between clearPatch() returning and the worker picking the job up.
+        toneRequestedAtVersion_ = ctx_.session.getStateVersion();
+        tonePending_ = true;
+
         ctx_.bankDocument.storeActive();
         ctx_.bankDocument.setLiveCaptureEnabled(false);
 
@@ -970,9 +995,13 @@ void TransportBar::valueChanged(juce::Value&)
         // every open EditorWindow synchronously BEFORE Session
         // destroys the underlying plugin instances on clearPatch.
         canvas_.closeAllEditors();
+        // The tone graph goes in from the Session listener once the clear has
+        // landed, not here. Loading it here is what was broken: clearPatch is
+        // replacePatch(Patch{}) on the worker, so the empty patch committed a
+        // moment later and took the tone with it. The switch said the tone was
+        // on and the chain was gone (#111).
         ctx_.session.clearPatch();
-        auto graph = buildTestToneGraph(*ctx_.audioEngine.getDeviceManager());
-        ctx_.audioEngine.loadGraph(std::move(graph));
+        startToneIfClearLanded();
     }
     else
     {
@@ -982,6 +1011,7 @@ void TransportBar::valueChanged(juce::Value&)
         // tone graph and crash the next addPlugin). The slot holds the
         // state captured when the tone went on, so the board comes back as
         // it was. The brief audible silence during the swap is acceptable.
+        tonePending_ = false; // switched off before the clear landed: owe nothing
         ctx_.bankDocument.reloadActive();
     }
     updateAddPluginEnabled();

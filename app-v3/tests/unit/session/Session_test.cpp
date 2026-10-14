@@ -1046,3 +1046,77 @@ TEST_CASE("Session: a plugin that isn't scanned loads as Missing, and its settin
     REQUIRE(s.getNodeSnapshots()[1].isMissing());
     REQUIRE(s.getActivePatchWithState().nodes[1].state == gone.state);
 }
+
+TEST_CASE("Session: a replacePatch in flight overwrites a graph loaded straight into the engine",
+          "[session][state-machine][test-tone]")
+{
+    // The hazard behind #111, pinned so nobody reintroduces it.
+    //
+    // clearPatch() is replacePatch(Patch{}) and runs on the worker.
+    // AudioEngine::loadGraph runs now. Call them in that order and the
+    // worker's empty patch commits a moment later and takes the directly
+    // loaded graph with it. The Test Tone switch did exactly this, so the
+    // switch said the tone was on while the chain had been emptied and
+    // nothing was playing.
+    engine::AudioEngine eng;
+    eng.initialise();
+    engine::PluginHost host;
+    FakeBuilder builder;
+
+    session::Session s(eng, host, builder.fn());
+    s.replacePatch(makeOneNodePatch("Gain"));
+    pumpUntilIdle(s);
+    REQUIRE(s.getNodeCount() == 1);
+
+    auto* runtime = eng.getRuntime();
+    REQUIRE(runtime != nullptr);
+
+    s.clearPatch(); // async
+    auto standIn = std::make_unique<juce::AudioProcessorGraph>();
+    standIn->setPlayConfigDetails(2, 2, 48000.0, 512);
+    standIn->prepareToPlay(48000.0, 512);
+    auto* standInRaw = standIn.get();
+    eng.loadGraph(std::move(standIn));
+    REQUIRE(runtime->getLiveGraph() == standInRaw); // it really did go in
+
+    pumpUntilIdle(s);
+
+    // ...and it is gone again. This is the engine behaving as designed:
+    // Session owns the runtime graph, and a direct load cannot win a race
+    // against a commit that was already on its way.
+    REQUIRE(runtime->getLiveGraph() != standInRaw);
+}
+
+TEST_CASE("Session: a graph loaded after the clear has landed stays put", "[session][state-machine][test-tone]")
+{
+    // The rule TransportBar::startToneIfClearLanded follows: wait for Idle
+    // *and* for the state counter to move, then load. Idle alone is not
+    // enough, because Session is still Idle in the gap between clearPatch()
+    // returning and the worker picking the job up.
+    engine::AudioEngine eng;
+    eng.initialise();
+    engine::PluginHost host;
+    FakeBuilder builder;
+
+    session::Session s(eng, host, builder.fn());
+    s.replacePatch(makeOneNodePatch("Gain"));
+    pumpUntilIdle(s);
+
+    auto* runtime = eng.getRuntime();
+    REQUIRE(runtime != nullptr);
+
+    const auto before = s.getStateVersion();
+    s.clearPatch();
+    pumpUntilIdle(s);
+    REQUIRE(s.getState() == session::Session::State::Idle);
+    REQUIRE(s.getStateVersion() > before); // the clear really did go through
+
+    auto tone = std::make_unique<juce::AudioProcessorGraph>();
+    tone->setPlayConfigDetails(2, 2, 48000.0, 512);
+    tone->prepareToPlay(48000.0, 512);
+    auto* toneRaw = tone.get();
+    eng.loadGraph(std::move(tone));
+
+    pumpUntilIdle(s);
+    REQUIRE(runtime->getLiveGraph() == toneRaw);
+}
