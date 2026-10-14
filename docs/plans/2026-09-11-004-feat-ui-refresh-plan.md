@@ -48,8 +48,10 @@ execution: code
   - `+` is a square icon button (tooltip "Add plugin") that opens the add list directly: scanned effects first, then built-ins.
   - The Plugins menu puts the same list first as "Add Plugin ▸", then Plugin List… and Rescan Plugins.
   - The right end is for watching the rig: the MIDI/OSC lights and the CPU meter. The OSC port field, Settings and Test Tone have left it (KD10).
+  - **Superseded in part by #90 (2026-10-13).** The three menus are now icons rather than words, and the audio-device badge sits between `[+]` and the patch strip. The right end also carries the round-trip latency. Settings stayed on the left, as KD10 decided, rather than becoming the demo's right-hand gear.
   - The plugin browser sidebar stays on the right.
 - **KD3. Small windows fold, not hide.** Below about 1200 px wide, both sidebars fold to 48 px icon strips. Clicking a strip icon slides its panel open over the canvas. The left strip keeps the previous / current / next patch one click away. A three-bar toggle at each panel's outer top corner (top-left under File for the bank, top-right for the plugin browser) collapses it to its strip or opens it again at any window size, and File › Patch Bank and Plugins › Plugin Browser do the same; there are no status-bar panel toggles (user decision, 2026-09-11).
+  - **Superseded by #90 (user note, 2026-09-14; shipped 2026-10-13).** There are now three panel toggles in the centre of the status bar, as the UI demo has. The panel-edge toggles and the menu items stay; the status-bar ones are a third way in, not a replacement.
 - **KD4. Mappings: both views.**
   - The per-plugin dialog (M4) stays as the close-up: learn, ranges and the plugin's MIDI channel filter.
   - A board-wide panel docks under the canvas and lists every mapping on the board, with the selected card's rows highlighted, not filtered.
