@@ -116,6 +116,10 @@ public:
         viewport_.removeMouseListener(this);
     }
 
+    // The canvas, for the UI snapshot tool: selecting a node is the only way
+    // to show the selected-card chrome in a still image (#105).
+    SignalCanvas& canvas() noexcept { return canvas_; }
+
     void mouseDown(const juce::MouseEvent&) override { closeOverlays(); }
 
     void paint(juce::Graphics& g) override { g.fillAll(tokens::bgWindow); }

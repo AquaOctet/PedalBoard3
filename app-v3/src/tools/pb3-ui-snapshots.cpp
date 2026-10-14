@@ -538,6 +538,25 @@ int main(int argc, char** argv)
                 std::printf("WARNING window-board has %d of 4 nodes; the session refused the rest\n", added);
             shoot("window-board", root, 1280, 800);
 
+            // Selecting a card is the only way a still image can show the two
+            // accents apart (#105): the selected card and its mapping row take
+            // the "chosen" pink, while the playing patch and the live cables
+            // keep the "playing" cyan-green.
+            const auto nodes = rig.liveSession.getNodeSnapshots();
+            if (nodes.size() >= 2)
+            {
+                root.canvas().selectNode(nodes[1].id);
+                settle(rig);
+                shoot("window-selection", root, 1280, 800);
+                root.canvas().selectNode(std::nullopt);
+                settle(rig);
+            }
+            else
+            {
+                std::printf("WARNING window-selection skipped; the board has %d nodes\n",
+                            static_cast<int>(nodes.size()));
+            }
+
             // A panel's open state is read from Preferences in the constructor,
             // so a fresh root is how you snapshot it collapsed.
             rig.preferences.setPanelShown("patches", false);

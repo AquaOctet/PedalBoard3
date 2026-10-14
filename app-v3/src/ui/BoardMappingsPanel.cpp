@@ -48,14 +48,16 @@ public:
 
     void paint(juce::Graphics& g) override
     {
+        // The selected row follows the canvas selection, so it is marked with
+        // the same "chosen" accent the selected card gets (#105).
         if (selected_)
         {
-            g.setColour(tokens::accentPrimary.withAlpha(0.10f));
+            g.setColour(tokens::accentSelected.withAlpha(0.10f));
             g.fillRect(getLocalBounds());
-            g.setColour(tokens::accentPrimary);
+            g.setColour(tokens::accentSelected);
             g.fillRect(0, 0, 3, getHeight());
         }
-        g.setColour(selected_ ? tokens::accentPrimary : tokens::fgPrimary);
+        g.setColour(selected_ ? tokens::accentSelected : tokens::fgPrimary);
         g.setFont(juce::Font(juce::FontOptions(13.0f)));
         g.drawText(plugin_, pluginArea(), juce::Justification::centredLeft, true);
     }
