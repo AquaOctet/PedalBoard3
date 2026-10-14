@@ -239,6 +239,38 @@ inline juce::Path volumeMutedIcon()
     return scaledToIconBox(p);
 }
 
+// lucide "chevron-left" / "chevron-right" / "chevron-down": the patch strip's
+// steppers and the caret that says its name opens a menu (#109). The strip
+// used the "<" and ">" characters, which sit on the text baseline rather than
+// on the control's centre line and are a different weight from every other
+// mark on the bar.
+inline juce::Path chevronLeftIcon()
+{
+    juce::Path p;
+    p.startNewSubPath(15.0f, 18.0f);
+    p.lineTo(9.0f, 12.0f);
+    p.lineTo(15.0f, 6.0f);
+    return scaledToIconBox(p);
+}
+
+inline juce::Path chevronRightIcon()
+{
+    juce::Path p;
+    p.startNewSubPath(9.0f, 18.0f);
+    p.lineTo(15.0f, 12.0f);
+    p.lineTo(9.0f, 6.0f);
+    return scaledToIconBox(p);
+}
+
+inline juce::Path chevronDownIcon()
+{
+    juce::Path p;
+    p.startNewSubPath(6.0f, 9.0f);
+    p.lineTo(12.0f, 15.0f);
+    p.lineTo(18.0f, 9.0f);
+    return scaledToIconBox(p);
+}
+
 // Stroke an outline icon centred in `area`, the way the badge and the panel
 // toggles want it: lucide's 2-unit stroke on its 24 grid, which is 1.17 at our
 // 14.

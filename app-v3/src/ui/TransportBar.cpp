@@ -45,12 +45,17 @@ constexpr int kAddButtonWidth = 36;  // the square [+]
 constexpr int kActivityWidth = 104;  // MIDI and OSC lights
 constexpr int kCpuMeterWidth = 168;
 constexpr int kMuteButtonWidth = 36;
+// The group dividers (#109): a hairline this tall, centred on the bar.
+constexpr int kDividerHeight = 20;
+constexpr int kDividerGap = 7; // either side of one
+// Below this the CPU meter folds away. The fold order down the bar is
+// latency, then CPU, then the device badge, and it is a priority order: on a
+// narrow window you are playing, not diagnosing, and the patch name is the
+// one thing on the bar you actually need to read. Before this, the dividers'
+// extra width came out of the patch name and it ellipsised to "3/6 ...".
+constexpr int kCpuHideBelow = 1040;
 // Below this the latency readout folds away.
 constexpr int kLatencyHideBelow = 1180;
-// Patch strip (M3 U5): [<] [n/N  Name] [>].
-constexpr int kPatchArrowWidth = 28;
-constexpr int kPatchStripGap = 4;
-constexpr int kPatchNameMaxWidth = 320;
 // The device badge folds the same way (#90): the output device goes first,
 // then the input, then the chip itself, so the bar never has to squeeze the
 // patch name down to nothing to make room for a readout.
@@ -113,6 +118,21 @@ std::unique_ptr<juce::AudioProcessorGraph> buildTestToneGraph(juce::AudioDeviceM
 // Opens `menu` under `button` as the mockup does (UI chrome U3): at least the
 // menu width, a small gap below the button, and the button tinted teal while
 // the menu is open. `onResult` gets the chosen item id, or 0 when dismissed.
+// Drop a menu under any component. The patch strip is not a Button (#109),
+// so the placement lives here and the lit-while-open treatment lives in the
+// Button overload below, which is the only thing that needed it.
+void showMenuBelow(juce::PopupMenu menu, juce::Component& anchor, std::function<void(int)> onResult = {})
+{
+    const auto below = anchor.getScreenBounds().withHeight(anchor.getHeight() + Pb3LookAndFeel::kMenuGap);
+    menu.showMenuAsync(
+        juce::PopupMenu::Options{}.withTargetComponent(anchor).withTargetScreenArea(below).withMinimumWidth(
+            Pb3LookAndFeel::kMenuMinimumWidth),
+        std::move(onResult));
+}
+
+// A menu button stays lit while its menu is open, and goes back when it
+// closes — including when the component is gone by then, hence the
+// SafePointer.
 void showMenuBelow(juce::PopupMenu menu, juce::Button& button, std::function<void(int)> onResult = {})
 {
     button.setColour(juce::TextButton::buttonColourId,
@@ -120,10 +140,9 @@ void showMenuBelow(juce::PopupMenu menu, juce::Button& button, std::function<voi
     button.setColour(juce::TextButton::textColourOffId, tokens::accentPrimary);
     button.setColour(juce::ComboBox::outlineColourId, tokens::accentPrimary);
 
-    const auto below = button.getScreenBounds().withHeight(button.getHeight() + Pb3LookAndFeel::kMenuGap);
-    menu.showMenuAsync(
-        juce::PopupMenu::Options{}.withTargetComponent(button).withTargetScreenArea(below).withMinimumWidth(
-            Pb3LookAndFeel::kMenuMinimumWidth),
+    showMenuBelow(
+        std::move(menu),
+        static_cast<juce::Component&>(button),
         [safeButton = juce::Component::SafePointer<juce::Button>(&button), callback = std::move(onResult)](int result)
         {
             if (auto* opener = safeButton.getComponent())
@@ -142,7 +161,7 @@ void showMenuBelow(juce::PopupMenu menu, juce::Button& button, std::function<voi
 TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas, FileActions& files)
     : ctx_(ctx), canvas_(canvas), files_(files), deviceBadge_(ctx), activityLights_(ctx.controlHub),
       latencyReadout_(ctx.audioEngine.getDeviceManager()), cpuMeter_(ctx.audioEngine.getDeviceManager()),
-      transportControls_(ctx)
+      transportControls_(ctx), patchStrip_(ctx)
 {
     setOpaque(true);
 
@@ -181,18 +200,10 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas, FileActions& f
     pluginsButton_.setTooltip("Plugins: add a plugin, the plugin list, rescan");
     addPluginButton_.setTooltip("Add plugin");
 
-    prevPatchButton_.setTooltip("Previous patch");
-    nextPatchButton_.setTooltip("Next patch");
-    patchButton_.setTooltip(
-        "Patch bank: new, duplicate, rename, remove, go to a patch, and the features this board uses");
-    prevPatchButton_.onClick = [this] { ctx_.bankDocument.previous(); };
-    nextPatchButton_.onClick = [this] { ctx_.bankDocument.next(); };
-    patchButton_.onClick = [this] { openPatchMenu(); };
-    addAndMakeVisible(prevPatchButton_);
-    addAndMakeVisible(patchButton_);
-    addAndMakeVisible(nextPatchButton_);
+    patchStrip_.onOpenMenu = [this] { openPatchMenu(); };
+    patchStrip_.onLayoutChanged = [this] { resized(); };
+    addAndMakeVisible(patchStrip_);
 
-    refreshPatchStrip();
     updateAddPluginEnabled();
 
     ctx_.bankDocument.addChangeListener(this);
@@ -246,7 +257,6 @@ void TransportBar::changeListenerCallback(juce::ChangeBroadcaster* source)
             toneActive_ = false;
             testTone_ = false; // valueChanged() then finds nothing left to do
         }
-        refreshPatchStrip();
     }
 
     // Session state may have transitioned; Add Plugin is enabled only
@@ -260,6 +270,15 @@ void TransportBar::paint(juce::Graphics& g)
     g.fillAll(tokens::bgSidebar);
     g.setColour(tokens::borderDefault);
     g.drawHorizontalLine(getHeight() - 1, 0.0f, static_cast<float>(getWidth()));
+
+    // One hairline between each pair of groups (#109). Thirteen controls in
+    // four visual treatments read as a row of loose boxes; the dividers are
+    // what turn them into menus | device | patch | transport | meters | mute.
+    // The demo does the same thing with `h-5 w-px bg-border`.
+    const float top = (getHeight() - kDividerHeight) * 0.5f;
+    g.setColour(tokens::borderDefault);
+    for (const int x : dividerX_)
+        g.fillRect(juce::Rectangle<float>(static_cast<float>(x), top, 1.0f, static_cast<float>(kDividerHeight)));
 }
 
 void TransportBar::refreshMuteButton()
@@ -277,25 +296,49 @@ void TransportBar::refreshMuteButton()
 void TransportBar::resized()
 {
     auto bounds = getLocalBounds().reduced(kBarPadding, 6);
+    dividerX_.clear();
+
+    // Each group takes a divider's worth of room off the edge it faces, and
+    // records where the line goes. Taking the room here rather than painting
+    // over the gap is what stops a hairline landing on top of a control when
+    // the bar is tight.
+    const auto divideRight = [this, &bounds]
+    {
+        bounds.removeFromRight(kDividerGap);
+        dividerX_.push_back(bounds.getRight());
+        bounds.removeFromRight(kDividerGap);
+    };
+    const auto divideLeft = [this, &bounds]
+    {
+        bounds.removeFromLeft(kDividerGap);
+        dividerX_.push_back(bounds.getX());
+        bounds.removeFromLeft(kDividerGap);
+    };
 
     // Right cluster: MIDI / OSC lights | latency | CPU | mute.
     muteButton_.setBounds(bounds.removeFromRight(kMuteButtonWidth));
-    bounds.removeFromRight(kButtonGap);
+    divideRight();
 
     const bool latencyOn = getWidth() >= kLatencyHideBelow;
+    const bool cpuOn = getWidth() >= kCpuHideBelow;
     latencyReadout_.setVisible(latencyOn);
+    cpuMeter_.setVisible(cpuOn);
     const int latencyWidth = latencyOn ? latencyReadout_.preferredWidth() + kButtonGap * 2 : 0;
-    auto right = bounds.removeFromRight(kActivityWidth + latencyWidth + kCpuMeterWidth + kButtonGap);
+    const int cpuWidth = cpuOn ? kCpuMeterWidth + kButtonGap : 0;
+    auto right = bounds.removeFromRight(kActivityWidth + latencyWidth + cpuWidth);
     activityLights_.setBounds(right.removeFromLeft(kActivityWidth));
     if (latencyOn)
     {
         right.removeFromLeft(kButtonGap * 2);
         latencyReadout_.setBounds(right.removeFromLeft(latencyReadout_.preferredWidth()));
     }
-    right.removeFromLeft(kButtonGap);
-    cpuMeter_.setBounds(right.removeFromLeft(kCpuMeterWidth));
+    if (cpuOn)
+    {
+        right.removeFromLeft(kButtonGap);
+        cpuMeter_.setBounds(right.removeFromLeft(kCpuMeterWidth));
+    }
 
-    bounds.removeFromRight(kBarPadding);
+    divideRight();
 
     // The transport pill, left of the lights (M6 U4, optional-features U4), only
     // while Tempo / BPM is available. On a narrow window it folds its position
@@ -308,7 +351,7 @@ void TransportBar::resized()
                                         : getWidth() < kTransportFoldBelow   ? 1
                                                                              : 0);
         transportControls_.setBounds(bounds.removeFromRight(transportControls_.preferredWidth()));
-        bounds.removeFromRight(kBarPadding);
+        divideRight();
     }
 
     // Left cluster: folder | gear | plug | +.
@@ -319,7 +362,7 @@ void TransportBar::resized()
     pluginsButton_.setBounds(bounds.removeFromLeft(kMenuButtonWidth));
     bounds.removeFromLeft(kButtonGap);
     addPluginButton_.setBounds(bounds.removeFromLeft(kAddButtonWidth));
-    bounds.removeFromLeft(kBarPadding);
+    divideLeft();
 
     // The device badge, left of the patch strip.
     const bool badgeOn = getWidth() >= kBadgeHideBelow;
@@ -328,28 +371,12 @@ void TransportBar::resized()
     {
         deviceBadge_.setFoldLevel(getWidth() < kBadgeDropInputBelow ? 2 : getWidth() < kBadgeDropOutputBelow ? 1 : 0);
         deviceBadge_.setBounds(bounds.removeFromLeft(deviceBadge_.preferredWidth()));
-        bounds.removeFromLeft(kBarPadding);
+        divideLeft();
     }
 
-    // Patch strip. The name button takes what is left between the clusters,
-    // up to a cap, so it is the part that gives way on a narrow window.
-    const int nameWidth =
-        juce::jlimit(0, kPatchNameMaxWidth, bounds.getWidth() - 2 * (kPatchArrowWidth + kPatchStripGap));
-    prevPatchButton_.setBounds(bounds.removeFromLeft(kPatchArrowWidth));
-    bounds.removeFromLeft(kPatchStripGap);
-    patchButton_.setBounds(bounds.removeFromLeft(nameWidth));
-    bounds.removeFromLeft(kPatchStripGap);
-    nextPatchButton_.setBounds(bounds.removeFromLeft(kPatchArrowWidth));
-}
-
-void TransportBar::refreshPatchStrip()
-{
-    const auto& doc = ctx_.bankDocument;
-    const int count = doc.size();
-    patchButton_.setButtonText(juce::String(doc.activeIndex() + 1) + "/" + juce::String(count) + "   " +
-                               doc.activePatch().name);
-    prevPatchButton_.setEnabled(count > 1);
-    nextPatchButton_.setEnabled(count > 1);
+    // The patch strip takes what it asks for, or what is left if that is
+    // less: it is still the first thing on the bar to give way.
+    patchStrip_.setBounds(bounds.removeFromLeft(juce::jmin(patchStrip_.preferredWidth(), bounds.getWidth())));
 }
 
 juce::PopupMenu TransportBar::makePatchMenu()
@@ -389,7 +416,7 @@ juce::PopupMenu TransportBar::makePatchMenu()
 void TransportBar::openPatchMenu()
 {
     showMenuBelow(makePatchMenu(),
-                  patchButton_,
+                  patchStrip_,
                   [this](int choice)
                   {
                       auto& doc = ctx_.bankDocument;
