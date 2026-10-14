@@ -307,8 +307,11 @@ void PluginCard::paint(juce::Graphics& g)
     drawPort(outX, kPortYR, tokens::accentWarning);
     drawPort(outX, kPortYMidi, tokens::accentInfo);
 
-    // The edge: teal when selected, brighter on hover.
-    const auto edge = selected_  ? tokens::accentPrimary
+    // The edge: the "chosen" accent when selected, brighter on hover. Selected
+    // is pink rather than the running cyan-green on purpose (#105): on this
+    // canvas a card you have clicked and a chain that is playing are different
+    // things, and under the old single accent they looked the same.
+    const auto edge = selected_  ? tokens::accentSelected
                       : hovered_ ? tokens::borderDefault.brighter(0.35f)
                                  : tokens::borderDefault;
     g.setColour(edge);
