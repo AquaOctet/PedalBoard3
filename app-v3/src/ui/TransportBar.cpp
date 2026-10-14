@@ -44,6 +44,7 @@ constexpr int kMenuButtonWidth = 36; // the square folder / gear / plug
 constexpr int kAddButtonWidth = 36;  // the square [+]
 constexpr int kActivityWidth = 104;  // MIDI and OSC lights
 constexpr int kCpuMeterWidth = 168;
+constexpr int kMuteButtonWidth = 36;
 // Below this the latency readout folds away.
 constexpr int kLatencyHideBelow = 1180;
 // Patch strip (M3 U5): [<] [n/N  Name] [>].
@@ -54,9 +55,15 @@ constexpr int kPatchNameMaxWidth = 320;
 // then the input, then the chip itself, so the bar never has to squeeze the
 // patch name down to nothing to make room for a readout.
 // Lowered once the menus became icons (#90): that gave back 178 px, most of a
-// device name, so each fold now happens a window-size earlier.
+// device name, so each fold happens a window-size earlier than it did.
+//
+// The input device then went back up from 1200 to 1320 when the master mute
+// arrived (#106), because at 1280 the two cannot both fit and the patch name
+// was wrapping onto a second line to make room. The mute wins that trade: it
+// is the control you reach for when the sound is already wrong, and the input
+// device's name is also one click away in the badge's own tooltip.
 constexpr int kBadgeDropOutputBelow = 1420;
-constexpr int kBadgeDropInputBelow = 1200;
+constexpr int kBadgeDropInputBelow = 1320;
 constexpr int kBadgeHideBelow = 1000;
 // Below these window widths the transport pill folds its position away, then ♩.
 constexpr int kTransportFoldBelow = 1120;
@@ -162,6 +169,10 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas, FileActions& f
     addAndMakeVisible(activityLights_);
     addAndMakeVisible(latencyReadout_);
     latencyReadout_.onLayoutChanged = [this] { resized(); };
+    addAndMakeVisible(muteButton_);
+    muteButton_.onClick = [this] { ctx_.audioEngine.toggleMasterMute(); };
+    ctx_.audioEngine.masterMuteChanged().addChangeListener(this);
+    refreshMuteButton();
     addAndMakeVisible(cpuMeter_);
     addAndMakeVisible(transportControls_);
     transportControls_.onLayoutChanged = [this] { resized(); };
@@ -214,6 +225,11 @@ TransportBar::~TransportBar()
 
 void TransportBar::changeListenerCallback(juce::ChangeBroadcaster* source)
 {
+    if (source == &ctx_.audioEngine.masterMuteChanged())
+    {
+        refreshMuteButton();
+        return;
+    }
     if (source == &ctx_.features)
     {
         resized(); // the transport pill comes or goes with Tempo / BPM
@@ -246,11 +262,26 @@ void TransportBar::paint(juce::Graphics& g)
     g.drawHorizontalLine(getHeight() - 1, 0.0f, static_cast<float>(getWidth()));
 }
 
+void TransportBar::refreshMuteButton()
+{
+    const bool muted = ctx_.audioEngine.isMasterMuted();
+    muteButton_.setIcon(muted ? volumeMutedIcon() : speakerIcon());
+    // Red while muted, and the icon changes shape too, so the state does not
+    // rest on colour alone. A muted rig that looks live is worse than no mute.
+    muteButton_.setColour(juce::TextButton::textColourOffId, muted ? tokens::accentDestructive : tokens::fgMenu);
+    muteButton_.setTooltip(muted ? "Muted. Click to let the output through again."
+                                 : "Mute the output. The board is untouched, and it stays muted across a patch "
+                                   "change.");
+}
+
 void TransportBar::resized()
 {
     auto bounds = getLocalBounds().reduced(kBarPadding, 6);
 
-    // Right cluster: MIDI / OSC lights | latency | CPU.
+    // Right cluster: MIDI / OSC lights | latency | CPU | mute.
+    muteButton_.setBounds(bounds.removeFromRight(kMuteButtonWidth));
+    bounds.removeFromRight(kButtonGap);
+
     const bool latencyOn = getWidth() >= kLatencyHideBelow;
     latencyReadout_.setVisible(latencyOn);
     const int latencyWidth = latencyOn ? latencyReadout_.preferredWidth() + kButtonGap * 2 : 0;

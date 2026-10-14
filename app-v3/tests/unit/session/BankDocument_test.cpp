@@ -508,6 +508,47 @@ TEST_CASE("BankDocument: file.save runs the save handler the UI installs", "[ses
     REQUIRE(saves == 1);
 }
 
+TEST_CASE("audio.toggleMute mutes without touching the board", "[session][bank][app-commands][mute]")
+{
+    Fixture f;
+    f.settle();
+
+    // Unhandled with no engine, the way every other optional subsystem is.
+    REQUIRE_FALSE(session::invokeAppCommand(f.doc, session::appcommands::kToggleMasterMute));
+    REQUIRE_FALSE(f.eng.isMasterMuted());
+
+    const bool wasModified = f.doc.isModified();
+
+    REQUIRE(session::invokeAppCommand(f.doc, session::appcommands::kToggleMasterMute, nullptr, nullptr, &f.eng));
+    REQUIRE(f.eng.isMasterMuted());
+
+    // The whole point: a mute is not an edit. The board must not go unsaved
+    // because someone hit the footswitch (#106).
+    REQUIRE(f.doc.isModified() == wasModified);
+
+    REQUIRE(session::invokeAppCommand(f.doc, session::appcommands::kToggleMasterMute, nullptr, nullptr, &f.eng));
+    REQUIRE_FALSE(f.eng.isMasterMuted());
+    REQUIRE(f.doc.isModified() == wasModified);
+}
+
+TEST_CASE("the master mute survives a patch change", "[session][bank][mute]")
+{
+    Fixture f;
+    f.settle();
+
+    f.eng.setMasterMuted(true);
+    REQUIRE(f.eng.isMasterMuted());
+
+    // It is a stage in the runtime, not a node in the graph, so swapping the
+    // graph out from under it changes nothing.
+    f.doc.loadBank(threeBank(), tempBankFile("mute.pdl"));
+    f.settle();
+    f.doc.next();
+    f.settle();
+
+    REQUIRE(f.eng.isMasterMuted());
+}
+
 TEST_CASE("dropUnsafeNodes: drops unrecognized built-ins from every patch and rebuilds their chain", "[session][bank]")
 {
     engine::PluginHost host;

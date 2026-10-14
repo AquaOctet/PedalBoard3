@@ -569,6 +569,22 @@ int main(int argc, char** argv)
             ui::RootComponent narrow(rig.context);
             shoot("window-narrow", narrow, 900, 640);
 
+            // Muted (#106). The top bar's button goes red and swaps to
+            // volume-x, and the status bar's dot and text go with it, so the
+            // lit state is in the evidence rather than only in the code.
+            // The mute broadcast is async on purpose — in the app it can come
+            // from the MIDI callback thread — so a still image has to push it
+            // through rather than wait for a message loop there isn't one of.
+            const auto setMuted = [&rig](bool muted)
+            {
+                rig.audioEngine.setMasterMuted(muted);
+                rig.audioEngine.masterMuteChanged().sendSynchronousChangeMessage();
+                settle(rig);
+            };
+            setMuted(true);
+            shoot("window-muted", root, 1280, 800);
+            setMuted(false);
+
             // Wide enough that the device badge shows all three parts (#90):
             // the driver chip, the input with its mic and the output with its
             // speaker. Below 1400 it folds to the chip alone, so the narrower

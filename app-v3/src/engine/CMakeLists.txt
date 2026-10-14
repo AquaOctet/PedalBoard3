@@ -21,6 +21,7 @@ add_library(pb3_engine_core STATIC
     AudioEngine.h
     AudioGraphRuntime.cpp
     AudioGraphRuntime.h
+    MasterMute.h
     Transport.cpp
     Transport.h
     TransportMath.h

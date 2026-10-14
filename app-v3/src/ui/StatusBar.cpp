@@ -94,11 +94,13 @@ StatusBar::StatusBar(AppContext& ctx) : ctx_(ctx), stateDotColour_(tokens::statu
     addAndMakeVisible(*browserToggle_);
 
     ctx_.session.addChangeListener(this);
+    ctx_.audioEngine.masterMuteChanged().addChangeListener(this);
     refresh();
 }
 
 StatusBar::~StatusBar()
 {
+    ctx_.audioEngine.masterMuteChanged().removeChangeListener(this);
     ctx_.session.removeChangeListener(this);
 }
 
@@ -178,7 +180,14 @@ void StatusBar::refresh()
     juce::String chainText = "Chain: " + juce::String(static_cast<int>(snaps.size())) + " plugin";
     if (snaps.size() != 1)
         chainText += "s";
-    leftLabel_.setText(chainText + "  •  " + stateText, juce::dontSendNotification);
+    // Muted shows here as well as on the top bar's button, and it takes the
+    // state dot with it (#106): the dot is the one thing on this bar that is
+    // read at a glance, and a muted rig has to look muted from across a stage.
+    const bool muted = ctx_.audioEngine.isMasterMuted();
+    if (muted)
+        stateDotColour_ = tokens::accentDestructive;
+    leftLabel_.setColour(juce::Label::textColourId, muted ? tokens::accentDestructive : tokens::fgPrimary);
+    leftLabel_.setText(chainText + "  •  " + stateText + (muted ? "  •  MUTED" : ""), juce::dontSendNotification);
 
     // Error pill — shown when state is Idle and lastError is non-empty.
     // (During Building/Swapping the previous error from a prior run

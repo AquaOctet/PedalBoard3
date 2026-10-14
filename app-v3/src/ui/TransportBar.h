@@ -41,10 +41,12 @@ class SignalCanvas;
 //           (its popover has Tap and the time signature), the position and
 //           the Metronome's click button. On a narrow window the position
 //           folds away, then the click button.
-//   right:  the MIDI / OSC activity lights, the round-trip latency and the
-//           CPU meter (UI refresh U3 / U2; latency is #90). The latency folds
-//           away first on a narrow window: the lights and the meter move
-//           second by second and it only moves when the device does.
+//   right:  the MIDI / OSC activity lights, the round-trip latency, the CPU
+//           meter and the master mute (UI refresh U3 / U2; latency is #90,
+//           mute is #106). The latency folds away first on a narrow window:
+//           the lights and the meter move second by second and it only moves
+//           when the device does. The mute never folds away — it is the
+//           control you reach for when something is already wrong.
 //
 // Between [+] and the patch strip sits the audio-device badge (#90): the
 // driver and rate as a chip, then the input and output devices with a mic and
@@ -117,6 +119,8 @@ private:
     // dialog): start or stop the tone.
     void valueChanged(juce::Value&) override;
     void updateAddPluginEnabled();
+    // Icon, colour and tooltip for the master mute (#106).
+    void refreshMuteButton();
     void openPluginsMenu();
 
     // Patch strip (M3 U5).
@@ -137,6 +141,7 @@ private:
     ActivityLights activityLights_;
     LatencyReadout latencyReadout_;
     CpuMeter cpuMeter_;
+    IconButton muteButton_{speakerIcon(), "Master mute"};
     TransportControls transportControls_;
 
     // The Test Tone switch: the Settings menu's tick and the Audio Devices

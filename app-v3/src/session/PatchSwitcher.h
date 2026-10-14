@@ -4,6 +4,11 @@
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
+namespace pedalboard3::engine
+{
+class AudioEngine;
+} // namespace pedalboard3::engine
+
 namespace pedalboard3::session
 {
 
@@ -58,6 +63,11 @@ public:
     // they do nothing.
     void setTransportCommands(TransportCommands* transport) noexcept { transport_ = transport; }
 
+    // The engine audio.toggleMute runs on (#106); unset, it does nothing.
+    // This is the path that matters for the master mute: a footswitch is how
+    // you reach it on stage.
+    void setAudioEngine(engine::AudioEngine* audio) noexcept { audio_ = audio; }
+
 private:
     void onUnhandledTarget(const control::ParameterUpdate& update);
 
@@ -66,6 +76,7 @@ private:
     bool mappingOwnedThisMessage_{false};
     EditHistory* history_{nullptr};
     TransportCommands* transport_{nullptr};
+    engine::AudioEngine* audio_{nullptr};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PatchSwitcher)
 };

@@ -79,6 +79,16 @@ public:
     // plugin's play head.
     Transport& getTransport() noexcept { return runtime_->getTransport(); }
 
+    // The master mute (#106). Silences the output without touching the board:
+    // it is a stage in the runtime, not a node, so it works on an empty board,
+    // survives a patch change, and can never mark a board unsaved. Listeners
+    // are told on the message thread so the top bar and status bar can show
+    // it; a muted rig that looks live is worse than no mute at all.
+    void setMasterMuted(bool shouldMute);
+    bool isMasterMuted() const noexcept;
+    void toggleMasterMute() { setMasterMuted(!isMasterMuted()); }
+    juce::ChangeBroadcaster& masterMuteChanged() noexcept { return masterMuteBroadcaster_; }
+
     // The error message from the most recent initialise() call (empty when
     // the device opened cleanly). Retained so the UI can tell the user WHY
     // there's no sound — otherwise a failed device open is silent except
@@ -86,6 +96,7 @@ public:
     const juce::String& getLastInitError() const noexcept { return lastInitError_; }
 
 private:
+    juce::ChangeBroadcaster masterMuteBroadcaster_;
     juce::AudioDeviceManager deviceManager_;
     juce::AudioProcessorPlayer player_;
     std::unique_ptr<AudioGraphRuntime> runtime_;
