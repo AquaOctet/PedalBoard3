@@ -784,6 +784,37 @@ public:
         for (const auto& [outcome, label] : reasons)
             if (const int n = countOf(outcome); n > 0)
                 summary += juce::String(label) + ": " + juce::String(n) + "\n";
+        // The counts say how many; these say which, and why. ScanResult::error
+        // has carried a written-out reason since M5 U6 — "helper died before
+        // writing the completion sentinel", "helper produced unparseable
+        // output: ..." — and only the tests ever read it (#96). A count alone
+        // leaves the user with nothing to act on and nothing to report.
+        juce::StringArray failures;
+        for (const auto& result : results_)
+        {
+            const bool failed = result.outcome == Outcome::Crashed || result.outcome == Outcome::TimedOut ||
+                                result.outcome == Outcome::NotAPlugin;
+            if (!failed)
+                continue;
+            const auto name = juce::File(result.pluginPath).getFileName();
+            failures.add(result.error.isNotEmpty() ? name + " - " + result.error : name);
+        }
+        if (!failures.isEmpty())
+        {
+            // Every one goes to the log, whatever the alert has room for.
+            for (const auto& line : failures)
+                juce::Logger::writeToLog("Pedalboard 3: scan failure - " + line);
+
+            constexpr int kMaxShown = 8;
+            summary += "\nWhat failed:\n";
+            for (int i = 0; i < juce::jmin(kMaxShown, failures.size()); ++i)
+                summary += "  " + failures[i] + "\n";
+            if (failures.size() > kMaxShown)
+                summary +=
+                    "  ...and " + juce::String(failures.size() - kMaxShown) + " more. The log has all of them.\n";
+            summary += "\n";
+        }
+
         summary += "On the blacklist: " + juce::String(blacklist.size());
         if (loaded > 0)
             summary += "\n\nLoaded " + juce::String(loaded) + (loaded == 1 ? " plugin" : " plugins") +

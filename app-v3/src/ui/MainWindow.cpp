@@ -11,6 +11,7 @@
 #include "session/AppCommands.h"
 #include "session/BankDocument.h"
 #include "session/BoardFiles.h"
+#include "session/EditHistory.h"
 #include "session/Preferences.h"
 #include "TransportBar.h"
 
@@ -55,6 +56,9 @@ MainWindow::MainWindow(const juce::String& name, AppContext& context)
     // changes.
     ctx_.bankDocument.onSaveRequested = [this] { root_->files().save(); };
     ctx_.bankDocument.addChangeListener(this);
+    // Undo and Redo grey out with an empty history (#96), which only works if
+    // something re-asks when the history moves.
+    ctx_.editHistory.addChangeListener(this);
     updateTitle();
 
     centreWithSize(rootlayout::kInitialWidth, rootlayout::kInitialHeight);
@@ -70,6 +74,7 @@ MainWindow::~MainWindow()
     // Finish pass U6: remember where the window was. Preferences saves it on
     // teardown (App::shutdown destroys this window before Preferences).
     ctx_.preferences.setWindowState(getWindowStateAsString());
+    ctx_.editHistory.removeChangeListener(this);
     ctx_.bankDocument.removeChangeListener(this);
     ctx_.bankDocument.onSaveRequested = nullptr;
     appMappingsWindow_.reset();
@@ -96,6 +101,11 @@ void MainWindow::changeListenerCallback(juce::ChangeBroadcaster* source)
     {
         updateTitle();
         commandManager_.commandStatusChanged(); // Save follows read-only (M5 U4)
+        return;
+    }
+    if (source == &ctx_.editHistory)
+    {
+        commandManager_.commandStatusChanged(); // Undo / Redo follow the history (#96)
         return;
     }
     // Otherwise the key mappings changed (App Mappings window): persist them.
