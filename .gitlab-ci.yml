@@ -8,10 +8,10 @@
 #   Pulling it requires this project to be on ci-cd's job-token allow-list
 #   (Settings > CI/CD > Job token permissions on ci-cd).
 # macOS: build + unit tests on GitLab.com's saas-macos-medium-m1 (Apple
-#   Silicon, Homebrew preinstalled), allow_failure.
+#   Silicon, Homebrew preinstalled). Required since #33.
 # Windows: build + unit tests in ONE job on GitLab.com's
 #   saas-windows-medium-amd64 (Windows Server 2022, VS 2022 Build Tools and
-#   CMake preinstalled), allow_failure. MSVC objects are cached with ccache
+#   CMake preinstalled). Required since #33. MSVC objects are cached with ccache
 #   (/Z7 debug info, so the objects are cacheable); a warm cache turns the
 #   ~25 min JUCE compile into a few minutes. ctest runs in the build job
 #   because a second Windows VM boot + setup costs more than the tests.
@@ -94,8 +94,18 @@ default:
 # The gate (lint, and build + unit tests on each platform): every merge
 # request push that touches code. Not main: a merge was already green on its
 # MR, and a pipeline started by hand on main is for the release builds (see
-# workflow). Windows and macOS set allow_failure on the job, which keeps a
-# slow SaaS runner off an MR's critical path.
+# workflow).
+#
+# Every gate job is required (#33, 2026-10-14). Windows and macOS used to set
+# allow_failure so a slow SaaS runner stayed off an MR's critical path; the
+# cost was that a real Windows or macOS break could be merged by anyone who
+# only read the pipeline's colour, which is the whole reason the jobs exist.
+# They are the slowest jobs, so an MR now waits on them — that is the point.
+#
+# This is only safe alongside .rules-docs-only below: with "pipelines must
+# succeed" on, a merge request that starts no pipeline at all cannot be
+# merged, so a docs-only MR has to produce a green `no-build` job rather than
+# an empty pipeline.
 .rules-gate: &rules-gate
   - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     changes: *code-paths
@@ -117,9 +127,9 @@ default:
 # macOS release job fails the pipeline and release:gitlab never runs, so a
 # platform that didn't build can't be published. What `allow_failure: false`
 # costs on a manual job is that a pipeline where only some were clicked stays
-# "blocked" instead of green; a release clicks all three. Merge-request builds
-# may still fail without blocking a merge; making those required is the rest
-# of #33.
+# "blocked" instead of green; a release clicks all three. The gate half
+# followed on 2026-10-14, so #33 is closed and nothing in this file is
+# allow_failure any more.
 # They live in the last stages so a pending manual job never blocks the
 # earlier ones (a manual-pending job in an early stage blocks downstream
 # stages even with `optional: true` on `needs:`).
@@ -295,13 +305,12 @@ build:linux:
     when: on_success
 
 # Windows Debug build + unit tests on saas-windows-medium-amd64 (GitLab.com
-# SaaS, PowerShell), on every MR push. `allow_failure: true` until the
-# platform CI is made required (#33).
+# SaaS, PowerShell), on every MR push. Required (#33).
 build:windows:
   stage: build
   tags: [ saas-windows-medium-amd64 ]
   rules: *rules-gate
-  allow_failure: true
+  allow_failure: false
   <<: *cache-build
   before_script: *windows-setup
   variables:
@@ -446,13 +455,12 @@ build:windows:
     when: on_success
 
 # macOS Debug build on GitLab.com's saas-macos-medium-m1 (Apple Silicon), on
-# every MR push. `allow_failure: true` until the platform CI is made required
-# (#33).
+# every MR push. Required (#33).
 build:macos:
   stage: build
   tags: [ saas-macos-medium-m1 ]
   rules: *rules-gate
-  allow_failure: true
+  allow_failure: false
   before_script: *macos-setup
   variables:
     # Preset is a variable so release:macos can extend this job and only
@@ -490,7 +498,7 @@ test:macos:unit:
   tags: [ saas-macos-medium-m1 ]
   rules: *rules-gate
   needs: [ build:macos ]
-  allow_failure: true
+  allow_failure: false
   before_script: *macos-setup
   script:
     - ctest --preset macos-dev

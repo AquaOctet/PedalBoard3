@@ -33,8 +33,11 @@ and `.pdl` format only; do not edit.
     and publishes (`docs/releases/README.md`). A merge starts no pipeline,
     and neither does a pushed tag: releases are made by hand, from main only.
   - Linux runs on shared runners inside the silkOps factory image
-    (`ci-cd/juce-linux`). Windows and macOS run on GitLab SaaS runners, with
-    `allow_failure`.
+    (`ci-cd/juce-linux`). Windows and macOS run on GitLab SaaS runners.
+    **Every job is required** (#33, 2026-10-14): nothing in `.gitlab-ci.yml`
+    is `allow_failure`, and the project will not let a merge request merge on
+    a pipeline that is not green. The SaaS runners are the slow ones, so an
+    MR now waits on them.
 
 ## Build
 
@@ -159,10 +162,11 @@ doesn't move between machines, so the rules live here.
   labels and starting pipelines.
 - **Ship through `ship-mr`** (see `CLAUDE.md`): push the feature branch, open
   or update the MR, then watch its pipeline.
-- **Report every CI job.** A pipeline says "success" even when an
-  `allow_failure` job (Windows, macOS) failed. List every job, retried ones
-  included, before saying CI passed. Manual release jobs on main are
-  expected, not errors.
+- **Report every CI job.** List every job, retried ones included, before
+  saying CI passed. Since #33 nothing is `allow_failure`, so a green pipeline
+  no longer hides a red Windows or macOS job — but the habit stays, because
+  the list is also how you spot a job that never ran. Manual release jobs on
+  main are expected, not errors.
 - **Releases are made by hand, from main only.** Merge requests have no
   release jobs and there are no tag pipelines. Starting a main pipeline or
   clicking a release job needs the maintainer's say-so
