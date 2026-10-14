@@ -1087,6 +1087,41 @@ TEST_CASE("Session: a replacePatch in flight overwrites a graph loaded straight 
     REQUIRE(runtime->getLiveGraph() != standInRaw);
 }
 
+TEST_CASE("Session: the state version moves without a patch swap; the generation does not",
+          "[session][state-machine][test-tone]")
+{
+    // Why TransportBar gates the Test Tone on getPatchGeneration() and not on
+    // getStateVersion() (#111). replacePatch only publishes Building when
+    // Session was Idle, so a clear issued while a load is already in flight
+    // bumps no version of its own -- and the version then moves when the
+    // OTHER load commits. A gate on the version would open there and drop the
+    // tone on top of a chain graph Session still points into.
+    engine::AudioEngine eng;
+    eng.initialise();
+    engine::PluginHost host;
+    FakeBuilder builder;
+
+    session::Session s(eng, host, builder.fn(/*delayMs*/ 40));
+    s.replacePatch(makeOneNodePatch("Gain"));
+    pumpUntilIdle(s);
+
+    const auto genBefore = s.getPatchGeneration();
+
+    // A second load, then a clear while that one is still building.
+    s.replacePatch(makeOneNodePatch("Gain2"));
+    s.clearPatch();
+
+    // The clear published nothing: Session was already Building.
+    REQUIRE(s.getPatchGeneration() == genBefore);
+
+    pumpUntilIdle(s);
+
+    // The generation has moved and the chain is empty, which is the pair of
+    // conditions the tone waits for. Either on its own is not enough.
+    REQUIRE(s.getPatchGeneration() > genBefore);
+    REQUIRE(s.getNodeCount() == 0);
+}
+
 TEST_CASE("Session: a graph loaded after the clear has landed stays put", "[session][state-machine][test-tone]")
 {
     // The rule TransportBar::startToneIfClearLanded follows: wait for Idle

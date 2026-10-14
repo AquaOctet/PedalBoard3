@@ -169,11 +169,17 @@ private:
     // Switching the tone ON clears the patch first, and clearPatch() is async
     // (#111). The tone graph can only go into the engine once that clear has
     // landed, or the worker's empty patch arrives a moment later and swaps the
-    // tone straight back out. These two hold the wait: the flag says a tone is
-    // owed, and the version is the state counter at the moment the clear was
-    // asked for, so "Idle" means Idle AFTER the clear rather than Idle still.
+    // tone straight back out.
+    //
+    // The counter is the PATCH GENERATION, not the state version. The state
+    // version is bumped by every published state change, and replacePatch
+    // only publishes Building when Session was Idle — so a toggle made while
+    // a patch was already loading would be satisfied by that unrelated load
+    // committing, and the tone would be swapped on top of a chain graph that
+    // Session still points into. patchGeneration_ moves only inside
+    // commitLoadPatch, so it means "a whole-patch swap actually landed".
     bool tonePending_{false};
-    std::uint64_t toneRequestedAtVersion_{0};
+    std::uint64_t toneRequestedAtGeneration_{0};
 
     PatchStrip patchStrip_;
 

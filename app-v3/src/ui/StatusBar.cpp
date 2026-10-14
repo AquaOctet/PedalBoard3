@@ -202,8 +202,14 @@ void StatusBar::refresh()
     // Plain ASCII in the tone branch on purpose: the same UTF-8 bullet the
     // other branch uses came out as mojibake here, and a status line that is
     // explaining an alarming-looking state is the last place to risk it.
-    leftLabel_.setText(tone ? juce::String("TEST TONE: the chain is set aside until you switch it off")
-                            : chainText + "  •  " + stateText + (muted ? "  •  MUTED" : ""),
+    // MUTED has to survive the tone message. A muted rig plus a test tone is
+    // "I switched the tone on and got nothing" -- the exact report -- and the
+    // first draft of this line dropped the MUTED suffix whenever the tone was
+    // up, hiding the one fact that explains the silence.
+    juce::String toneText("TEST TONE: the chain is set aside until you switch it off");
+    if (muted)
+        toneText = "TEST TONE, MUTED: nothing will be heard until you unmute";
+    leftLabel_.setText(tone ? toneText : chainText + "  •  " + stateText + (muted ? "  •  MUTED" : ""),
                        juce::dontSendNotification);
 
     // Error pill — shown when state is Idle and lastError is non-empty.

@@ -842,10 +842,22 @@ juce::AudioProcessor* Session::getHostedPlugin(NodeId id) const noexcept
     auto it = nodes_.find(id);
     if (it == nodes_.end())
         return nullptr;
-    // A crashed plugin is never called again (M5 U5): no editor, meter or
-    // mapping reaches it. (The wrapper is only read while its graph is live.)
+    // Nothing while the runtime is driving a graph that is not ours (the
+    // Test Tone, #111): `hosted` then points into a graph that has already
+    // been destroyed, and this is the one accessor that handed it out
+    // anyway. Every sibling guard in this file refuses on the same test --
+    // removeNode, setNodeBypass, rearmNode, getNodeWithState,
+    // getNodeSnapshots, applyConnectionsToLiveGraph -- and the callers here
+    // are the worst ones to get it wrong: the canvas VU timer and the
+    // ControlHub resolver dereference it on every tick and every mapped
+    // MIDI message.
     const bool graphCurrent = liveGraph_ != nullptr && currentRuntimeGraph() == liveGraph_;
-    if (graphCurrent && it->second.bypass != nullptr && it->second.bypass->hasCrashed())
+    if (!graphCurrent)
+        return nullptr;
+
+    // A crashed plugin is never called again (M5 U5): no editor, meter or
+    // mapping reaches it.
+    if (it->second.bypass != nullptr && it->second.bypass->hasCrashed())
         return nullptr;
     return it->second.hosted;
 }

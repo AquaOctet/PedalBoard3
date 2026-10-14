@@ -18,6 +18,7 @@
 #include "control/OscServer.h"
 #include "engine/AudioEngine.h"
 #include "engine/PluginHost.h"
+#include "engine/processors/TestToneProcessor.h"
 #include "session/AppCommands.h"
 #include "session/AppMappings.h"
 #include "session/BankDocument.h"
@@ -583,17 +584,34 @@ int main(int argc, char** argv)
                 bar.toggleTestTone();
                 settle(rig);
                 auto* graphDuring = runtime != nullptr ? runtime->getLiveGraph() : nullptr;
-                const bool tookOver = bar.isTestToneOn() && graphDuring != nullptr && graphDuring != graphBefore;
-                std::printf("TEST TONE on : switch=%s graph changed=%s\n",
+
+                // "The graph changed" is NOT proof the tone is playing: the
+                // clear's own empty graph satisfies that by itself, so the
+                // harness would have printed OK in a world where the tone
+                // never loaded at all. Look for the processor.
+                const auto hasTone = [](juce::AudioProcessorGraph* g)
+                {
+                    if (g == nullptr)
+                        return false;
+                    for (auto* node : g->getNodes())
+                        if (dynamic_cast<engine::processors::TestToneProcessor*>(node->getProcessor()) != nullptr)
+                            return true;
+                    return false;
+                };
+                const bool toneLive = hasTone(graphDuring);
+                const bool tookOver = bar.isTestToneOn() && graphDuring != graphBefore && toneLive;
+                std::printf("TEST TONE on : switch=%s graph changed=%s TestToneProcessor live=%s\n",
                             bar.isTestToneOn() ? "on" : "OFF",
-                            graphDuring != graphBefore ? "yes" : "NO");
+                            graphDuring != graphBefore ? "yes" : "NO",
+                            toneLive ? "yes" : "NO");
                 shoot("window-test-tone", root, 1280, 800);
 
                 bar.toggleTestTone();
                 settle(rig);
                 auto* graphAfter = runtime != nullptr ? runtime->getLiveGraph() : nullptr;
                 const int nodesAfter = static_cast<int>(rig.liveSession.getNodeSnapshots().size());
-                const bool cameBack = !bar.isTestToneOn() && nodesAfter == nodesBefore && graphAfter != graphDuring;
+                const bool cameBack = !bar.isTestToneOn() && nodesAfter == nodesBefore && graphAfter != graphDuring &&
+                                      !hasTone(graphAfter);
                 std::printf("TEST TONE off: switch=%s nodes %d -> %d graph restored=%s error=%s\n",
                             bar.isTestToneOn() ? "ON" : "off",
                             nodesBefore,

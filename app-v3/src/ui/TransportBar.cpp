@@ -274,7 +274,15 @@ void TransportBar::startToneIfClearLanded()
     // the worker and committed. Idle alone would also be true in the gap
     // before the worker starts, which is the window the bug lived in.
     if (ctx_.session.getState() != session::Session::State::Idle ||
-        ctx_.session.getStateVersion() <= toneRequestedAtVersion_)
+        ctx_.session.getPatchGeneration() <= toneRequestedAtGeneration_)
+        return;
+
+    // And the chain really is empty. The generation says a whole-patch swap
+    // landed; this says it was OUR clear rather than somebody else's load
+    // finishing first. Without it, a toggle made mid-load drops the tone on
+    // top of a freshly committed chain and frees the graph Session's nodes_
+    // still point into.
+    if (ctx_.session.getNodeCount() != 0)
         return;
 
     tonePending_ = false;
@@ -997,10 +1005,13 @@ void TransportBar::valueChanged(juce::Value&)
         // switch/save while the tone plays cannot overwrite the slot with the
         // empty patch clearPatch installs (BankDocument re-enables it on its
         // next swap).
-        // Read the state counter BEFORE asking for the clear: "Idle" on its
-        // own is ambiguous here, because Session is still Idle for the moment
-        // between clearPatch() returning and the worker picking the job up.
-        toneRequestedAtVersion_ = ctx_.session.getStateVersion();
+        // Read the PATCH GENERATION before asking for the clear. Not the
+        // state version: that moves on every published state change, and
+        // replacePatch only publishes Building when Session was Idle, so a
+        // toggle made while a patch was already loading would be satisfied
+        // by that unrelated load committing. The generation moves only
+        // inside commitLoadPatch, so it means a whole-patch swap landed.
+        toneRequestedAtGeneration_ = ctx_.session.getPatchGeneration();
         tonePending_ = true;
 
         ctx_.bankDocument.storeActive();
