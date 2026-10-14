@@ -66,6 +66,8 @@ add_library(pb3_app_core STATIC
     ui/IconButton.h
     ui/LatencyReadout.cpp
     ui/LatencyReadout.h
+    ui/PatchStrip.cpp
+    ui/PatchStrip.h
     ui/Alert.cpp
     ui/Alert.h
     ui/AudioSettingsModel.h
@@ -169,6 +171,7 @@ pb3_apply_strict_warnings(pb3_app_core
     ui/CpuMeter.cpp
     ui/DeviceBadge.cpp
     ui/LatencyReadout.cpp
+    ui/PatchStrip.cpp
     ui/Alert.cpp
     ui/AudioSettingsPanel.cpp
     ui/DialogFrame.cpp

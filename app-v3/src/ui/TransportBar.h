@@ -6,11 +6,13 @@
 #include "DeviceBadge.h"
 #include "IconButton.h"
 #include "LatencyReadout.h"
+#include "PatchStrip.h"
 #include "TransportControls.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <memory>
+#include <vector>
 
 namespace pedalboard3::ui
 {
@@ -31,10 +33,11 @@ class SignalCanvas;
 //           [Plug] is Add Plugin, Plugin List..., Rescan. Then [+], which
 //           opens the Add Plugin menu directly: KnownPluginList effects and
 //           built-in nodes, added through EditHistory (AC-UI-N; U1, #32).
-//   centre: the patch strip (roadmap M3 U5): [<] [n/N  Name] [>]. The
-//           arrows step the bank; the name button opens the bank menu
-//           (new, duplicate, rename, remove, go to a patch). Every switch
-//           goes through BankDocument, which closes open editors first via
+//   centre: the patch strip (roadmap M3 U5; one control since #109) —
+//           `‹ | 2/6 Verse Clean ▾ | ›`. The chevrons step the bank; the
+//           name opens the bank menu (new, duplicate, rename, remove, go to
+//           a patch) and carries a caret so you can tell. Every switch goes
+//           through BankDocument, which closes open editors first via
 //           beforeSwap (D1b / AC-UI-P).
 //   then:   the transport pill (M6 U4, optional-features U4), only while
 //           Tempo / BPM is available: Play / Pause, Return to Zero, the tempo
@@ -123,8 +126,7 @@ private:
     void refreshMuteButton();
     void openPluginsMenu();
 
-    // Patch strip (M3 U5).
-    void refreshPatchStrip();
+    // Patch strip (M3 U5, reworked for #109).
     void openPatchMenu();
 
     AppContext& ctx_;
@@ -149,9 +151,11 @@ private:
     juce::Value testTone_{false};
     bool toneActive_{false}; // what is actually playing
 
-    juce::TextButton prevPatchButton_{"<"};
-    juce::TextButton patchButton_;
-    juce::TextButton nextPatchButton_{">"};
+    PatchStrip patchStrip_;
+
+    // Where the group dividers go, filled in by resized() and drawn by
+    // paint(). The bar has six groups and had nothing between them (#109).
+    std::vector<int> dividerX_;
 
     // The rescan worker is OWNED here, not fire-and-forget (crash-hunt #8):
     // the old `new ...; launchThread()` self-delete pattern let a quit
