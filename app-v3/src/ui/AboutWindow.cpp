@@ -18,19 +18,24 @@ namespace pedalboard3::ui
 namespace
 {
 
-// Where the project and its people are, in one place. The project is kept on
-// GitLab and mirrored to GitHub, the public one, so issues and releases link
-// there.
+// Where the project and its people are, in one place. Everything here opens
+// for someone who has just installed the app and is signed in to nothing:
+// that is the point of #92, and it is why the private GitLab project is not
+// among them.
 constexpr const char* kPedalboard2Url = "https://www.niallmoody.com/work/pedalboard2/";
 constexpr const char* kAquaOctetUrl = "https://aquaoctet.com";
 constexpr const char* kAquaOctetGitHubUrl = "https://github.com/AquaOctet";
 constexpr const char* kOpenZephyrUrl = "https://openzephyr.com";
-constexpr const char* kGitLabUrl = "https://gitlab.com/void-realm-solutions/pedalboard-3";
+// gitlab.com/void-realm-solutions/pedalboard-3 is where the work happens, and
+// it is private: an anonymous request gets 403. So it is named in the text
+// but deliberately not a link, and there is no constant for it. Every address
+// below has been checked from a signed-out browser (#92). If GitLab is ever
+// made public, add it back and link "GitLab" in the Maintained-on line.
 constexpr const char* kGitHubUrl = "https://github.com/AquaOctet/PedalBoard3";
 constexpr const char* kIssuesUrl = "https://github.com/AquaOctet/PedalBoard3/issues";
 constexpr const char* kReleasesUrl = "https://github.com/AquaOctet/PedalBoard3/releases";
-// gnu.org rather than the repository: the licence text is public and permanent,
-// and it stays reachable while the repository is still private (#92).
+// gnu.org rather than the repository: the licence text is public and
+// permanent, and it does not move when a repository does.
 constexpr const char* kLicenceUrl = "https://www.gnu.org/licenses/agpl-3.0.html";
 
 constexpr int kWidth = 540;
@@ -75,11 +80,7 @@ public:
                  {dot},
                  {"openzephyr.com", kOpenZephyrUrl}});
         paragraph();
-        addLine({{"Maintained on "},
-                 {"GitLab", kGitLabUrl},
-                 {", mirrored to "},
-                 {"GitHub", kGitHubUrl},
-                 {" (GitLab is better at CI/CD)."}});
+        addLine({{"Maintained on GitLab (better at CI/CD), and the source is on "}, {"GitHub", kGitHubUrl}, {"."}});
         addLine({{"Found a bug or have an idea? Feel free to "}, {"open an issue", kIssuesUrl}, {"."}});
         paragraph();
         addLine({{"Version " JUCE_APPLICATION_VERSION_STRING, {}, Style::Mono},
@@ -89,7 +90,7 @@ public:
         addLine({{"Free software under the ", {}, Style::Muted},
                  {"AGPLv3", kLicenceUrl},
                  {". Source and third-party notices in the ", {}, Style::Muted},
-                 {"repository", kGitLabUrl},
+                 {"repository", kGitHubUrl},
                  {".", {}, Style::Muted}});
 
         closeButton_.onClick = [this]
