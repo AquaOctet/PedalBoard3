@@ -40,6 +40,17 @@ struct Endpoints
 
 // Input and Output around `cards`, in the same coordinates as the cards. With no
 // cards the two sit side by side, two gaps apart, at the origin.
+//
+// Each endpoint takes its height from the one card its cable actually runs to
+// — Input from the first in the chain, Output from the last (#107). It used to
+// take both from the centre of the union of every card, which meant dragging
+// any card moved both endpoints, including a card in the middle that connects
+// to neither. The endpoints are not draggable, so the only way to put them
+// back was to move the plugins, which is backwards.
+//
+// x still comes from the union: Input clears the leftmost card and Output the
+// rightmost, so neither can end up overlapping a card that was dragged past
+// them.
 inline Endpoints endpointsAround(const std::vector<juce::Rectangle<int>>& cards, const Metrics& m)
 {
     if (cards.empty())
@@ -48,9 +59,12 @@ inline Endpoints endpointsAround(const std::vector<juce::Rectangle<int>>& cards,
     auto bounds = cards.front();
     for (const auto& c : cards)
         bounds = bounds.getUnion(c);
-    const int y = bounds.getCentreY() - m.cardHeight / 2;
-    return {{bounds.getX() - m.gap - m.endpointWidth, y, m.endpointWidth, m.cardHeight},
-            {bounds.getRight() + m.gap, y, m.endpointWidth, m.cardHeight}};
+
+    // The card's TOP, not its centre: a card's ports are at fixed offsets from
+    // its top, so a processor card that is taller than the rest still has its
+    // ports on the standard row, and the cable stays level.
+    return {{bounds.getX() - m.gap - m.endpointWidth, cards.front().getY(), m.endpointWidth, m.cardHeight},
+            {bounds.getRight() + m.gap, cards.back().getY(), m.endpointWidth, m.cardHeight}};
 }
 
 struct Layout
