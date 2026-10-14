@@ -115,6 +115,37 @@ TEST_CASE("OscServer: rebind reports a non-fatal error on bind failure, not a cr
 
     REQUIRE(error.isNotEmpty());
     REQUIRE_FALSE(server.isConnected());
+
+    // The reason is kept, not only returned (#96). InputGates binds at
+    // startup and throws the returned string away after logging it, so
+    // without this the OSC Settings dialog could only say "Not listening" --
+    // the symptom rather than the reason.
+    REQUIRE(server.lastError() == error);
+}
+
+TEST_CASE("OscServer: a successful rebind clears the last error", "[control][osc-server]")
+{
+    juce::DatagramSocket occupied;
+    occupied.setEnablePortReuse(false);
+    REQUIRE(occupied.bindToPort(0));
+
+    control::OscServer server([](const juce::OSCMessage&) {});
+    REQUIRE(server.rebind(occupied.getBoundPort()).isNotEmpty());
+    REQUIRE(server.lastError().isNotEmpty());
+
+    // Otherwise the dialog would keep reporting a failure the user has
+    // already fixed.
+    REQUIRE(server.rebind(0).isEmpty());
+    REQUIRE(server.lastError().isEmpty());
+    server.disconnect();
+}
+
+TEST_CASE("OscServer: an invalid multicast address is recorded too", "[control][osc-server]")
+{
+    control::OscServer server([](const juce::OSCMessage&) {});
+    const auto error = server.rebind(0, "192.168.1.1");
+    REQUIRE(error.isNotEmpty());
+    REQUIRE(server.lastError() == error);
 }
 
 TEST_CASE("OscServer: forwarding into a real ControlHub moves the mapped parameter", "[control][osc-server]")

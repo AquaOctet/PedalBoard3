@@ -19,22 +19,31 @@ OscServer::~OscServer()
 
 juce::String OscServer::rebind(int port, const juce::String& multicastAddress)
 {
+    // Every failure path below goes through here, so the reason is recorded
+    // once and both callers can read it back (#96).
+    const auto fail = [this](juce::String why)
+    {
+        lastError_ = why;
+        return why;
+    };
+
     disconnect();
+    lastError_.clear();
 
     if (multicastAddress.isNotEmpty())
     {
         if (!isOscMulticastAddress(multicastAddress))
-            return "Invalid multicast address: " + multicastAddress;
+            return fail("Invalid multicast address: " + multicastAddress);
 
         auto socket = std::make_unique<juce::DatagramSocket>();
         if (!socket->bindToPort(port))
-            return "Failed to bind UDP port " + juce::String(port);
+            return fail("Failed to bind UDP port " + juce::String(port));
 
         if (!socket->joinMulticast(multicastAddress))
-            return "Failed to join multicast group " + multicastAddress;
+            return fail("Failed to join multicast group " + multicastAddress);
 
         if (!receiver_.connectToSocket(*socket))
-            return "OSCReceiver failed to attach to the bound socket";
+            return fail("OSCReceiver failed to attach to the bound socket");
 
         multicastSocket_ = std::move(socket); // receiver_ holds a reference; keep it alive
         connected_ = true;
@@ -42,7 +51,7 @@ juce::String OscServer::rebind(int port, const juce::String& multicastAddress)
     }
 
     if (!receiver_.connect(port))
-        return "Failed to bind UDP port " + juce::String(port);
+        return fail("Failed to bind UDP port " + juce::String(port));
 
     connected_ = true;
     return {};

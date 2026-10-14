@@ -45,6 +45,15 @@ public:
 
     bool isConnected() const noexcept { return connected_; }
 
+    // Why the last rebind() failed, empty when the last one worked (#96).
+    // It lives here rather than at the call site because there are two
+    // callers — session::InputGates when OSC is switched on or the app
+    // starts, and the OSC Settings dialog when you edit the port — and only
+    // the second used to keep the message. A port already taken at launch
+    // left the dialog saying "Not listening", which is a symptom, not a
+    // reason.
+    const juce::String& lastError() const noexcept { return lastError_; }
+
     // Public despite overriding a privately-inherited juce::OSCReceiver
     // listener: this is the whole of the forwarding logic (one line), and
     // tests drive it directly to prove the sink contract without needing a
@@ -56,6 +65,7 @@ private:
     juce::OSCReceiver receiver_;
     std::unique_ptr<juce::DatagramSocket> multicastSocket_; // only when a multicast join is active
     bool connected_{false};
+    juce::String lastError_;
 };
 
 } // namespace pedalboard3::control

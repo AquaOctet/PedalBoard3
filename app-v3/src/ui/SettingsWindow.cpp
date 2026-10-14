@@ -258,9 +258,19 @@ private:
             refreshEnabled();
             return;
         }
+        // The panel's own error is from a port you just typed. With none, fall
+        // back to the server's, which is how a bind that failed at startup or
+        // when OSC was switched on finally reaches a human (#96) — before
+        // this, the dialog said "Not listening", which is the symptom rather
+        // than the reason.
+        const auto& standingError = ctx_.oscServer.lastError();
         juce::String text;
+        bool isError = false;
         if (error_.isNotEmpty())
+        {
             text = error_;
+            isError = true;
+        }
         else if (!features.isEnabled(session::Feature::Osc))
             text = "OSC is off: no network port is open.";
         else if (!features.isAvailable(session::Feature::Osc))
@@ -271,9 +281,14 @@ private:
                         ? ", group " + ctx_.preferences.getOscMulticastAddress()
                         : juce::String()) +
                    ".";
+        else if (standingError.isNotEmpty())
+        {
+            text = standingError + ". Press Enter in a field to try again.";
+            isError = true;
+        }
         else
             text = "Not listening. Press Enter in a field to try again.";
-        showStatus(text, error_.isNotEmpty());
+        showStatus(text, isError);
     }
 
     void showStatus(const juce::String& text, bool isError)

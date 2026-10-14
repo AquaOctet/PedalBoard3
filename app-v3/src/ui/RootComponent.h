@@ -11,6 +11,7 @@
 #include "session/AppCommands.h"
 #include "session/BankDocument.h"
 #include "session/BoardFiles.h"
+#include "session/EditHistory.h"
 #include "session/Preferences.h"
 #include "SignalCanvas.h"
 #include "StatusBar.h"
@@ -213,14 +214,26 @@ public:
         else if (id == session::appcommands::kReturnToZero)
             result.addDefaultKeypress(juce::KeyPress::homeKey, juce::ModifierKeys());
         else if (id == session::appcommands::kUndo)
+        {
             result.addDefaultKeypress('z', juce::ModifierKeys::commandModifier); // Ctrl+Z / Cmd+Z
+            result.setActive(canEdit());
+        }
         else if (id == session::appcommands::kRedo)
         {
             result.addDefaultKeypress('y', juce::ModifierKeys::commandModifier); // Ctrl+Y
             result.addDefaultKeypress(
                 'z', juce::ModifierKeys(juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier));
+            result.setActive(canRedo());
         }
     }
+
+    // Undo and Redo grey out with nothing to undo or redo (#96). EditHistory
+    // has said so since it was written and nothing asked. The Test Tone check
+    // is the same one invokeAppCommand makes: the tone replaces the chain, so
+    // the history's nodes are not live and the command would refuse anyway —
+    // a menu item that does nothing when you pick it is worse than a grey one.
+    bool canEdit() const { return ctx_.bankDocument.isLiveCaptureEnabled() && ctx_.editHistory.canUndo(); }
+    bool canRedo() const { return ctx_.bankDocument.isLiveCaptureEnabled() && ctx_.editHistory.canRedo(); }
 
     bool perform(const InvocationInfo& info) override
     {
