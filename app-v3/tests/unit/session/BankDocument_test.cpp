@@ -508,6 +508,56 @@ TEST_CASE("BankDocument: file.save runs the save handler the UI installs", "[ses
     REQUIRE(saves == 1);
 }
 
+TEST_CASE("the Test Tone round trip leaves the board as it was", "[session][bank][test-tone]")
+{
+    // The whole Test Tone sequence TransportBar::valueChanged performs, at the
+    // level where it can actually be tested (#111). ON: capture the slot, stop
+    // live capture, clear, then put a stand-in graph in once the clear has
+    // landed. OFF: reloadActive.
+    Fixture f;
+    f.doc.loadBank(threeBank(), tempBankFile("tone.pdl"));
+    f.settle();
+
+    // Give the active patch a node so there is a chain to lose.
+    f.s.replacePatch(session::Patch{});
+    f.settle();
+    const auto before = f.doc.bank().patches[static_cast<size_t>(f.doc.activeIndex())];
+    const auto nodesBefore = f.s.getNodeCount();
+
+    auto* runtime = f.eng.getRuntime();
+    REQUIRE(runtime != nullptr);
+
+    // ---- tone ON
+    const auto versionAtRequest = f.s.getStateVersion();
+    f.doc.storeActive();
+    f.doc.setLiveCaptureEnabled(false);
+    f.s.clearPatch();
+    f.settle();
+    REQUIRE(f.s.getStateVersion() > versionAtRequest); // the clear landed
+
+    auto tone = std::make_unique<juce::AudioProcessorGraph>();
+    tone->setPlayConfigDetails(2, 2, 48000.0, 512);
+    tone->prepareToPlay(48000.0, 512);
+    auto* toneRaw = tone.get();
+    f.eng.loadGraph(std::move(tone));
+    f.settle();
+    REQUIRE(runtime->getLiveGraph() == toneRaw); // the tone is what is playing
+
+    // ---- tone OFF
+    f.doc.reloadActive();
+    f.settle();
+
+    // The board is back: the engine is driving Session's graph again, not the
+    // tone, and the active slot is unchanged.
+    REQUIRE(runtime->getLiveGraph() != toneRaw);
+    REQUIRE(f.s.getState() == session::Session::State::Idle);
+    REQUIRE(f.s.getLastError().isEmpty());
+    REQUIRE(f.s.getNodeCount() == nodesBefore);
+    REQUIRE(f.doc.bank().patches[static_cast<size_t>(f.doc.activeIndex())].name == before.name);
+    // Live capture is back on, or the next save would write the empty patch.
+    REQUIRE(f.doc.isLiveCaptureEnabled());
+}
+
 TEST_CASE("audio.toggleMute mutes without touching the board", "[session][bank][app-commands][mute]")
 {
     Fixture f;

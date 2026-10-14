@@ -114,6 +114,8 @@ public:
         statusBar_.isMappingsPanelShown = [this] { return mappingsOpen_; };
         statusBar_.onTogglePluginBrowser = [this] { togglePluginBrowser(); };
         statusBar_.isPluginBrowserShown = [this] { return pluginBrowser_.isVisible(); };
+        statusBar_.isTestToneOn = [this] { return transportBar_.isTestToneOn(); };
+        transportBar_.onTestToneChanged = [this] { statusBar_.refreshTestTone(); };
 
         // A click on the canvas closes a slid-open panel.
         viewport_.addMouseListener(this, true);

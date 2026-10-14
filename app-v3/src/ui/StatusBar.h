@@ -53,6 +53,16 @@ public:
     std::function<void()> onTogglePluginBrowser;
     std::function<bool()> isPluginBrowserShown;
 
+    // Whether the Test Tone has replaced the chain (#111). TransportBar owns
+    // the switch, so RootComponent installs this the way it installs the
+    // panel toggles. Without it the tone empties the canvas and nothing on
+    // screen says why, which is what "Test Tone breaks the chain" turned out
+    // to mean: the board is safe, it just looks lost.
+    std::function<bool()> isTestToneOn;
+
+    // The tone went on or off; re-read it.
+    void refreshTestTone() { refresh(); }
+
     // Re-read which panels are showing and re-light the toggles. RootComponent
     // calls this from its resized(), which every path that opens or closes a
     // panel ends in — including a window resize that crosses the fold width

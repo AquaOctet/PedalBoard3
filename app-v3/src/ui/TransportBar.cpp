@@ -962,8 +962,21 @@ juce::PopupMenu TransportBar::makeSettingsMenu()
                          onOpenAppMappings();
                  });
     menu.addSeparator();
-    menu.addItem("Test Tone", true, toneActive_, [this] { testTone_ = !toneActive_; });
+    menu.addItem("Test Tone", true, toneActive_, [this] { toggleTestTone(); });
     return menu;
+}
+
+void TransportBar::toggleTestTone()
+{
+    // Setting the Value keeps the Audio Devices dialog's toggle in step, but
+    // juce::Value notifies its listeners asynchronously, so valueChanged
+    // would not run until the next turn of the message loop. Act now instead:
+    // a switch that does nothing until the loop comes round is how this reads
+    // as unresponsive, and it is why the headless snapshot tool could not
+    // drive it at all (#111). The async notification still arrives afterwards
+    // and valueChanged's `want == toneActive_` guard makes it a no-op.
+    testTone_ = !toneActive_;
+    testTone_.getValueSource().sendChangeMessage(true);
 }
 
 void TransportBar::valueChanged(juce::Value&)
@@ -974,6 +987,8 @@ void TransportBar::valueChanged(juce::Value&)
     if (want == toneActive_)
         return;
     toneActive_ = want;
+    if (onTestToneChanged)
+        onTestToneChanged();
 
     if (want)
     {

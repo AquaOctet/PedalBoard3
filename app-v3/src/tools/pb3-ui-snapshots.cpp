@@ -569,6 +569,43 @@ int main(int argc, char** argv)
             ui::RootComponent narrow(rig.context);
             shoot("window-narrow", narrow, 900, 640);
 
+            // The Test Tone, driven through the real TransportBar (#111). A
+            // unit test can repeat the sequence valueChanged performs, but it
+            // cannot catch a bug that IS the sequence. This runs the actual
+            // switch and checks the three things the user saw go wrong: the
+            // tone takes over, the board is not lost, and it comes back.
+            {
+                auto& bar = root.transportBar();
+                const int nodesBefore = static_cast<int>(rig.liveSession.getNodeSnapshots().size());
+                auto* runtime = rig.audioEngine.getRuntime();
+                auto* graphBefore = runtime != nullptr ? runtime->getLiveGraph() : nullptr;
+
+                bar.toggleTestTone();
+                settle(rig);
+                auto* graphDuring = runtime != nullptr ? runtime->getLiveGraph() : nullptr;
+                const bool tookOver = bar.isTestToneOn() && graphDuring != nullptr && graphDuring != graphBefore;
+                std::printf("TEST TONE on : switch=%s graph changed=%s\n",
+                            bar.isTestToneOn() ? "on" : "OFF",
+                            graphDuring != graphBefore ? "yes" : "NO");
+                shoot("window-test-tone", root, 1280, 800);
+
+                bar.toggleTestTone();
+                settle(rig);
+                auto* graphAfter = runtime != nullptr ? runtime->getLiveGraph() : nullptr;
+                const int nodesAfter = static_cast<int>(rig.liveSession.getNodeSnapshots().size());
+                const bool cameBack = !bar.isTestToneOn() && nodesAfter == nodesBefore && graphAfter != graphDuring;
+                std::printf("TEST TONE off: switch=%s nodes %d -> %d graph restored=%s error=%s\n",
+                            bar.isTestToneOn() ? "ON" : "off",
+                            nodesBefore,
+                            nodesAfter,
+                            graphAfter != graphDuring ? "yes" : "NO",
+                            rig.liveSession.getLastError().toRawUTF8());
+                if (!tookOver || !cameBack)
+                    std::printf("TEST TONE FAILED\n");
+                else
+                    std::printf("TEST TONE OK\n");
+            }
+
             // Muted (#106). The top bar's button goes red and swaps to
             // volume-x, and the status bar's dot and text go with it, so the
             // lit state is in the evidence rather than only in the code.

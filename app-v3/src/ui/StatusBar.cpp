@@ -184,10 +184,27 @@ void StatusBar::refresh()
     // state dot with it (#106): the dot is the one thing on this bar that is
     // read at a glance, and a muted rig has to look muted from across a stage.
     const bool muted = ctx_.audioEngine.isMasterMuted();
+
+    // The Test Tone replaces the chain while it plays (#111). Unannounced,
+    // that reads as a crash: the canvas empties and the status bar says
+    // "Chain: 0 plugins" with no reason given. It takes the dot too, in
+    // amber — not an error, but not the normal state either.
+    const bool tone = isTestToneOn && isTestToneOn();
+    if (tone)
+        stateDotColour_ = tokens::accentWarning;
     if (muted)
         stateDotColour_ = tokens::accentDestructive;
-    leftLabel_.setColour(juce::Label::textColourId, muted ? tokens::accentDestructive : tokens::fgPrimary);
-    leftLabel_.setText(chainText + "  •  " + stateText + (muted ? "  •  MUTED" : ""), juce::dontSendNotification);
+
+    leftLabel_.setColour(juce::Label::textColourId,
+                         muted  ? tokens::accentDestructive
+                         : tone ? tokens::accentWarning
+                                : tokens::fgPrimary);
+    // Plain ASCII in the tone branch on purpose: the same UTF-8 bullet the
+    // other branch uses came out as mojibake here, and a status line that is
+    // explaining an alarming-looking state is the last place to risk it.
+    leftLabel_.setText(tone ? juce::String("TEST TONE: the chain is set aside until you switch it off")
+                            : chainText + "  •  " + stateText + (muted ? "  •  MUTED" : ""),
+                       juce::dontSendNotification);
 
     // Error pill — shown when state is Idle and lastError is non-empty.
     // (During Building/Swapping the previous error from a prior run

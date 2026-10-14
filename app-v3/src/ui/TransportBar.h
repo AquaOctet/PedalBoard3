@@ -92,6 +92,18 @@ public:
     void promptRenamePatch();
     void confirmRemovePatch();
 
+    // Switch the Test Tone (Settings > Test Tone, and the Audio Devices
+    // dialog's toggle). Public so the UI snapshot tool can drive the real
+    // thing end to end rather than a reimplementation of it (#111): the tone
+    // is the one control whose bug was in the sequencing, which a test that
+    // repeats the sequence by hand cannot catch.
+    void toggleTestTone();
+    bool isTestToneOn() const noexcept { return toneActive_; }
+
+    // The tone switched. RootComponent uses this to re-read the status bar,
+    // which is where the user is told (#111).
+    std::function<void()> onTestToneChanged;
+
     // Plugins > Rescan Plugins: the out-of-process scan and its summary. The
     // prompt after a settings reset runs it too (M5 U7).
     void rescanPlugins();
