@@ -2,9 +2,8 @@
 
 #include "ColourScheme.h"
 #include "engine/AudioEngine.h"
+#include "Icons.h"
 #include "session/Session.h"
-
-#include <juce_audio_devices/juce_audio_devices.h>
 
 namespace pedalboard3::ui
 {
@@ -14,7 +13,42 @@ namespace
 constexpr int kBarPadding = 12;
 constexpr int kDotSize = 8;
 constexpr int kDotTextGap = 8;
+constexpr int kToggleWidth = 28;
+constexpr int kToggleGap = 2;
 } // namespace
+
+// One of the three panel toggles: an outline icon that fills with the accent
+// while its panel is showing. A Button rather than a painted rectangle so it
+// gets hover, keyboard focus and a tooltip for free.
+class StatusBar::PanelToggle : public juce::Button
+{
+public:
+    PanelToggle(const juce::String& name, PanelSide side) : juce::Button(name), side_(side) {}
+
+    void setLit(bool lit)
+    {
+        if (lit == lit_)
+            return;
+        lit_ = lit;
+        repaint();
+    }
+
+private:
+    void paintButton(juce::Graphics& g, bool highlighted, bool down) override
+    {
+        auto area = getLocalBounds().toFloat().reduced(2.0f, 4.0f);
+        if (highlighted || down)
+        {
+            g.setColour(tokens::bgSecondary.withAlpha(down ? 0.9f : 0.55f));
+            g.fillRoundedRectangle(area, 3.0f);
+        }
+        g.setColour(lit_ ? tokens::accentPrimary : tokens::fgSubtle);
+        strokeIcon(g, panelSideIcon(side_), area.reduced(5.0f, 1.0f));
+    }
+
+    PanelSide side_;
+    bool lit_{false};
+};
 
 StatusBar::StatusBar(AppContext& ctx) : ctx_(ctx), stateDotColour_(tokens::statusIdle)
 {
@@ -29,29 +63,42 @@ StatusBar::StatusBar(AppContext& ctx) : ctx_(ctx), stateDotColour_(tokens::statu
     errorLabel_.setColour(juce::Label::textColourId, tokens::statusError);
     errorLabel_.setColour(juce::Label::backgroundColourId, tokens::statusError.withAlpha(0.12f));
     errorLabel_.setFont(juce::Font(juce::FontOptions(12.0f)));
-    errorLabel_.setJustificationType(juce::Justification::centred);
+    errorLabel_.setJustificationType(juce::Justification::centredRight);
     errorLabel_.setInterceptsMouseClicks(false, false);
     errorLabel_.setVisible(false);
     addAndMakeVisible(errorLabel_);
 
-    deviceLabel_.setColour(juce::Label::textColourId, tokens::fgMuted);
-    deviceLabel_.setFont(juce::Font(juce::FontOptions(12.0f)));
-    deviceLabel_.setJustificationType(juce::Justification::centredRight);
-    deviceLabel_.setMinimumHorizontalScale(0.85f);
-    deviceLabel_.setInterceptsMouseClicks(false, false);
-    addAndMakeVisible(deviceLabel_);
+    patchesToggle_ = std::make_unique<PanelToggle>("Patches panel", PanelSide::Left);
+    mappingsToggle_ = std::make_unique<PanelToggle>("Mappings panel", PanelSide::Bottom);
+    browserToggle_ = std::make_unique<PanelToggle>("Plugin browser", PanelSide::Right);
+    patchesToggle_->setTooltip("Show or hide the patch bank");
+    mappingsToggle_->setTooltip("Show or hide the mappings panel");
+    browserToggle_->setTooltip("Show or hide the plugin browser");
+    patchesToggle_->onClick = [this]
+    {
+        if (onTogglePatchBank)
+            onTogglePatchBank();
+    };
+    mappingsToggle_->onClick = [this]
+    {
+        if (onToggleMappingsPanel)
+            onToggleMappingsPanel();
+    };
+    browserToggle_->onClick = [this]
+    {
+        if (onTogglePluginBrowser)
+            onTogglePluginBrowser();
+    };
+    addAndMakeVisible(*patchesToggle_);
+    addAndMakeVisible(*mappingsToggle_);
+    addAndMakeVisible(*browserToggle_);
 
     ctx_.session.addChangeListener(this);
-    if (auto* dm = ctx_.audioEngine.getDeviceManager())
-        dm->addChangeListener(this);
-    refreshDeviceInfo();
     refresh();
 }
 
 StatusBar::~StatusBar()
 {
-    if (auto* dm = ctx_.audioEngine.getDeviceManager())
-        dm->removeChangeListener(this);
     ctx_.session.removeChangeListener(this);
 }
 
@@ -71,55 +118,38 @@ void StatusBar::paint(juce::Graphics& g)
 
 void StatusBar::resized()
 {
-    auto bounds = getLocalBounds().reduced(kBarPadding, 4);
-    bounds.removeFromLeft(kDotSize + kDotTextGap); // space for the painted dot
+    auto bounds = getLocalBounds().reduced(kBarPadding, 0);
 
-    auto left = bounds.removeFromLeft(280);
-    leftLabel_.setBounds(left);
+    // The toggles are centred on the window, not on what is left after the
+    // chain text, so they stay put as that text changes length.
+    const int groupWidth = kToggleWidth * 3 + kToggleGap * 2;
+    auto group = getLocalBounds().withSizeKeepingCentre(groupWidth, getHeight());
+    patchesToggle_->setBounds(group.removeFromLeft(kToggleWidth));
+    group.removeFromLeft(kToggleGap);
+    mappingsToggle_->setBounds(group.removeFromLeft(kToggleWidth));
+    group.removeFromLeft(kToggleGap);
+    browserToggle_->setBounds(group.removeFromLeft(kToggleWidth));
 
-    // Middle: the device readout sits right-aligned; an error pill, when
-    // shown, takes the left half so both stay readable.
-    if (errorLabel_.isVisible())
-    {
-        deviceLabel_.setBounds(bounds.removeFromRight(bounds.getWidth() / 2));
-        errorLabel_.setBounds(bounds.reduced(kBarPadding, 2));
-    }
-    else
-    {
-        deviceLabel_.setBounds(bounds);
-    }
+    auto text = bounds.reduced(0, 4);
+    text.removeFromLeft(kDotSize + kDotTextGap); // space for the painted dot
+    leftLabel_.setBounds(text.removeFromLeft(280));
+
+    // The error pill takes the right-hand side, stopping clear of the toggles.
+    const int rightEdge = group.getRight();
+    auto right = text.withTrimmedLeft(juce::jmax(0, rightEdge + kBarPadding - text.getX()));
+    errorLabel_.setBounds(right);
 }
 
-void StatusBar::changeListenerCallback(juce::ChangeBroadcaster* source)
+void StatusBar::refreshPanelToggles()
 {
-    if (source == &ctx_.session)
-        refresh();
-    else
-        refreshDeviceInfo(); // the AudioDeviceManager
+    patchesToggle_->setLit(isPatchBankShown && isPatchBankShown());
+    mappingsToggle_->setLit(isMappingsPanelShown && isMappingsPanelShown());
+    browserToggle_->setLit(isPluginBrowserShown && isPluginBrowserShown());
 }
 
-void StatusBar::refreshDeviceInfo()
+void StatusBar::changeListenerCallback(juce::ChangeBroadcaster*)
 {
-    auto* dm = ctx_.audioEngine.getDeviceManager();
-    auto* dev = dm != nullptr ? dm->getCurrentAudioDevice() : nullptr;
-
-    if (dev == nullptr)
-    {
-        // Surface the actual reason audio is silent (e.g. a driver that
-        // failed to open) rather than a generic placeholder.
-        const auto& err = ctx_.audioEngine.getLastInitError();
-        deviceLabel_.setColour(juce::Label::textColourId, tokens::accentWarning);
-        deviceLabel_.setText(dm == nullptr      ? juce::String("No audio device")
-                             : err.isNotEmpty() ? "Audio device error: " + err + " — open Settings > Audio Devices"
-                                                : juce::String("No audio device — open Settings > Audio Devices"),
-                             juce::dontSendNotification);
-        return;
-    }
-
-    deviceLabel_.setColour(juce::Label::textColourId, tokens::fgMuted);
-    deviceLabel_.setText(dev->getName() + "  •  " + juce::String(static_cast<int>(dev->getCurrentSampleRate())) +
-                             " Hz  /  " + juce::String(dev->getCurrentBufferSizeSamples()) + " samples",
-                         juce::dontSendNotification);
+    refresh();
 }
 
 void StatusBar::refresh()
@@ -154,17 +184,10 @@ void StatusBar::refresh()
     // (During Building/Swapping the previous error from a prior run
     // stays hidden so the user isn't shown stale text mid-op.)
     const auto err = ctx_.session.getLastError();
-    if (state == session::Session::State::Idle && err.isNotEmpty())
-    {
-        errorLabel_.setText("⚠  " + err, juce::dontSendNotification);
-        errorLabel_.setVisible(true);
-    }
-    else
-    {
-        errorLabel_.setVisible(false);
-    }
+    const bool show = state == session::Session::State::Idle && err.isNotEmpty();
+    errorLabel_.setText(show ? "⚠  " + err : juce::String(), juce::dontSendNotification);
+    errorLabel_.setVisible(show);
 
-    resized(); // the middle split depends on whether the error pill is showing
     repaint();
 }
 

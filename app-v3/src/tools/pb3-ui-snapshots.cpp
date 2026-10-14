@@ -568,6 +568,13 @@ int main(int argc, char** argv)
             rig.preferences.setPanelShown("browser", true);
             ui::RootComponent narrow(rig.context);
             shoot("window-narrow", narrow, 900, 640);
+
+            // Wide enough that the device badge shows all three parts (#90):
+            // the driver chip, the input with its mic and the output with its
+            // speaker. Below 1400 it folds to the chip alone, so the narrower
+            // surfaces above cannot show the icons at all.
+            ui::RootComponent wide(rig.context);
+            shoot("window-wide", wide, 1680, 900);
         }
 
         std::printf("%d surfaces in %s\n", out.count(), out.folder().getFullPathName().toRawUTF8());
