@@ -34,6 +34,10 @@ juce::Font nameFont()
 {
     return fonts::ui(kNameSize);
 }
+juce::Font channelFont()
+{
+    return fonts::mono(kRateSize);
+}
 
 // "48kHz", "44.1kHz" — the demo's spelling, with the decimal only where the
 // rate actually has one.
@@ -44,6 +48,76 @@ juce::String formatRate(double hz)
     const double k = hz / 1000.0;
     const bool whole = std::abs(k - std::round(k)) < 0.001;
     return (whole ? juce::String(static_cast<int>(std::round(k))) : juce::String(k, 1)) + "kHz";
+}
+
+// JUCE's device-type names are what Windows calls the APIs, which is not what
+// anyone calls them. The demo's chip says "ASIO" and "WASAPI", so say that.
+// Anything unrecognised is passed through rather than guessed at.
+juce::String shortDriver(const juce::String& type)
+{
+    if (type == "Windows Audio")
+        return "WASAPI";
+    if (type == "Windows Audio (Exclusive Mode)")
+        return "WASAPI EX";
+    if (type == "Windows Audio (Low Latency Mode)")
+        return "WASAPI LL";
+    return type;
+}
+
+// Windows device names carry two things the badge shows separately anyway:
+// the channel pair ("Output 1/2 ...") and the enumerator Windows adds when
+// there are two of a card ("(2- Komplete Audio 6 MK2)"). Strip both, then
+// pick whichever half actually names the hardware:
+//
+//   "Output 1/2 (2- Komplete Audio 6 MK2)"          -> "Komplete Audio 6 MK2"
+//   "Speakers (Realtek(R) Audio)"                   -> "Realtek(R) Audio"
+//   "Voicemeeter Out B1 (VB-Audio Voicemeeter VAIO)" -> "Voicemeeter Out B1"
+//   "Focusrite USB ASIO"                            -> unchanged
+//
+// The third case is why this is not just "take the parenthetical": B1 and B2
+// are different outputs of one driver, and the parenthetical is identical for
+// both. A prefix is only dropped when it is a generic Windows endpoint word.
+juce::String shortDeviceName(juce::String name)
+{
+    name = name.trim();
+    if (name.isEmpty())
+        return name;
+
+    const int open = name.indexOfChar('(');
+    const int close = name.lastIndexOfChar(')');
+    if (open < 0 || close < open)
+        return name;
+
+    auto prefix = name.substring(0, open).trim();
+    auto inner = name.substring(open + 1, close).trim();
+
+    // "2- Komplete Audio 6 MK2" -> "Komplete Audio 6 MK2"
+    if (inner.length() > 3 && juce::CharacterFunctions::isDigit(inner[0]) && inner.substring(1, 3) == "- ")
+        inner = inner.substring(3).trim();
+
+    // A prefix that is only a channel spec, or only a Windows endpoint word,
+    // names nothing; the hardware is in the brackets.
+    static const char* generic[] = {
+        "Speakers", "Headphones", "Headset", "Microphone", "Line In", "Line Out", "Digital Audio", "Realtek"};
+    bool prefixIsGeneric = prefix.isEmpty();
+    for (const char* g : generic)
+        if (prefix.equalsIgnoreCase(g) || prefix.startsWithIgnoreCase(juce::String(g) + " "))
+            prefixIsGeneric = true;
+    if (prefix.startsWithIgnoreCase("Input ") || prefix.startsWithIgnoreCase("Output "))
+        prefixIsGeneric = true;
+
+    return prefixIsGeneric ? inner : prefix;
+}
+
+// "[1,2]" — the active channels, 1-based, as the demo shows them. Empty when
+// nothing is active, which is a real state worth not dressing up.
+juce::String channelList(const juce::BigInteger& active)
+{
+    juce::StringArray parts;
+    for (int i = 0; i <= active.getHighestBit(); ++i)
+        if (active[i])
+            parts.add(juce::String(i + 1));
+    return parts.isEmpty() ? juce::String() : "[" + parts.joinIntoString(",") + "]";
 }
 
 int widthOf(const juce::Font& font, const juce::String& text, int cap)
@@ -81,7 +155,7 @@ void DeviceBadge::refresh()
     auto* dm = ctx_.audioEngine.getDeviceManager();
     auto* dev = dm != nullptr ? dm->getCurrentAudioDevice() : nullptr;
 
-    driver_ = dm != nullptr ? dm->getCurrentAudioDeviceType() : juce::String();
+    driver_ = dm != nullptr ? shortDriver(dm->getCurrentAudioDeviceType()) : juce::String();
     if (driver_.isEmpty())
         driver_ = "Audio";
 
@@ -90,6 +164,8 @@ void DeviceBadge::refresh()
         rate_.clear();
         inName_.clear();
         outName_.clear();
+        inChannels_.clear();
+        outChannels_.clear();
         // The same reason the status bar used to give, kept short enough for
         // the bar; the tooltip carries the whole of it.
         const auto& err = ctx_.audioEngine.getLastInitError();
@@ -105,26 +181,22 @@ void DeviceBadge::refresh()
         rate_ = formatRate(dev->getCurrentSampleRate());
 
         const auto setup = dm->getAudioDeviceSetup();
-        inName_ = setup.inputDeviceName;
-        outName_ = setup.outputDeviceName;
-        if (outName_.isEmpty())
-            outName_ = dev->getName();
+        const auto rawIn = setup.inputDeviceName;
+        const auto rawOut = setup.outputDeviceName.isEmpty() ? dev->getName() : setup.outputDeviceName;
+        inName_ = shortDeviceName(rawIn);
+        outName_ = shortDeviceName(rawOut);
+        inChannels_ = channelList(dev->getActiveInputChannels());
+        outChannels_ = channelList(dev->getActiveOutputChannels());
 
-        // One device doing both — an ASIO driver, usually. Printing the same
-        // name twice is the clutter this issue is about, so it is shown once
-        // under the speaker and the tooltip says it is also the input.
-        const bool shared = inName_ == outName_;
-        if (shared)
-            inName_.clear();
-
+        // Both ends are shown even when one device serves both, which is how
+        // the demo does it. With the channel pair beside each, the two lines
+        // say different things — in on [1,2], out on [3,4] is a real and
+        // common setup — so this is no longer the duplication it looks like.
         const int buffer = dev->getCurrentBufferSizeSamples();
         const double hz = dev->getCurrentSampleRate();
         juce::String tip = driver_ + "\n";
-        if (shared)
-            tip << "In and out: " << outName_ << "\n";
-        else
-            tip << "In: " << (setup.inputDeviceName.isEmpty() ? juce::String("none") : setup.inputDeviceName) << "\n"
-                << "Out: " << outName_ << "\n";
+        tip << "In: " << (rawIn.isEmpty() ? juce::String("none") : rawIn) << " " << inChannels_ << "\n"
+            << "Out: " << rawOut << " " << outChannels_ << "\n";
         tip << juce::String(static_cast<int>(hz)) << " Hz, " << buffer << " samples";
         if (hz > 0.0)
             tip << " (" << juce::String(buffer / hz * 2000.0, 1) << " ms round trip)";
@@ -146,11 +218,18 @@ void DeviceBadge::measure()
         chipWidth_ += kChipGap + juce::GlyphArrangement::getStringWidthInt(
                                      problem_.isNotEmpty() ? nameFont() : rateFont(), chipText);
 
-    const auto deviceWidth = [](const juce::String& name)
-    { return name.isEmpty() ? 0 : kIconSize + kIconTextGap + widthOf(nameFont(), name, kNameMaxWidth); };
+    const auto deviceWidth = [](const juce::String& name, const juce::String& channels)
+    {
+        if (name.isEmpty())
+            return 0;
+        int w = kIconSize + kIconTextGap + widthOf(nameFont(), name, kNameMaxWidth);
+        if (channels.isNotEmpty())
+            w += kChipGap + juce::GlyphArrangement::getStringWidthInt(channelFont(), channels);
+        return w;
+    };
 
-    inWidth_ = foldLevel_ <= 1 ? deviceWidth(inName_) : 0;
-    outWidth_ = foldLevel_ == 0 ? deviceWidth(outName_) : 0;
+    inWidth_ = foldLevel_ <= 1 ? deviceWidth(inName_, inChannels_) : 0;
+    outWidth_ = foldLevel_ == 0 ? deviceWidth(outName_, outChannels_) : 0;
 
     preferredWidth_ = chipWidth_;
     if (inWidth_ > 0)
@@ -194,7 +273,11 @@ void DeviceBadge::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighligh
     if (bad)
         return;
 
-    const auto drawDevice = [&](juce::Rectangle<int>& row, const juce::Path& icon, const juce::String& name, int width)
+    const auto drawDevice = [&](juce::Rectangle<int>& row,
+                                const juce::Path& icon,
+                                const juce::String& name,
+                                const juce::String& channels,
+                                int width)
     {
         if (width <= 0)
             return;
@@ -203,12 +286,28 @@ void DeviceBadge::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighligh
         g.setColour(tokens::fgMuted);
         strokeIcon(g, icon, cell.removeFromLeft(kIconSize).toFloat());
         cell.removeFromLeft(kIconTextGap);
+
+        // The channel pair is pulled off the right first, so a long name
+        // ellipsises into the space left rather than pushing the pair out of
+        // the cell. It takes the accent, as it does in the demo: it is the
+        // part that changes when you re-patch.
+        if (channels.isNotEmpty())
+        {
+            const int w = juce::GlyphArrangement::getStringWidthInt(channelFont(), channels);
+            auto chans = cell.removeFromRight(w);
+            cell.removeFromRight(kChipGap);
+            g.setFont(channelFont());
+            g.setColour(tokens::accentPrimary);
+            g.drawText(channels, chans, juce::Justification::centredLeft);
+        }
+
         g.setFont(nameFont());
+        g.setColour(tokens::fgMuted);
         g.drawText(name, cell, juce::Justification::centredLeft, true);
     };
 
-    drawDevice(area, micIcon(), inName_, inWidth_);
-    drawDevice(area, speakerIcon(), outName_, outWidth_);
+    drawDevice(area, micIcon(), inName_, inChannels_, inWidth_);
+    drawDevice(area, speakerIcon(), outName_, outChannels_, outWidth_);
 }
 
 } // namespace pedalboard3::ui
