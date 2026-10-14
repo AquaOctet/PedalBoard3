@@ -103,6 +103,7 @@ void App::initialise(const juce::String& /*commandLine*/)
     patchSwitcher = std::make_unique<session::PatchSwitcher>(*bankDocument, *controlHub);
     patchSwitcher->setEditHistory(editHistory.get());
     patchSwitcher->setTransportCommands(transportCommands.get());
+    patchSwitcher->setAudioEngine(engine.get());
     midiInputManager = std::make_unique<control::MidiInputManager>(
         engine->getDeviceManager(), [this](const juce::MidiMessage& msg) { patchSwitcher->handleMidi(msg); });
 

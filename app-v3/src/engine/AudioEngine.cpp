@@ -55,4 +55,18 @@ std::unique_ptr<juce::AudioProcessorGraph> AudioEngine::loadGraph(std::unique_pt
     return runtime_->swapPreparedGraph(std::move(next));
 }
 
+void AudioEngine::setMasterMuted(bool shouldMute)
+{
+    if (runtime_->getMasterMute().isMuted() == shouldMute)
+        return; // no broadcast for a no-op, so listeners don't redraw for nothing
+
+    runtime_->getMasterMute().setMuted(shouldMute);
+    masterMuteBroadcaster_.sendChangeMessage();
+}
+
+bool AudioEngine::isMasterMuted() const noexcept
+{
+    return runtime_->getMasterMute().isMuted();
+}
+
 } // namespace pedalboard3::engine

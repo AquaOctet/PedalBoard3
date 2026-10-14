@@ -46,6 +46,7 @@ void AudioGraphRuntime::prepareToPlay(double sampleRate, int samplesPerBlock)
     const int numOut = getTotalNumOutputChannels();
     sanitiser_.setPlayConfigDetails(numIn, numOut, sampleRate, samplesPerBlock);
     sanitiser_.prepareToPlay(sampleRate, samplesPerBlock);
+    masterMute_.prepare(sampleRate); // the fade is a time, so it is a rate
 
     // Pre-build the all-notes-off flush template once. 16ch × 3 events.
     // Order per channel: allSoundOff → allNotesOff → resetAllControllers
@@ -160,6 +161,9 @@ void AudioGraphRuntime::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     transport_.endBlock(buffer.getNumSamples());
 
     sanitiser_.processBlock(buffer, midi);
+
+    // Last, and after the sanitiser on purpose: see the note on the class.
+    masterMute_.process(buffer);
 
     // 3. Publish that we've completed a block. Release so a concurrent
     //    reader using `acquire` sees all the buffer writes that preceded

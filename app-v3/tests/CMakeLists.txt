@@ -13,6 +13,7 @@
 
 set(PB3_TEST_SOURCES
     support/RealSettingsGuard.cpp
+    unit/engine/MasterMute_test.cpp
     unit/engine/OutputSanitiser_test.cpp
     unit/engine/BypassableInstance_test.cpp
     unit/engine/BypassableInstance_watchdog_test.cpp

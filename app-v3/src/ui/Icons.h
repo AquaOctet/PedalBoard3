@@ -80,8 +80,10 @@ inline juce::Path micIcon()
     return scaledToIconBox(p);
 }
 
-// lucide "volume-2": the cone and two waves.
-inline juce::Path speakerIcon()
+// The speaker cone, on its own. The device badge's speaker and the master
+// mute button (#106) both draw it, so it lives here once and the two cannot
+// drift apart. Unscaled — its callers scale the finished icon.
+inline juce::Path speakerConeIcon()
 {
     juce::Path p;
     p.startNewSubPath(2.0f, 9.0f);
@@ -91,11 +93,23 @@ inline juce::Path speakerIcon()
     p.lineTo(6.0f, 15.0f);
     p.lineTo(2.0f, 15.0f);
     p.closeSubPath();
+    return p;
+}
+
+// The two waves that turn the cone into lucide's "volume-2".
+inline juce::Path addVolumeWaves(juce::Path p)
+{
     p.startNewSubPath(15.5f, 9.0f);
     p.quadraticTo(18.0f, 12.0f, 15.5f, 15.0f);
     p.startNewSubPath(18.5f, 6.5f);
     p.quadraticTo(22.5f, 12.0f, 18.5f, 17.5f);
-    return scaledToIconBox(p);
+    return p;
+}
+
+// lucide "volume-2": the output device, in the badge.
+inline juce::Path speakerIcon()
+{
+    return scaledToIconBox(addVolumeWaves(speakerConeIcon()));
 }
 
 // The status bar's three panel toggles (#90), as lucide's panel-left,
@@ -208,6 +222,20 @@ inline juce::Path activityIcon()
     p.lineTo(15.0f, 20.5f);
     p.lineTo(18.0f, 12.0f);
     p.lineTo(22.0f, 12.0f);
+    return scaledToIconBox(p);
+}
+
+// lucide "volume-x": the master mute button when it is on (#106). The cone is
+// the same one the unmuted button and the device badge draw; muted swaps the
+// two waves for a cross, so the state reads in the shape and not only in the
+// colour.
+inline juce::Path volumeMutedIcon()
+{
+    auto p = speakerConeIcon();
+    p.startNewSubPath(16.0f, 9.0f);
+    p.lineTo(22.0f, 15.0f);
+    p.startNewSubPath(22.0f, 9.0f);
+    p.lineTo(16.0f, 15.0f);
     return scaledToIconBox(p);
 }
 

@@ -25,6 +25,13 @@ public:
         setTooltip(name);
     }
 
+    // For a button whose icon is its state, like the master mute (#106).
+    void setIcon(juce::Path icon)
+    {
+        icon_ = std::move(icon);
+        repaint();
+    }
+
     void paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override
     {
         getLookAndFeel().drawButtonBackground(

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "MasterMute.h"
 #include "processors/OutputSanitiser.h"
 #include "Transport.h"
 
@@ -24,7 +25,10 @@ namespace pedalboard3::engine
 // deferred deletion.
 //
 // Every processBlock ends with a final `OutputSanitiser` pass so no
-// NaN/Inf/|x|>1.5 ever reaches the audio device regardless of graph state.
+// NaN/Inf/|x|>1.5 ever reaches the audio device regardless of graph state,
+// and then the master mute (#106), in that order: muting is a multiply by
+// zero and `NaN * 0.0f` is NaN, so sanitising second would let a muted NaN
+// out. Sanitise, then mute, and silence is exactly 0.
 //
 // The runtime also owns the transport (M6 U1): it is the live graph's play
 // head, which JUCE's graph hands to every node each block, and it advances
@@ -120,6 +124,10 @@ public:
     // The transport every hosted plugin sees as its play head.
     Transport& getTransport() noexcept { return transport_; }
 
+    // The master mute (#106). It lives here rather than in the graph so it
+    // works on an empty board and survives a patch change untouched.
+    MasterMute& getMasterMute() noexcept { return masterMute_; }
+
 private:
     // Audio-thread helper: runs 16ch × {allSoundOff, allNotesOff,
     // resetAllControllers} into a silenced scratch buffer on the outgoing
@@ -131,6 +139,7 @@ private:
     std::atomic<juce::AudioProcessorGraph*> pending_{nullptr};
     std::atomic<std::uint64_t> generationAckedByAudio_{0};
     processors::OutputSanitiser sanitiser_;
+    MasterMute masterMute_;
     Transport transport_;
 
     // Pre-built MIDI flush template + per-call scratch (plugins that

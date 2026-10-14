@@ -226,7 +226,8 @@ public:
     {
         const auto* c = session::findAppCommandByJuceId(info.commandID);
         return c != nullptr &&
-               session::invokeAppCommand(ctx_.bankDocument, c->id, &ctx_.editHistory, &ctx_.transportCommands);
+               session::invokeAppCommand(
+                   ctx_.bankDocument, c->id, &ctx_.editHistory, &ctx_.transportCommands, &ctx_.audioEngine);
     }
 
     void resized() override

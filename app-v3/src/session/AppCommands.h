@@ -4,6 +4,11 @@
 
 #include <array>
 
+namespace pedalboard3::engine
+{
+class AudioEngine;
+} // namespace pedalboard3::engine
+
 namespace pedalboard3::session
 {
 
@@ -35,10 +40,11 @@ inline constexpr const char* kPlayPause = "transport.playPause";
 inline constexpr const char* kStop = "transport.stop";
 inline constexpr const char* kReturnToZero = "transport.returnToZero";
 inline constexpr const char* kTapTempo = "transport.tapTempo";
+inline constexpr const char* kToggleMasterMute = "audio.toggleMute";
 } // namespace appcommands
 
 // Every command, in display order.
-inline constexpr std::array<AppCommandInfo, 9> kAppCommands{{
+inline constexpr std::array<AppCommandInfo, 10> kAppCommands{{
     {appcommands::kNextPatch, "Next Patch", 0x2001},
     {appcommands::kPreviousPatch, "Previous Patch", 0x2002},
     {appcommands::kSave, "Save", 0x2003},
@@ -48,6 +54,7 @@ inline constexpr std::array<AppCommandInfo, 9> kAppCommands{{
     {appcommands::kStop, "Stop", 0x2007},
     {appcommands::kReturnToZero, "Return to Zero", 0x2008},
     {appcommands::kTapTempo, "Tap Tempo", 0x2009},
+    {appcommands::kToggleMasterMute, "Master Mute", 0x200a},
 }};
 
 // Lookups; nullptr when unknown.
@@ -61,9 +68,13 @@ const AppCommandInfo* findAppCommandByJuceId(int juceCommandId) noexcept;
 // edit.undo / edit.redo run on `history`; unhandled without one, or while
 // Test Tone has replaced the live graph.
 // The transport.* commands run on `transport` (M6 U3); unhandled without one.
+// audio.toggleMute runs on `audio` (#106); unhandled without one. It is
+// deliberately not gated on anything — a panic mute that a feature switch can
+// take away is not a panic mute.
 bool invokeAppCommand(BankDocument& bank,
                       const juce::String& id,
                       EditHistory* history = nullptr,
-                      TransportCommands* transport = nullptr);
+                      TransportCommands* transport = nullptr,
+                      engine::AudioEngine* audio = nullptr);
 
 } // namespace pedalboard3::session
