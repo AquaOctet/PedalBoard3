@@ -61,6 +61,8 @@ add_library(pb3_app_core STATIC
     ui/ColourScheme.h
     ui/CpuMeter.cpp
     ui/CpuMeter.h
+    ui/DeviceBadge.cpp
+    ui/DeviceBadge.h
     ui/Alert.cpp
     ui/Alert.h
     ui/AudioSettingsModel.h
@@ -162,6 +164,7 @@ pb3_apply_strict_warnings(pb3_app_core
     ui/BankSidebar.cpp
     ui/BoardMappingsPanel.cpp
     ui/CpuMeter.cpp
+    ui/DeviceBadge.cpp
     ui/Alert.cpp
     ui/AudioSettingsPanel.cpp
     ui/DialogFrame.cpp

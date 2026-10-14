@@ -104,6 +104,16 @@ public:
         transportBar_.onToggleMappingsPanel = [this] { toggleMappingsPanel(); };
         transportBar_.isMappingsPanelShown = [this] { return mappingsOpen_; };
 
+        // The status bar's three toggles (#90) drive the same three panels.
+        // refreshPanelToggles() is called from resized(), which every path
+        // that opens or closes a panel ends in.
+        statusBar_.onTogglePatchBank = [this] { togglePatchBank(); };
+        statusBar_.isPatchBankShown = [this] { return bankSidebar_.isVisible(); };
+        statusBar_.onToggleMappingsPanel = [this] { toggleMappingsPanel(); };
+        statusBar_.isMappingsPanelShown = [this] { return mappingsOpen_; };
+        statusBar_.onTogglePluginBrowser = [this] { togglePluginBrowser(); };
+        statusBar_.isPluginBrowserShown = [this] { return pluginBrowser_.isVisible(); };
+
         // A click on the canvas closes a slid-open panel.
         viewport_.addMouseListener(this, true);
 
@@ -275,6 +285,9 @@ public:
             pluginBrowser_.setBounds(body::overlayFor(panels, /*leftSide*/ false));
             pluginBrowser_.toFront(true);
         }
+
+        // Last, because it reads the visibility the lines above just set.
+        statusBar_.refreshPanelToggles();
     }
 
     // The bank's three-bar toggle, and Window > Patch Bank on macOS. On a wide window,

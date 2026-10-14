@@ -3,6 +3,7 @@
 #include "ActivityLights.h"
 #include "AppContext.h"
 #include "CpuMeter.h"
+#include "DeviceBadge.h"
 #include "TransportControls.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -38,7 +39,11 @@ class SignalCanvas;
 //   right:  the MIDI / OSC activity lights and the CPU meter (UI refresh
 //           U3 / U2).
 //
-// The audio-device readout lives in the StatusBar.
+// Between [+] and the patch strip sits the audio-device badge (#90): the
+// driver and rate as a chip, then the input and output devices with a mic and
+// a speaker icon, and a click opens Settings > Audio Devices. It used to be
+// text in the status bar's right-hand corner. It folds to the chip alone, and
+// then away entirely, as the window narrows.
 //
 // Threading: message thread only. Listens to Session (Add Plugin
 // enablement) and BankDocument (patch strip, Test Tone toggle sync).
@@ -119,6 +124,7 @@ private:
     juce::TextButton addPluginButton_{"+"};
     juce::TextButton settingsButton_{"Settings"};
     juce::TextButton pluginsButton_{"Plugins"};
+    DeviceBadge deviceBadge_;
     ActivityLights activityLights_;
     CpuMeter cpuMeter_;
     TransportControls transportControls_;

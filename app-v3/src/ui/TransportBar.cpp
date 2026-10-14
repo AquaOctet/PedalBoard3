@@ -50,6 +50,12 @@ constexpr int kPluginsButtonWidth = 90;
 constexpr int kPatchArrowWidth = 28;
 constexpr int kPatchStripGap = 4;
 constexpr int kPatchNameMaxWidth = 320;
+// The device badge folds the same way (#90): the output device goes first,
+// then the input, then the chip itself, so the bar never has to squeeze the
+// patch name down to nothing to make room for a readout.
+constexpr int kBadgeDropOutputBelow = 1600;
+constexpr int kBadgeDropInputBelow = 1400;
+constexpr int kBadgeHideBelow = 1040;
 // Below these window widths the transport pill folds its position away, then ♩.
 constexpr int kTransportFoldBelow = 1120;
 constexpr int kTransportFoldMoreBelow = 960;
@@ -125,7 +131,7 @@ void showMenuBelow(juce::PopupMenu menu, juce::Button& button, std::function<voi
 } // namespace
 
 TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas, FileActions& files)
-    : ctx_(ctx), canvas_(canvas), files_(files), activityLights_(ctx.controlHub),
+    : ctx_(ctx), canvas_(canvas), files_(files), activityLights_(ctx.controlHub), deviceBadge_(ctx),
       cpuMeter_(ctx.audioEngine.getDeviceManager()), transportControls_(ctx)
 {
     setOpaque(true);
@@ -146,6 +152,9 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas, FileActions& f
 
     addAndMakeVisible(fileButton_);
     addAndMakeVisible(addPluginButton_);
+    addAndMakeVisible(deviceBadge_);
+    deviceBadge_.onClick = [this] { showAudioDevicesWindow(ctx_, testTone_); };
+    deviceBadge_.onLayoutChanged = [this] { resized(); };
     addAndMakeVisible(activityLights_);
     addAndMakeVisible(cpuMeter_);
     addAndMakeVisible(transportControls_);
@@ -266,6 +275,16 @@ void TransportBar::resized()
     bounds.removeFromLeft(kButtonGap);
     addPluginButton_.setBounds(bounds.removeFromLeft(kAddButtonWidth));
     bounds.removeFromLeft(kBarPadding);
+
+    // The device badge, left of the patch strip.
+    const bool badgeOn = getWidth() >= kBadgeHideBelow;
+    deviceBadge_.setVisible(badgeOn);
+    if (badgeOn)
+    {
+        deviceBadge_.setFoldLevel(getWidth() < kBadgeDropInputBelow ? 2 : getWidth() < kBadgeDropOutputBelow ? 1 : 0);
+        deviceBadge_.setBounds(bounds.removeFromLeft(deviceBadge_.preferredWidth()));
+        bounds.removeFromLeft(kBarPadding);
+    }
 
     // Patch strip. The name button takes what is left between the clusters,
     // up to a cap, so it is the part that gives way on a narrow window.
