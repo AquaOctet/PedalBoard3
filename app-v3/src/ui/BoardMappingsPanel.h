@@ -2,7 +2,6 @@
 
 #include "AppContext.h"
 #include "ColourScheme.h"
-#include "FeatureChips.h"
 #include "MappingRows.h"
 #include "session/NodeId.h"
 
@@ -89,7 +88,6 @@ private:
     juce::TextButton midiTab_;
     juce::TextButton oscTab_;
     juce::TextButton addButton_{"+ Mapping"};
-    FeatureChips chips_; // the board's feature switches, bottom right (optional-features U3)
     juce::Viewport viewport_;
     std::unique_ptr<Content> content_;
     std::vector<std::unique_ptr<Row>> rows_;

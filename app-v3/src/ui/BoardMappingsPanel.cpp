@@ -120,7 +120,7 @@ public:
 
 // ---- the panel ----------------------------------------------------------------
 
-BoardMappingsPanel::BoardMappingsPanel(AppContext& ctx) : ctx_(ctx), chips_(ctx), content_(std::make_unique<Content>())
+BoardMappingsPanel::BoardMappingsPanel(AppContext& ctx) : ctx_(ctx), content_(std::make_unique<Content>())
 {
     setOpaque(true);
 
@@ -148,9 +148,6 @@ BoardMappingsPanel::BoardMappingsPanel(AppContext& ctx) : ctx_(ctx), chips_(ctx)
 
     addButton_.onClick = [this] { addMapping(); };
     addAndMakeVisible(addButton_);
-
-    chips_.onLayoutChanged = [this] { resized(); };
-    addAndMakeVisible(chips_);
 
     viewport_.setViewedComponent(content_.get(), false);
     viewport_.setScrollBarsShown(true, true);
@@ -445,19 +442,6 @@ void BoardMappingsPanel::resized()
     header.removeFromLeft(4);
     oscTab_.setBounds(header.removeFromLeft(64));
     addButton_.setBounds(header.removeFromRight(96));
-    // The board's feature switches: a footer's right end while open, the
-    // header's while collapsed.
-    constexpr int kFooterHeight = 26;
-    const int chipsWidth = chips_.preferredWidth();
-    if (open_ && chipsWidth > 0)
-    {
-        chips_.setBounds(area.removeFromBottom(kFooterHeight).reduced(kPad, 3).removeFromRight(chipsWidth));
-    }
-    else
-    {
-        header.removeFromRight(8);
-        chips_.setBounds(header.removeFromRight(chipsWidth));
-    }
     viewport_.setBounds(area);
     layoutRows();
 }
