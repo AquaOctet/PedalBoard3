@@ -431,6 +431,22 @@ private:
     static constexpr size_t kAddQueueMax = 16;
     mutable std::mutex queueMutex_;
     std::optional<LoadPatchRequest> pendingLoadPatch_;
+
+    // Requests the worker has taken off the queue and not yet had a result
+    // committed for. Guarded by queueMutex_.
+    //
+    // Without it, "is the queue empty" was being used to answer "is anything
+    // in flight", and those differ for exactly as long as a build takes. The
+    // worker pops a request before building it, so during that window both
+    // queues are empty; a Session that had just committed the previous job
+    // would then publish Idle with a rebuild under way. Everything that gates
+    // on Idle — Add Plugin, undo and redo, the tests' pumpUntilIdle — would
+    // act on a graph that was about to be replaced.
+    //
+    // Found by CI: a test asked for a load and a clear back to back and got
+    // the load's result, because Session said Idle while the clear was still
+    // being built.
+    int outstanding_{0};
     std::deque<AddPluginRequest> addQueue_;
 
     // Worker → message-thread result hand-off. A queue, not a single slot:

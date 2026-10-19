@@ -92,6 +92,12 @@ public:
                     addReq = std::move(session_.addQueue_.front());
                     session_.addQueue_.pop_front();
                 }
+
+                // Taking a request off the queue does not make it done, and
+                // until this counter existed nothing said so. See the note
+                // on outstanding_ in Session.h.
+                if (loadReq.has_value() || addReq.has_value())
+                    ++session_.outstanding_;
             }
 
             const auto cfg = deriveConfig(session_.engine_);
@@ -921,7 +927,12 @@ void Session::rearmWorkerIfQueueNonEmpty()
     bool more = false;
     {
         std::lock_guard<std::mutex> lk(queueMutex_);
-        more = pendingLoadPatch_.has_value() || !addQueue_.empty();
+        // `outstanding_` is the half this used to miss. A request the worker
+        // has already taken is in neither queue, so a Session that had just
+        // committed one job would publish Idle while the worker was still
+        // building the next — and Idle is what the UI reads as "your change
+        // landed, go ahead". See Session.h.
+        more = pendingLoadPatch_.has_value() || !addQueue_.empty() || outstanding_ > 0;
     }
     if (more)
     {
@@ -1424,6 +1435,15 @@ void Session::onBuildResult()
 
         if (std::holds_alternative<std::monostate>(result))
             continue;
+
+        // One request retired, whether or not it is about to be committed:
+        // the discard below is an outcome too, and leaving it counted would
+        // pin Session in Building for good.
+        {
+            std::lock_guard<std::mutex> lk(queueMutex_);
+            if (outstanding_ > 0)
+                --outstanding_;
+        }
 
         // Coalescing check — if a newer LoadPatch is pending, drop this
         // result (RAII destroys any prepared instance/graph here).
