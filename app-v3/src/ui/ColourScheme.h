@@ -48,6 +48,24 @@ inline const juce::Colour accentDestructive{0xffff1767}; // ChosenRecord — red
 inline const juce::Colour accentWarning{0xffffb000};     // LearnKey — amber
 inline const juce::Colour accentInfo{0xff8ce1e7};        // LoopColor — pale cyan
 
+// Cables, and the port dots at their ends (#123).
+//
+// They are their own pair of ramps rather than reusing the accents, because
+// a cable has to say two things at once that no single accent can: which
+// KIND of signal it carries, and which WAY it runs. Audio used to be
+// amber-to-teal, which collided with the amber of a warning and the teal of
+// anything live or selected; MIDI was one flat pale cyan, close enough to
+// teal that the third cable in a bundle read as another audio one.
+//
+// Audio runs purple into green, MIDI yellow into orange. Neither pair is
+// used anywhere else in the app, so a cable is never mistakeable for a
+// state, and the two bundles are not confusable with each other even at a
+// glance across a dark canvas.
+inline const juce::Colour cableAudioFrom{0xffb06bff}; // purple — leaves a source
+inline const juce::Colour cableAudioTo{0xff45f08a};   // green — arrives at a destination
+inline const juce::Colour cableMidiFrom{0xffffd21e};  // yellow
+inline const juce::Colour cableMidiTo{0xffff8a1f};    // orange
+
 // Foreground / text ---------------------------------------------------------
 
 inline const juce::Colour fgPrimary{0xfff4f1fa}; // SelectionForeground — body text

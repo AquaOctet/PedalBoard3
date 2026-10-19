@@ -7,6 +7,7 @@
 #include "engine/PluginHost.h"
 #include "engine/processors/FilePlayerProcessor.h"
 #include "engine/processors/VuMeterProcessor.h"
+#include "Fonts.h"
 #include "PluginBrowser.h"
 #include "PortDot.h"
 #include "ProcessorControls.h"
@@ -30,6 +31,8 @@ constexpr int kCardWidth = 170;
 constexpr int kCardHeight = PluginCard::kStandardHeight; // the mockup's compact card (UI refresh U7)
 constexpr int kCardSpacingX = 80;
 constexpr int kEndpointWidth = 86;
+// The title band at the top of an endpoint, above its ports (#123).
+constexpr int kEndpointTitleHeight = 30;
 constexpr int kCanvasMargin = 24;
 // Geometry for ui::canvas::layout (CanvasLayout.h).
 constexpr canvas::Metrics kMetrics{kCardWidth, kCardHeight, kEndpointWidth, kCardSpacingX, kCanvasMargin};
@@ -297,6 +300,32 @@ void SignalCanvas::layoutCards()
     repaint(); // cables are drawn per-cable in paint() from connections_ + live positions
 }
 
+bool SignalCanvas::boardUsesMidi() const
+{
+    // The endpoints' MIDI pins are real -- they are the device's MIDI in and
+    // out -- but showing them on a board where nothing reads MIDI is showing
+    // a road to nowhere. They appear when at least one node has a use for
+    // them (#123).
+    for (const auto& card : cards_)
+        if (card->snapshot().acceptsMidi || card->snapshot().producesMidi)
+            return true;
+    return false;
+}
+
+bool SignalCanvas::hasPortFor(NodeId id, int channel, bool asSource) const
+{
+    if (channel != kChannelMidi)
+        return true;
+    if (isGraphIO(id))
+        return boardUsesMidi();
+
+    const auto it = idToIndex_.find(id);
+    if (it == idToIndex_.end())
+        return false;
+    const auto& snap = cards_[it->second]->snapshot();
+    return asSource ? snap.producesMidi : snap.acceptsMidi;
+}
+
 juce::Point<int> SignalCanvas::portPositionFor(NodeId id, int channel, bool asSource) const
 {
     if (isGraphIO(id))
@@ -306,14 +335,17 @@ juce::Point<int> SignalCanvas::portPositionFor(NodeId id, int channel, bool asSo
         // destination, it terminates on the output endpoint card's
         // left edge.
         const auto& bounds = asSource ? inputCardBounds_ : outputCardBounds_;
-        const int x = asSource ? bounds.getRight() - 8 : bounds.getX() + 8;
-        const int rowSpan = bounds.getHeight() / 4;
-        int y = bounds.getY() + bounds.getHeight() / 2;
+        const int x = asSource ? bounds.getRight() - ports::kOutInset : bounds.getX() + ports::kInX;
+
+        // The SAME offsets from the top that a card uses (#123). They used to
+        // be quarters of the endpoint's height, which lined up with nothing,
+        // so every cable left the endpoint at a slight slope and the three of
+        // them read as a tangle instead of a bundle.
+        int y = bounds.getY() + ports::kPortYMidi;
         if (channel == kChannelL)
-            y = bounds.getY() + rowSpan;
+            y = bounds.getY() + ports::kPortYL;
         else if (channel == kChannelR)
-            y = bounds.getY() + 3 * rowSpan;
-        // MIDI: middle.
+            y = bounds.getY() + ports::kPortYR;
         return {x, y};
     }
 
@@ -360,16 +392,12 @@ void SignalCanvas::strokeCable(
         g.fillPath(dashed);
     };
 
-    if (midi)
-    {
-        g.setColour(bypassed ? tokens::accentInfo.withAlpha(0.7f) : tokens::accentInfo);
-        strokeIt();
-        return;
-    }
-
-    // Audio: amber -> teal gradient along the cable, the demo's signature look.
-    auto start = tokens::accentWarning;
-    auto end = tokens::accentPrimary;
+    // Audio runs purple into green, MIDI yellow into orange (#123). Two
+    // ramps rather than two flat colours, so a cable says which way it runs
+    // as well as what it carries; and two PAIRS, so the audio bundle and the
+    // MIDI one are never confusable with each other at a glance.
+    auto start = midi ? tokens::cableMidiFrom : tokens::cableAudioFrom;
+    auto end = midi ? tokens::cableMidiTo : tokens::cableAudioTo;
     if (bypassed)
     {
         start = start.withAlpha(0.7f);
@@ -433,17 +461,37 @@ void SignalCanvas::paint(juce::Graphics& g)
         g.fillRoundedRectangle(rf, 6.0f);
         g.setColour(tokens::borderDefault);
         g.drawRoundedRectangle(rf, 6.0f, 1.0f);
+        // The title goes at the TOP, not the middle: the middle is where the
+        // L row is, and centring the word there put "Input" straight through
+        // its own port labels.
         g.setColour(tokens::fgMuted);
-        g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
-        g.drawText(label, r, juce::Justification::centred);
+        g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
+        g.drawText(label, r.withHeight(kEndpointTitleHeight), juce::Justification::centred);
 
-        // Input is a source, so its audio dots are amber; Output is a
-        // destination, so its are teal. The same run of colour the eye
-        // already follows from one card to the next.
+        // Input is a source, so its audio dots are the colour a cable
+        // LEAVES with; Output is a destination, so its are the colour one
+        // arrives in. The same run the eye already follows card to card.
         const auto audio = isSource ? ports::audioOut() : ports::audioIn();
-        for (const int channel : {kChannelL, kChannelR})
-            ports::drawDot(g, portPositionFor(session::graphIO, channel, isSource), audio);
-        ports::drawDot(g, portPositionFor(session::graphIO, kChannelMidi, isSource), ports::midi());
+        const auto midi = isSource ? ports::midiOut() : ports::midiIn();
+
+        // Labelled, because this is the one place on the canvas with room to
+        // say it, and saying it once is enough: every cable running parallel
+        // to these is the same channel (#123). The label sits on the inboard
+        // side of the dot, away from the cable.
+        g.setFont(fonts::ui(10.0f, fonts::Weight::SemiBold));
+        const auto labelledPort = [&](juce::Point<int> at, const juce::String& text, juce::Colour c)
+        {
+            ports::drawDot(g, at, c);
+            auto box = juce::Rectangle<int>(40, 12).withCentre(at);
+            box = isSource ? box.withRightX(at.x - ports::kRadius - 3) : box.withX(at.x + ports::kRadius + 3);
+            g.setColour(tokens::fgMuted);
+            g.drawText(text, box, isSource ? juce::Justification::centredRight : juce::Justification::centredLeft);
+        };
+
+        labelledPort(portPositionFor(session::graphIO, kChannelL, isSource), "L", audio);
+        labelledPort(portPositionFor(session::graphIO, kChannelR, isSource), "R", audio);
+        if (boardUsesMidi())
+            labelledPort(portPositionFor(session::graphIO, kChannelMidi, isSource), "MIDI", midi);
     };
     drawEndpoint(inputCardBounds_, "Input", /*isSource*/ true);
     drawEndpoint(outputCardBounds_, "Output", /*isSource*/ false);
@@ -456,6 +504,12 @@ void SignalCanvas::paint(juce::Graphics& g)
         const auto from = portPositionFor(c.src, c.srcChannel, /*asSource*/ true);
         const auto to = portPositionFor(c.dst, c.dstChannel, /*asSource*/ false);
         if (from.isOrigin() || to.isOrigin())
+            continue;
+        // A cable needs a port at both ends to be worth drawing (#123). The
+        // auto-connect wires the MIDI pin between every pair of nodes; where
+        // neither end reads it, the connection exists in the patch and means
+        // nothing, and drawing it was the third cable nobody could explain.
+        if (!hasPortFor(c.src, c.srcChannel, /*asSource*/ true) || !hasPortFor(c.dst, c.dstChannel, /*asSource*/ false))
             continue;
         const bool midi = (c.srcChannel == kChannelMidi);
         const bool bypassed = (bypassedNodes_.find(c.src) != bypassedNodes_.end());

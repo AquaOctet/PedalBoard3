@@ -807,6 +807,15 @@ std::vector<Session::NodeSnapshot> Session::getNodeSnapshots() const
         s.missingReason = n.missingReason;
         if (graphCurrent)
         {
+            // Whether the MIDI pins mean anything here (#123). Asked of the
+            // processor rather than inferred from the description, because
+            // only the processor knows.
+            if (const auto midiIt = nodes_.find(n.id); midiIt != nodes_.end() && midiIt->second.hosted != nullptr)
+            {
+                s.acceptsMidi = midiIt->second.hosted->acceptsMidi();
+                s.producesMidi = midiIt->second.hosted->producesMidi();
+            }
+
             // A plugin that died while playing (M5 U5).
             const auto it = nodes_.find(n.id);
             if (it != nodes_.end() && it->second.bypass != nullptr && it->second.bypass->isDead())

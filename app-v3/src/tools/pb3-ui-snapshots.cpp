@@ -602,10 +602,16 @@ int main(int argc, char** argv)
                 {
                     root.setSize(width, 800);
                     const auto shown = [&](const juce::Component& c) { return c.isVisible() ? "y" : "-"; };
-                    std::printf("TOP BAR %5d  gap %4d  badge %3d  latency %s  cpu/mem %s  in/out %s  midi/osc %s\n",
+                    std::printf("TOP BAR %5d  gap %4d  badge %3d @%4d  free %4d..%4d  centre %4d vs %4d  latency %s  "
+                                "cpu/mem %s  in/out %s  midi/osc %s\n",
                                 width,
                                 topBar.barSlack(),
                                 topBar.deviceBadgeWidth(),
+                                topBar.deviceBadgeX(),
+                                topBar.badgeFreeRegion().first,
+                                topBar.badgeFreeRegion().second,
+                                topBar.deviceBadgeX() + topBar.deviceBadgeWidth() / 2,
+                                width / 2,
                                 shown(topBar.latencyReadoutForTest()),
                                 shown(topBar.systemMetersForTest()),
                                 shown(topBar.ioMonitorForTest()),

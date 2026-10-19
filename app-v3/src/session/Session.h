@@ -91,6 +91,16 @@ public:
         juce::String customName;
         int midiChannel{0}; // 0 = omni, 1..16 (PatchNode::midiChannel)
 
+        // Whether this node has any use for the graph's MIDI pins (#123).
+        // The auto-connect wires them between every pair of nodes whether or
+        // not either end reads them, so without this the canvas drew a MIDI
+        // cable the length of an effects rack that could never carry
+        // anything. Read from the live processor, so a node whose plugin is
+        // missing or not yet built reports false and shows no MIDI port --
+        // which is true: there is nothing there to receive one.
+        bool acceptsMidi{false};
+        bool producesMidi{false};
+
         // What the card says (UI refresh U7).
         bool builtIn{false};       // an internal node (NodeKind::Internal)
         juce::String internalType; // its typeId, for built-ins

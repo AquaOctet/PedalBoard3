@@ -90,6 +90,11 @@ public:
     // their port pixels here via hitTest).
     void mouseDown(const juce::MouseEvent&) override;
 
+    // Whether anything on the board has a use for the MIDI pins, and
+    // whether a given end of a cable has a port to attach to (#123).
+    bool boardUsesMidi() const;
+    bool hasPortFor(NodeId id, int channel, bool asSource) const;
+
     // A point on the canvas in the coordinates nodes save.
     juce::Point<float> modelPositionFor(juce::Point<int> canvasPoint) const;
     void mouseDrag(const juce::MouseEvent&) override;

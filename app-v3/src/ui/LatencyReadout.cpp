@@ -3,14 +3,16 @@
 #include "ColourScheme.h"
 #include "Fonts.h"
 #include "Icons.h"
+#include "MeterRow.h"
 
 namespace pedalboard3::ui
 {
 
 namespace
 {
-constexpr int kIconSize = 14;
-constexpr int kIconTextGap = 6;
+constexpr int kIconSize = 13;
+constexpr int kIconTextGap = 5;
+constexpr float kCaptionSize = 10.0f;
 constexpr float kTextSize = 11.0f;
 
 juce::Font textFont()
@@ -43,16 +45,17 @@ void LatencyReadout::refresh()
     {
         const double ms = buffer / hz * 2000.0; // in and out, as the demo counts it
         text_ = juce::String(ms, 1) + "ms";
-        setTooltip("Round-trip latency: " + juce::String(buffer) + " samples at " + juce::String(static_cast<int>(hz)) +
+        setTooltip("Round-trip delay: " + juce::String(buffer) + " samples at " + juce::String(static_cast<int>(hz)) +
                    " Hz, in and out.");
     }
     else
     {
-        text_ = "—";
-        setTooltip("No audio device, so there is no latency to report.");
+        text_ = juce::CharPointer_UTF8("\xe2\x80\x94");
+        setTooltip("No audio device, so there is no delay to report.");
     }
 
-    const int want = kIconSize + kIconTextGap + juce::GlyphArrangement::getStringWidthInt(textFont(), text_);
+    const int want = juce::jmax(kIconSize + kIconTextGap + juce::GlyphArrangement::getStringWidthInt(textFont(), text_),
+                                juce::GlyphArrangement::getStringWidthInt(captionFont(), "DELAY"));
     if (want != preferredWidth_)
     {
         preferredWidth_ = want;
@@ -62,15 +65,32 @@ void LatencyReadout::refresh()
     repaint();
 }
 
+juce::Font LatencyReadout::captionFont()
+{
+    return fonts::ui(kCaptionSize, fonts::Weight::Medium);
+}
+
 void LatencyReadout::paint(juce::Graphics& g)
 {
-    auto area = getLocalBounds();
-    g.setColour(tokens::fgMuted);
-    strokeIcon(g, activityIcon(), area.removeFromLeft(kIconSize).toFloat());
-    area.removeFromLeft(kIconTextGap);
-    g.setFont(textFont());
+    // Two rows, captioned, because its neighbours are: IN / OUT on one side
+    // and CPU / MEM on the other both say what they are, and a lone number
+    // with a pulse icon between them did not (#122). "10.7ms" is only
+    // obviously a latency if you already knew that is what lives there.
+    auto area = getLocalBounds().withSizeKeepingCentre(getWidth(), meter::kStackHeight);
+
+    auto caption = area.removeFromTop(meter::kRowHeight);
+    g.setFont(captionFont());
     g.setColour(hasDevice_ ? tokens::fgMuted : tokens::fgSubtle);
-    g.drawText(text_, area, juce::Justification::centredLeft);
+    g.drawText("DELAY", caption, juce::Justification::centredLeft);
+
+    area.removeFromTop(meter::kRowGap);
+    auto value = area.removeFromTop(meter::kRowHeight);
+    g.setColour(tokens::fgMuted);
+    strokeIcon(g, activityIcon(), value.removeFromLeft(kIconSize).toFloat());
+    value.removeFromLeft(kIconTextGap);
+    g.setFont(textFont());
+    g.setColour(hasDevice_ ? tokens::fgPrimary : tokens::fgSubtle);
+    g.drawText(text_, value, juce::Justification::centredLeft);
 }
 
 } // namespace pedalboard3::ui

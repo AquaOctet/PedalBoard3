@@ -13,6 +13,7 @@
 
 #include <memory>
 #include <optional>
+#include <utility>
 #include <vector>
 
 namespace pedalboard3::ui
@@ -94,6 +95,8 @@ public:
     // it: the "white space" the fold ladder is required to spend first.
     int barSlack() const noexcept { return slack_; }
     int deviceBadgeWidth() const { return deviceBadge_.isVisible() ? deviceBadge_.getWidth() : 0; }
+    int deviceBadgeX() const { return deviceBadge_.getX(); }
+    std::pair<int, int> badgeFreeRegion() const { return freeRegion_; }
     const juce::Component& latencyReadoutForTest() const { return latencyReadout_; }
     const juce::Component& systemMetersForTest() const { return systemMeters_; }
     const juce::Component& ioMonitorForTest() const { return ioMonitor_; }
@@ -208,6 +211,8 @@ private:
 
     // The unclaimed width left in the middle after the last resized().
     int slack_{0};
+    // Where the badge was allowed to sit, for the snapshot tool's report.
+    std::pair<int, int> freeRegion_{0, 0};
 
     // Where the group dividers go, filled in by resized() and drawn by
     // paint(). The bar has six groups and had nothing between them (#109).

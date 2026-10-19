@@ -23,11 +23,11 @@ constexpr int kButtonGap = 3;
 
 // Ports sit at the card's edges, clear of the body text.
 constexpr int kPortRadius = ports::kRadius;
-constexpr int kInPortX = 12;
-constexpr int kOutPortInset = 10;
-constexpr int kPortYL = 46;
-constexpr int kPortYR = 60;
-constexpr int kPortYMidi = 76;
+constexpr int kInPortX = ports::kInX;
+constexpr int kOutPortInset = ports::kOutInset;
+constexpr int kPortYL = ports::kPortYL;
+constexpr int kPortYR = ports::kPortYR;
+constexpr int kPortYMidi = ports::kPortYMidi;
 
 constexpr int kTextLeft = 24;
 constexpr int kTextRightInset = 20;
@@ -296,10 +296,19 @@ void PluginCard::paint(juce::Graphics& g)
     const int outX = getWidth() - kOutPortInset;
     drawPort(kInPortX, kPortYL, ports::audioIn());
     drawPort(kInPortX, kPortYR, ports::audioIn());
-    drawPort(kInPortX, kPortYMidi, ports::midi());
     drawPort(outX, kPortYL, ports::audioOut());
     drawPort(outX, kPortYR, ports::audioOut());
-    drawPort(outX, kPortYMidi, ports::midi());
+
+    // MIDI only where MIDI actually goes (#123). The auto-connect wires the
+    // MIDI pin between every pair of nodes whether or not either end has any
+    // use for it, so an effects rack -- which is all v3.0 hosts, instruments
+    // are out of scope -- drew a third cable the length of the board that
+    // could never carry anything. "I am not sure what the three cables are"
+    // was the right question to ask about it.
+    if (snapshot_.acceptsMidi)
+        drawPort(kInPortX, kPortYMidi, ports::midiIn());
+    if (snapshot_.producesMidi)
+        drawPort(outX, kPortYMidi, ports::midiOut());
 
     // The edge: the "chosen" accent when selected, brighter on hover. Selected
     // is pink rather than the running cyan-green on purpose (#105): on this

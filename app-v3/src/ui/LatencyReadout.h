@@ -6,9 +6,14 @@
 namespace pedalboard3::ui
 {
 
-// The top bar's round-trip latency, beside the CPU meter (#90): lucide's
-// heartbeat icon and a figure in milliseconds, which is what the demo shows
-// there and the number a player actually cares about on stage.
+// The top bar's round-trip delay, beside the CPU and MEM meters (#90): a
+// DELAY caption over lucide's heartbeat icon and a figure in milliseconds,
+// which is the number a player actually cares about on stage.
+//
+// Captioned and stacked to match its neighbours (#122). IN / OUT on one side
+// and CPU / MEM on the other both say what they are; a bare "10.7ms" with a
+// pulse icon between them is only obviously a latency if you already knew
+// that is what lives there.
 //
 // It is buffer / rate, doubled for the input and output passes — the same
 // arithmetic the demo does, and the same one the Audio Devices dialog shows
@@ -34,6 +39,7 @@ public:
 private:
     void changeListenerCallback(juce::ChangeBroadcaster*) override { refresh(); }
     void refresh();
+    static juce::Font captionFont();
 
     juce::AudioDeviceManager* deviceManager_;
     juce::String text_{"—"};

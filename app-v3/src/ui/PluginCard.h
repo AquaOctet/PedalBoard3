@@ -61,6 +61,9 @@ public:
     ~PluginCard() override;
 
     NodeId getNodeId() const noexcept { return snapshot_.id; }
+    // What the card is showing. The canvas reads it to decide which ports
+    // and cables to draw (#123).
+    const NodeSnapshot& snapshot() const noexcept { return snapshot_; }
 
     void setSnapshot(const NodeSnapshot&);
     void setAccentColour(juce::Colour); // teal = effect, amber = instrument

@@ -272,9 +272,10 @@ int TransportBar::naturalWidth() const
 
     // Left cluster, always present.
     w += kMenuButtonWidth * 3 + kButtonGap * 2;
-    w += kDividerGap * 2; // folder-group | badge
 
-    w += deviceBadge_.widthAtFold(0);
+    // The badge is centred, so it needs clear air on both sides of itself
+    // rather than a divider on one.
+    w += kButtonGap * 2 + deviceBadge_.widthAtFold(0);
 
     if (ctx_.features.isAvailable(session::Feature::Tempo))
         w += kDividerGap * 2 + transportControls_.widthAtFold(0);
@@ -326,7 +327,7 @@ void TransportBar::resized()
                        ? transportControls_.widthAtFold(1) - transportControls_.widthAtFold(2)
                        : 0;
         case Fold::BadgeAway:
-            return deviceBadge_.widthAtFold(3) + kDividerGap * 2;
+            return deviceBadge_.widthAtFold(3) + kButtonGap * 2;
         case Fold::ActivityAway:
             return kActivityWidth;
         case Fold::Count:
@@ -365,13 +366,6 @@ void TransportBar::resized()
         dividerX_.push_back(bounds.getRight());
         bounds.removeFromRight(kDividerGap);
     };
-    const auto divideLeft = [this, &bounds]
-    {
-        bounds.removeFromLeft(kDividerGap);
-        dividerX_.push_back(bounds.getX());
-        bounds.removeFromLeft(kDividerGap);
-    };
-
     // Right cluster: MIDI / OSC lights | input | latency | CPU | mute.
     muteButton_.setBounds(bounds.removeFromRight(kMuteButtonWidth));
     divideRight();
@@ -423,20 +417,47 @@ void TransportBar::resized()
     settingsButton_.setBounds(bounds.removeFromLeft(kMenuButtonWidth));
     bounds.removeFromLeft(kButtonGap);
     pluginsButton_.setBounds(bounds.removeFromLeft(kMenuButtonWidth));
-    divideLeft();
 
-    // The device badge, left of the patch strip.
+    // The device badge, centred rather than packed against the left cluster
+    // (#122).
+    //
+    // Left-anchored, it moved every time it folded or the device name
+    // changed length, so the thing you glance at to check what you are
+    // plugged into was never twice in the same place. Centred, a fold takes
+    // a little off each end and the middle of the badge stays put, which is
+    // the half of it your eye is on.
+    //
+    // Centred in the SPACE IT HAS, not on the window, and that is a real
+    // difference rather than a shortcut. The left cluster is three 36 px
+    // buttons; the right is the transport pill, four meters and the mute,
+    // around 500 px of it. Window-centring the badge at 1781 px would want
+    // it at x=676, and the free run between the clusters ends at 972 -- it
+    // would sit underneath the transport pill at every width this app is
+    // ever opened at, and the clamp that saved it from that put it back
+    // hard against the left cluster, which is where it started.
+    //
+    // Centred between the clusters is also what reads as centred: the right
+    // cluster is a block of controls, not background, so the eye centres the
+    // badge on the gap rather than on the window.
     deviceBadge_.setVisible(badgeOn);
     if (badgeOn)
     {
         deviceBadge_.setFoldLevel(badgeFold);
-        deviceBadge_.setBounds(bounds.removeFromLeft(deviceBadge_.preferredWidth()));
+        const int want = deviceBadge_.preferredWidth();
+        freeRegion_ = {bounds.getX(), bounds.getRight()};
+        auto cell = bounds.withSizeKeepingCentre(juce::jmin(want, bounds.getWidth()), bounds.getHeight());
+        deviceBadge_.setBounds(cell);
+
+        // Both sides of it are slack, so the fold ladder's measure of "room
+        // still unspent" is the whole gap, not just the half to its right.
+        slack_ = juce::jmax(0, bounds.getWidth() - want);
+        bounds = {};
     }
 
-    // Whatever is left over. The fold ladder is required to spend this before
-    // it takes anything away, and it is recorded rather than inferred so the
-    // snapshot tool can report it as a number.
-    slack_ = bounds.getWidth();
+    // With no badge there is nothing in the middle at all, so the whole gap
+    // is slack. (With one, it was recorded above, around the badge.)
+    if (!badgeOn)
+        slack_ = bounds.getWidth();
 }
 
 void TransportBar::promptRenamePatch()
