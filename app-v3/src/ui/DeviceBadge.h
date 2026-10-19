@@ -31,11 +31,13 @@ namespace pedalboard3::ui
 // Both ends are shown even when one device serves both: with the pairs beside
 // them the two lines say different things.
 //
-// Folding mirrors the demo's own breakpoints (`hidden sm:flex` on the input,
-// `hidden md:flex` on the output): level 0 shows all three parts, 1 drops the
-// output device, 2 drops the input too and leaves the driver chip. The owner
-// picks the level from the window width, and preferredWidth() says how much
-// room the current level needs.
+// Folding, cheapest loss first (#114):
+//   0  chip + input + output, each with its channel pair
+//   1  the channel pairs go -- both device names stay
+//   2  the output device goes
+//   3  the input goes too, leaving the driver chip
+// The owner picks the level, preferredWidth() says what the current one
+// needs, and widthAtFold() prices one without applying it.
 //
 // Threading: message thread only. Listens to the AudioDeviceManager.
 class DeviceBadge : public juce::Button, private juce::ChangeListener
@@ -44,9 +46,12 @@ public:
     explicit DeviceBadge(AppContext& ctx);
     ~DeviceBadge() override;
 
-    // 0 = chip + input + output, 1 = chip + input, 2 = chip only.
+    static constexpr int kMaxFoldLevel = 3;
+
     void setFoldLevel(int level);
     int preferredWidth() const noexcept { return preferredWidth_; }
+    // What the badge would need at `level`, without changing it.
+    int widthAtFold(int level) const;
 
     // The badge's content changed, so the owner should lay out again: a device
     // change can make it wider or narrower.
@@ -57,6 +62,7 @@ private:
     void changeListenerCallback(juce::ChangeBroadcaster*) override { refresh(); }
     void refresh();
     void measure();
+    int deviceWidthAt(int level, bool input) const;
 
     AppContext& ctx_;
 

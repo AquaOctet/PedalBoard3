@@ -18,7 +18,6 @@
 #include "control/OscServer.h"
 #include "engine/AudioEngine.h"
 #include "engine/PluginHost.h"
-#include "engine/processors/TestToneProcessor.h"
 #include "session/AppCommands.h"
 #include "session/AppMappings.h"
 #include "session/BankDocument.h"
@@ -61,6 +60,25 @@ namespace
 {
 
 using namespace pedalboard3;
+
+// The Test Tone probe (#111): how much audio to push through the runtime to
+// decide whether the tone is actually reaching the output, and the floor it
+// has to clear.
+//
+// The settle blocks matter. The crossfade is 15 ms -- about a block and a
+// half at 48k/512 -- so a probe that measures from the first block after the
+// switch reads the fade, not the steady state. Measuring the fade-OUT is how
+// the first version of this check reported the tone still playing at 0.242
+// immediately after it had been switched off, which is a true measurement of
+// the wrong instant. Four blocks of settle is ~43 ms, comfortably past it.
+//
+// The floor sits well under the tone's 0.25 amplitude and well over the
+// silence the rig's board produces.
+constexpr double kToneProbeRate = 48000.0;
+constexpr int kToneProbeBlock = 512;
+constexpr int kToneSettleBlocks = 4;
+constexpr int kToneProbeBlocks = 4;
+constexpr float kToneAudibleFloor = 0.05f;
 
 // Everything the UI's constructors reach for, built as App builds it.
 struct Rig
@@ -570,55 +588,136 @@ int main(int argc, char** argv)
             ui::RootComponent narrow(rig.context);
             shoot("window-narrow", narrow, 900, 640);
 
-            // The Test Tone, driven through the real TransportBar (#111). A
-            // unit test can repeat the sequence valueChanged performs, but it
-            // cannot catch a bug that IS the sequence. This runs the actual
-            // switch and checks the three things the user saw go wrong: the
-            // tone takes over, the board is not lost, and it comes back.
+            // How the top bar gives way as the window narrows (#116). The
+            // complaint was that it folded while slack sat unused between the
+            // patch strip and the activity lights, so the evidence has to be
+            // a measurement of exactly that, not a picture of one width.
+            //
+            // At each width: what the bar needs whole, how much room the
+            // patch strip got over its floor (the slack), and which of the
+            // optional parts are still showing.
             {
-                auto& bar = root.transportBar();
+                auto& topBar = root.transportBar();
+                const int natural = topBar.naturalWidth();
+                std::printf("TOP BAR natural width %d (window minimum)\n", natural);
+                for (const int width : {natural + 400, natural + 120, natural, natural - 150, natural - 400})
+                {
+                    root.setSize(width, 800);
+                    const auto shown = [&](const juce::Component& c) { return c.isVisible() ? "y" : "-"; };
+                    std::printf(
+                        "TOP BAR %5d  gap %4d  name %4d  badge %3d  latency %s  cpu %s  input %s  midi/osc %s\n",
+                        width,
+                        topBar.barSlack(),
+                        topBar.patchStripSlack(),
+                        topBar.deviceBadgeWidth(),
+                        shown(topBar.latencyReadoutForTest()),
+                        shown(topBar.cpuMeterForTest()),
+                        shown(topBar.inputMonitorForTest()),
+                        shown(topBar.activityLightsForTest()));
+                }
+                root.setSize(1280, 800);
+            }
+
+            // The Test Tone, driven through the real TransportBar (#111).
+            // A unit test can repeat the sequence valueChanged performs, but
+            // it cannot catch a bug that IS the sequence -- and here the bug
+            // turned out to be the design, not the sequence.
+            //
+            // So what this harness checks is now the opposite of what it
+            // checked before. The old tone replaced the patch, and the check
+            // asked whether the board came BACK. The tone is a master stage
+            // now, so the board must never LEAVE: same graph pointer, same
+            // node count, right through. Anything else is the thing the user
+            // reported, which was "the whole chain vanishes".
+            {
+                auto& toneBar = root.transportBar();
                 const int nodesBefore = static_cast<int>(rig.liveSession.getNodeSnapshots().size());
                 auto* runtime = rig.audioEngine.getRuntime();
                 auto* graphBefore = runtime != nullptr ? runtime->getLiveGraph() : nullptr;
 
-                bar.toggleTestTone();
+                // Drive the runtime by hand for the probe, with the device
+                // shut. Otherwise a dev box with a sound card has its audio
+                // thread calling processBlock at the same time we do, and
+                // the number we print is a race; a headless CI runner with
+                // no device would meanwhile never have had prepareToPlay
+                // called at all, leaving the tone's phase step at zero and
+                // the probe silent for a reason that has nothing to do with
+                // the tone. Closing it makes both machines agree.
+                rig.audioEngine.getDeviceManager()->closeAudioDevice();
+                if (runtime != nullptr)
+                {
+                    runtime->setPlayConfigDetails(2, 2, kToneProbeRate, kToneProbeBlock);
+                    runtime->prepareToPlay(kToneProbeRate, kToneProbeBlock);
+                }
+
+                // Push blocks through the runtime and report the loudest
+                // sample. The board in this rig is silent, so anything above
+                // the floor is the tone. Without this the harness would pass
+                // a tone that was switched on and never reached the output --
+                // which is the original complaint.
+                const auto outputPeak = [runtime]
+                {
+                    if (runtime == nullptr)
+                        return 0.0f;
+                    juce::AudioBuffer<float> block(2, kToneProbeBlock);
+                    juce::MidiBuffer midi;
+                    const auto pump = [&]
+                    {
+                        block.clear();
+                        midi.clear();
+                        runtime->processBlock(block, midi);
+                    };
+
+                    for (int i = 0; i < kToneSettleBlocks; ++i)
+                        pump(); // let the crossfade finish before measuring
+
+                    float peak = 0.0f;
+                    for (int i = 0; i < kToneProbeBlocks; ++i)
+                    {
+                        pump();
+                        peak = juce::jmax(peak, block.getMagnitude(0, block.getNumSamples()));
+                    }
+                    return peak;
+                };
+
+                toneBar.toggleTestTone();
                 settle(rig);
                 auto* graphDuring = runtime != nullptr ? runtime->getLiveGraph() : nullptr;
+                const int nodesDuring = static_cast<int>(rig.liveSession.getNodeSnapshots().size());
+                const float tonePeak = outputPeak();
 
-                // "The graph changed" is NOT proof the tone is playing: the
-                // clear's own empty graph satisfies that by itself, so the
-                // harness would have printed OK in a world where the tone
-                // never loaded at all. Look for the processor.
-                const auto hasTone = [](juce::AudioProcessorGraph* g)
-                {
-                    if (g == nullptr)
-                        return false;
-                    for (auto* node : g->getNodes())
-                        if (dynamic_cast<engine::processors::TestToneProcessor*>(node->getProcessor()) != nullptr)
-                            return true;
-                    return false;
-                };
-                const bool toneLive = hasTone(graphDuring);
-                const bool tookOver = bar.isTestToneOn() && graphDuring != graphBefore && toneLive;
-                std::printf("TEST TONE on : switch=%s graph changed=%s TestToneProcessor live=%s\n",
-                            bar.isTestToneOn() ? "on" : "OFF",
-                            graphDuring != graphBefore ? "yes" : "NO",
-                            toneLive ? "yes" : "NO");
+                // The switch says on, the engine agrees, the output is
+                // audible, and nothing about the board moved.
+                const bool boardIntact = graphDuring == graphBefore && nodesDuring == nodesBefore;
+                const bool audible = tonePeak > kToneAudibleFloor;
+                const bool tookOver = toneBar.isTestToneOn() && toneBar.isTestToneLive() && boardIntact && audible;
+                std::printf("TEST TONE on : switch=%s engine=%s board=%s nodes %d -> %d peak %.3f (%s)\n",
+                            toneBar.isTestToneOn() ? "on" : "OFF",
+                            toneBar.isTestToneLive() ? "on" : "OFF",
+                            graphDuring == graphBefore ? "intact" : "SWAPPED",
+                            nodesBefore,
+                            nodesDuring,
+                            static_cast<double>(tonePeak),
+                            audible ? "audible" : "SILENT");
                 shoot("window-test-tone", root, 1280, 800);
 
-                bar.toggleTestTone();
+                toneBar.toggleTestTone();
                 settle(rig);
                 auto* graphAfter = runtime != nullptr ? runtime->getLiveGraph() : nullptr;
                 const int nodesAfter = static_cast<int>(rig.liveSession.getNodeSnapshots().size());
-                const bool cameBack = !bar.isTestToneOn() && nodesAfter == nodesBefore && graphAfter != graphDuring &&
-                                      !hasTone(graphAfter);
-                std::printf("TEST TONE off: switch=%s nodes %d -> %d graph restored=%s error=%s\n",
-                            bar.isTestToneOn() ? "ON" : "off",
+                const float afterPeak = outputPeak();
+                const bool wentQuiet = afterPeak <= kToneAudibleFloor;
+                const bool stillThere = !toneBar.isTestToneOn() && !toneBar.isTestToneLive() &&
+                                        nodesAfter == nodesBefore && graphAfter == graphBefore;
+                std::printf("TEST TONE off: switch=%s engine=%s board=%s nodes %d -> %d peak %.3f error=%s\n",
+                            toneBar.isTestToneOn() ? "ON" : "off",
+                            toneBar.isTestToneLive() ? "ON" : "off",
+                            graphAfter == graphBefore ? "intact" : "SWAPPED",
                             nodesBefore,
                             nodesAfter,
-                            graphAfter != graphDuring ? "yes" : "NO",
+                            static_cast<double>(afterPeak),
                             rig.liveSession.getLastError().toRawUTF8());
-                if (!tookOver || !cameBack)
+                if (!tookOver || !stillThere || !wentQuiet)
                     std::printf("TEST TONE FAILED\n");
                 else
                     std::printf("TEST TONE OK\n");

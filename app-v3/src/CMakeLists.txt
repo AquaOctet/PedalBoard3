@@ -64,7 +64,9 @@ add_library(pb3_app_core STATIC
     ui/DeviceBadge.cpp
     ui/DeviceBadge.h
     ui/IconButton.h
+    ui/InputMonitor.cpp
     ui/LatencyReadout.cpp
+    ui/InputMonitor.h
     ui/LatencyReadout.h
     ui/PatchStrip.cpp
     ui/PatchStrip.h
@@ -168,6 +170,7 @@ pb3_apply_strict_warnings(pb3_app_core
     ui/BoardMappingsPanel.cpp
     ui/CpuMeter.cpp
     ui/DeviceBadge.cpp
+    ui/InputMonitor.cpp
     ui/LatencyReadout.cpp
     ui/PatchStrip.cpp
     ui/Alert.cpp

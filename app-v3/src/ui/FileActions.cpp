@@ -181,8 +181,7 @@ void FileActions::loadIntoDocument(session::PatchBank bank, const juce::File& fi
     // there becomes a pass-through placeholder whose card says Missing), then
     // what can't be built at all goes (see session::dropUnsafeNodes). Editors
     // close through BankDocument::beforeSwap before the swap destroys the live
-    // instances, and TransportBar clears Test Tone when the swap re-enables live
-    // capture.
+    // instances.
     session::resolvePluginNodes(bank, ctx_.pluginHost);
     session::dropUnsafeNodes(bank, ctx_.pluginHost);
     ctx_.bankDocument.loadBank(std::move(bank), file, readOnly);

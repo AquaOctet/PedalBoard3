@@ -142,12 +142,26 @@ DeviceBadge::~DeviceBadge()
 
 void DeviceBadge::setFoldLevel(int level)
 {
-    const auto clamped = juce::jlimit(0, 2, level);
+    const auto clamped = juce::jlimit(0, kMaxFoldLevel, level);
     if (clamped == foldLevel_)
         return;
     foldLevel_ = clamped;
     measure();
     repaint();
+}
+
+int DeviceBadge::widthAtFold(int level) const
+{
+    // Asked, not applied. The bar works out which fold level fits before it
+    // moves anything, so it needs to price each one without the badge
+    // changing under it.
+    const auto clamped = juce::jlimit(0, kMaxFoldLevel, level);
+    int w = chipWidth_;
+    if (const int in = deviceWidthAt(clamped, /*input*/ true); in > 0)
+        w += kGroupGap + in;
+    if (const int out = deviceWidthAt(clamped, /*input*/ false); out > 0)
+        w += kGroupGap + out;
+    return w;
 }
 
 void DeviceBadge::refresh()
@@ -218,24 +232,36 @@ void DeviceBadge::measure()
         chipWidth_ += kChipGap + juce::GlyphArrangement::getStringWidthInt(
                                      problem_.isNotEmpty() ? nameFont() : rateFont(), chipText);
 
-    const auto deviceWidth = [](const juce::String& name, const juce::String& channels)
-    {
-        if (name.isEmpty())
-            return 0;
-        int w = kIconSize + kIconTextGap + widthOf(nameFont(), name, kNameMaxWidth);
-        if (channels.isNotEmpty())
-            w += kChipGap + juce::GlyphArrangement::getStringWidthInt(channelFont(), channels);
-        return w;
-    };
-
-    inWidth_ = foldLevel_ <= 1 ? deviceWidth(inName_, inChannels_) : 0;
-    outWidth_ = foldLevel_ == 0 ? deviceWidth(outName_, outChannels_) : 0;
+    inWidth_ = deviceWidthAt(foldLevel_, /*input*/ true);
+    outWidth_ = deviceWidthAt(foldLevel_, /*input*/ false);
 
     preferredWidth_ = chipWidth_;
     if (inWidth_ > 0)
         preferredWidth_ += kGroupGap + inWidth_;
     if (outWidth_ > 0)
         preferredWidth_ += kGroupGap + outWidth_;
+}
+
+int DeviceBadge::deviceWidthAt(int level, bool input) const
+{
+    // Level 1 is the one #114 added, and it is the cheapest thing the badge
+    // can give up: the channel pairs. Losing "[1,2]" twice buys most of a
+    // device name, and WHICH device you are on is the thing you came to the
+    // badge to read -- the pair is the detail you check once when you patch.
+    // Dropping a whole device name before the pairs, which is what the badge
+    // used to do, answered the less useful question at every width.
+    if (input ? level > 2 : level > 1)
+        return 0;
+
+    const auto& name = input ? inName_ : outName_;
+    if (name.isEmpty())
+        return 0;
+
+    int w = kIconSize + kIconTextGap + widthOf(nameFont(), name, kNameMaxWidth);
+    const auto& channels = input ? inChannels_ : outChannels_;
+    if (level == 0 && channels.isNotEmpty())
+        w += kChipGap + juce::GlyphArrangement::getStringWidthInt(channelFont(), channels);
+    return w;
 }
 
 void DeviceBadge::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown)
@@ -291,7 +317,7 @@ void DeviceBadge::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighligh
         // ellipsises into the space left rather than pushing the pair out of
         // the cell. It takes the accent, as it does in the demo: it is the
         // part that changes when you re-patch.
-        if (channels.isNotEmpty())
+        if (channels.isNotEmpty() && foldLevel_ == 0)
         {
             const int w = juce::GlyphArrangement::getStringWidthInt(channelFont(), channels);
             auto chans = cell.removeFromRight(w);

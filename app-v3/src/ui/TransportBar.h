@@ -5,13 +5,13 @@
 #include "CpuMeter.h"
 #include "DeviceBadge.h"
 #include "IconButton.h"
+#include "InputMonitor.h"
 #include "LatencyReadout.h"
 #include "PatchStrip.h"
 #include "TransportControls.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -45,12 +45,17 @@ class SignalCanvas;
 //           (its popover has Tap and the time signature), the position and
 //           the Metronome's click button. On a narrow window the position
 //           folds away, then the click button.
-//   right:  the MIDI / OSC activity lights, the round-trip latency, the CPU
-//           meter and the master mute (UI refresh U3 / U2; latency is #90,
-//           mute is #106). The latency folds away first on a narrow window:
-//           the lights and the meter move second by second and it only moves
+//   right:  the MIDI / OSC activity lights, the audio input monitor, the
+//           round-trip latency, the CPU meter and the master mute (UI refresh
+//           U3 / U2; latency is #90, mute is #106, the input monitor is
+//           #117). The latency folds away first on a narrow window: the
+//           lights and the meters move second by second and it only moves
 //           when the device does. The mute never folds away — it is the
 //           control you reach for when something is already wrong.
+//
+// Nothing folds while there is slack between the patch strip and the right
+// cluster (#116): the bar prices itself against the window and walks a fold
+// ladder only as far as the shortfall needs.
 //
 // Between [+] and the patch strip sits the audio-device badge (#90): the
 // driver and rate as a chip, then the input and output devices with a mic and
@@ -68,6 +73,30 @@ public:
 
     void paint(juce::Graphics&) override;
     void resized() override;
+
+    // What the bar needs with nothing folded away and the patch strip at its
+    // floor (#116). MainWindow makes this the window's minimum width, so the
+    // bar's slack is spent before anything is taken off it, and the point
+    // where the slack runs out is as narrow as the window goes.
+    int naturalWidth() const;
+
+    // naturalWidth() changed -- a device with a longer name, a feature
+    // switched on. MainWindow re-applies its resize limits.
+    std::function<void()> onNaturalWidthChanged;
+
+    // What the fold ladder actually did, for the snapshot tool. The bug
+    // this replaced was "it collapses things while there is white space
+    // sitting there", so the evidence has to be a measurement of the space
+    // and of what is still showing, not a picture at one width.
+    // The unclaimed run between the patch strip and whatever is right of
+    // it: the "white space" the fold ladder is required to spend first.
+    int barSlack() const noexcept { return slack_; }
+    int patchStripSlack() const { return patchStrip_.getWidth() - PatchStrip::kMinimumWidth; }
+    int deviceBadgeWidth() const { return deviceBadge_.isVisible() ? deviceBadge_.getWidth() : 0; }
+    const juce::Component& latencyReadoutForTest() const { return latencyReadout_; }
+    const juce::Component& cpuMeterForTest() const { return cpuMeter_; }
+    const juce::Component& inputMonitorForTest() const { return inputMonitor_; }
+    const juce::Component& activityLightsForTest() const { return activityLights_; }
 
     // Settings > App Mappings... (M4 U5). MainWindow owns the window and the key
     // mappings it edits, so it installs this.
@@ -99,6 +128,10 @@ public:
     // repeats the sequence by hand cannot catch.
     void toggleTestTone();
     bool isTestToneOn() const noexcept { return toneActive_; }
+    // Where the tone actually is, as opposed to what the switch says. The
+    // two can only differ if something bypasses the bar, so the snapshot
+    // tool checks them against each other.
+    bool isTestToneLive() const noexcept;
 
     // The tone switched. RootComponent uses this to re-read the status bar,
     // which is where the user is told (#111).
@@ -128,15 +161,13 @@ private:
     // The Add Plugin menu, shared by [+] and Plugins > Add Plugin; each item
     // carries its own action.
     juce::PopupMenu makeAddPluginMenu();
-    bool canAddPlugin() const; // Session Idle and Test Tone off
+    bool canAddPlugin() const; // Session Idle
     void openFileMenu();
     void openPluginList();
     // The Test Tone switch changed (the Settings menu or the Audio Devices
     // dialog): start or stop the tone.
     void valueChanged(juce::Value&) override;
     void updateAddPluginEnabled();
-    // Put the tone graph in, once the clearPatch it waits on has committed.
-    void startToneIfClearLanded();
     // Icon, colour and tooltip for the master mute (#106).
     void refreshMuteButton();
     void openPluginsMenu();
@@ -156,32 +187,31 @@ private:
     IconButton pluginsButton_{plugIcon(), "Plugins"};
     DeviceBadge deviceBadge_;
     ActivityLights activityLights_;
+    InputMonitor inputMonitor_;
     LatencyReadout latencyReadout_;
     CpuMeter cpuMeter_;
     IconButton muteButton_{speakerIcon(), "Master mute"};
     TransportControls transportControls_;
 
     // The Test Tone switch: the Settings menu's tick and the Audio Devices
-    // dialog's toggle share it; valueChanged() starts or stops the tone.
+    // dialog's toggle share it; valueChanged() asks the engine to start or
+    // stop the tone.
+    //
+    // There is nothing else here any more. The tone used to be a graph that
+    // replaced the patch, so the bar had to clear the board, wait for that
+    // clear to actually commit on Session's worker, remember which patch
+    // generation it had asked at, stash the board in the bank slot, suspend
+    // live capture, close every open editor, and reload the lot on the way
+    // back. All of it existed to make a diagnostic that deleted your rig
+    // survivable. The tone is a master stage in the runtime now (#111): the
+    // board is untouched, so the bar just forwards the switch.
     juce::Value testTone_{false};
     bool toneActive_{false}; // what is actually playing
 
-    // Switching the tone ON clears the patch first, and clearPatch() is async
-    // (#111). The tone graph can only go into the engine once that clear has
-    // landed, or the worker's empty patch arrives a moment later and swaps the
-    // tone straight back out.
-    //
-    // The counter is the PATCH GENERATION, not the state version. The state
-    // version is bumped by every published state change, and replacePatch
-    // only publishes Building when Session was Idle — so a toggle made while
-    // a patch was already loading would be satisfied by that unrelated load
-    // committing, and the tone would be swapped on top of a chain graph that
-    // Session still points into. patchGeneration_ moves only inside
-    // commitLoadPatch, so it means "a whole-patch swap actually landed".
-    bool tonePending_{false};
-    std::uint64_t toneRequestedAtGeneration_{0};
-
     PatchStrip patchStrip_;
+
+    // The unclaimed width left in the middle after the last resized().
+    int slack_{0};
 
     // Where the group dividers go, filled in by resized() and drawn by
     // paint(). The bar has six groups and had nothing between them (#109).

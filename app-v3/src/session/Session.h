@@ -407,7 +407,7 @@ private:
 
     // The runtime's currently-live graph pointer, or nullptr. The identity
     // guards (crash-hunt #7) compare this against the cached liveGraph_ to
-    // reject a graph swapped in outside Session (Test Tone) before touching
+    // reject a graph swapped in outside Session before touching
     // cached Node* that belong only to Session's own committed graph.
     juce::AudioProcessorGraph* currentRuntimeGraph() const noexcept;
 

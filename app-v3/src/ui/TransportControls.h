@@ -42,8 +42,12 @@ public:
     ~TransportControls() override;
 
     // 0: everything; 1: without the position; 2: without the position and ♩.
+    static constexpr int kMaxFoldLevel = 2;
+
     void setFoldLevel(int level);
     int preferredWidth() const noexcept;
+    // What the pill would need at `level`, without changing it.
+    int widthAtFold(int level) const noexcept;
 
     // ♩ came or went, so the bar should lay out again.
     std::function<void()> onLayoutChanged;

@@ -73,7 +73,7 @@ bool addBrowserEntry(AppContext& ctx,
                      const juce::MemoryBlock& state)
 {
     // The same rule as the top bar's Add Plugin: only while Session is idle
-    // and the chain is the live graph (Test Tone suspends live capture).
+    // and the chain is the live graph.
     if (ctx.session.getState() != session::Session::State::Idle || !ctx.bankDocument.isLiveCaptureEnabled())
         return false;
 

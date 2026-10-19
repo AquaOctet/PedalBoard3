@@ -47,6 +47,7 @@ void AudioGraphRuntime::prepareToPlay(double sampleRate, int samplesPerBlock)
     sanitiser_.setPlayConfigDetails(numIn, numOut, sampleRate, samplesPerBlock);
     sanitiser_.prepareToPlay(sampleRate, samplesPerBlock);
     masterMute_.prepare(sampleRate); // the fade is a time, so it is a rate
+    testTone_.prepare(sampleRate);   // so is the tone's crossfade, and its phase step
 
     // Pre-build the all-notes-off flush template once. 16ch × 3 events.
     // Order per channel: allSoundOff → allNotesOff → resetAllControllers
@@ -119,6 +120,12 @@ void AudioGraphRuntime::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
 {
     const juce::ScopedNoDenormals nodn;
 
+    // Before anything else: what arrived at the input (#117). Taken here,
+    // ahead of the graph, so the meter reads the cable and not the board --
+    // an empty, silent or bypassed board must not make a live input look
+    // dead.
+    inputLevel_.capture(buffer);
+
     // The transport's snapshot for this block: every plugin in the block
     // sees the same position, and a Return to Zero lands here.
     transport_.beginBlock(currentSampleRate_);
@@ -162,7 +169,10 @@ void AudioGraphRuntime::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
 
     sanitiser_.processBlock(buffer, midi);
 
-    // Last, and after the sanitiser on purpose: see the note on the class.
+    // Then the tone, which crossfades over whatever the board produced
+    // without the board knowing anything about it (#111), and the mute
+    // last. Both orderings are deliberate: see the note on the class.
+    testTone_.process(buffer);
     masterMute_.process(buffer);
 
     // 3. Publish that we've completed a block. Release so a concurrent

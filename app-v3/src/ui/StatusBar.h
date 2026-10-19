@@ -53,11 +53,10 @@ public:
     std::function<void()> onTogglePluginBrowser;
     std::function<bool()> isPluginBrowserShown;
 
-    // Whether the Test Tone has replaced the chain (#111). TransportBar owns
-    // the switch, so RootComponent installs this the way it installs the
-    // panel toggles. Without it the tone empties the canvas and nothing on
-    // screen says why, which is what "Test Tone breaks the chain" turned out
-    // to mean: the board is safe, it just looks lost.
+    // Whether the Test Tone is playing (#111). TransportBar owns the switch,
+    // so RootComponent installs this the way it installs the panel toggles.
+    // The tone is a master stage, so the board behind it is untouched — but
+    // what you are hearing still is not your board, and the bar says so.
     std::function<bool()> isTestToneOn;
 
     // The tone went on or off; re-read it.

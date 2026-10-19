@@ -44,7 +44,14 @@ public:
     // menu's actions.
     std::function<void()> onOpenMenu;
 
-    // The width the current patch name wants, between a floor and a cap.
+    // The narrowest the strip ever gets: both chevrons plus the floor the
+    // name block is clamped to. The bar prices its own minimum window size
+    // against this rather than against preferredWidth(), which follows the
+    // patch NAME and would otherwise make the window's minimum jump about
+    // every time a patch was renamed (#116).
+    static constexpr int kMinimumWidth = 176;
+
+    // The width the current patch name wants, between that floor and a cap.
     int preferredWidth() const noexcept { return preferredWidth_; }
 
     // The strip changed width, so the owner should lay out again.

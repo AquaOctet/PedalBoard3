@@ -89,6 +89,20 @@ public:
     void toggleMasterMute() { setMasterMuted(!isMasterMuted()); }
     juce::ChangeBroadcaster& masterMuteChanged() noexcept { return masterMuteBroadcaster_; }
 
+    // The test tone (#111). A master stage, not a graph: it crossfades over
+    // the board's output and leaves the board itself completely alone, so
+    // switching it on no longer clears the patch and switching it off no
+    // longer rebuilds every plugin from its saved state. Listeners are told
+    // on the message thread so the top bar and status bar can show it.
+    void setTestToneEnabled(bool shouldPlay);
+    bool isTestToneEnabled() const noexcept;
+    void toggleTestTone() { setTestToneEnabled(!isTestToneEnabled()); }
+    juce::ChangeBroadcaster& testToneChanged() noexcept { return testToneBroadcaster_; }
+
+    // Peak input level since the last call, 0..1, and resets (#117). Driven
+    // by the input meter's timer.
+    float readInputPeak() noexcept { return runtime_->getInputLevel().readAndClear(); }
+
     // The error message from the most recent initialise() call (empty when
     // the device opened cleanly). Retained so the UI can tell the user WHY
     // there's no sound — otherwise a failed device open is silent except
@@ -97,6 +111,7 @@ public:
 
 private:
     juce::ChangeBroadcaster masterMuteBroadcaster_;
+    juce::ChangeBroadcaster testToneBroadcaster_;
     juce::AudioDeviceManager deviceManager_;
     juce::AudioProcessorPlayer player_;
     std::unique_ptr<AudioGraphRuntime> runtime_;

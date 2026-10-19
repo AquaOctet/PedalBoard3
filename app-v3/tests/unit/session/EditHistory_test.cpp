@@ -218,7 +218,7 @@ TEST_CASE("EditHistory: the UI hook runs before every removal the history makes"
     REQUIRE(closed == std::vector<session::NodeId>{a, b});
 }
 
-TEST_CASE("EditHistory: edit.undo and edit.redo run through the app commands, not while Test Tone has the graph",
+TEST_CASE("EditHistory: edit.undo and edit.redo run through the app commands, not while capture is suspended",
           "[session][edit-history][app-commands]")
 {
     Fixture f;
@@ -231,7 +231,7 @@ TEST_CASE("EditHistory: edit.undo and edit.redo run through the app commands, no
     REQUIRE(f.s.getActivePatch().findNode(a)->customName.isEmpty());
     REQUIRE_FALSE(session::invokeAppCommand(doc, session::appcommands::kRedo)); // no history given
 
-    doc.setLiveCaptureEnabled(false); // what Test Tone does
+    doc.setLiveCaptureEnabled(false); // the live graph is not the slot's
     REQUIRE_FALSE(session::invokeAppCommand(doc, session::appcommands::kRedo, &f.h));
     doc.setLiveCaptureEnabled(true);
     REQUIRE(session::invokeAppCommand(doc, session::appcommands::kRedo, &f.h));

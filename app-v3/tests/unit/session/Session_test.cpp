@@ -305,7 +305,6 @@ TEST_CASE("Session: getNodeIdsInOrder returns empty for fresh Session", "[sessio
 // -----------------------------------------------------------------------
 //
 // Scenario: anything outside Session that calls AudioEngine::loadGraph
-// (the Test Tone diagnostic in TransportBar is the production case)
 // invalidates Session's cached liveGraph_ pointer. Without the re-fetch
 // fix, the next incremental mutation dereferences a freed graph and
 // crashes the audio thread on commit.
@@ -360,9 +359,8 @@ TEST_CASE("Session: removeNode on absent NodeId after external loadGraph(nullptr
 
     session::Session s(eng, host, builder.fn());
 
-    // Drop the runtime's live graph from underneath Session. Production
-    // analogue: TransportBar's Test Tone toggle-off path calls
-    // engine.loadGraph(nullptr).
+    // Drop the runtime's live graph from underneath Session, the way any
+    // caller of engine.loadGraph(nullptr) outside Session would.
     auto previous = eng.loadGraph(nullptr);
     (void)previous;
 
@@ -418,9 +416,8 @@ TEST_CASE("Session: moveNode after external loadGraph is a safe list-only reorde
 TEST_CASE("Session: destructive mutators are no-ops while a rebuild is in flight", "[session][rebind]")
 {
     // Regression guard for the dangling-graph use-after-free: during the async
-    // window after clearPatch()/replacePatch() (production trigger: Test Tone
-    // toggle, which frees the previous chain graph out-of-band) the cached
-    // Node*s in nodes_ can be dangling. removeNode/setNodeBypass/moveNode must
+    // window after clearPatch()/replacePatch() the cached Node*s in nodes_
+    // can be dangling. removeNode/setNodeBypass/moveNode must
     // short-circuit while Session is not Idle rather than dereference them.
     engine::AudioEngine eng;
     eng.initialise();
@@ -666,7 +663,7 @@ TEST_CASE("Session: node mutations refuse a live graph swapped outside Session",
 {
     ChainFixture f;
 
-    // Swap a foreign graph in directly (Test Tone-style), bypassing Session.
+    // Swap a foreign graph in directly, bypassing Session.
     // Keep the returned chain graph alive so this test never depends on the
     // guard for its own memory safety.
     auto foreign = std::make_unique<juce::AudioProcessorGraph>();
@@ -1055,9 +1052,13 @@ TEST_CASE("Session: a replacePatch in flight overwrites a graph loaded straight 
     // clearPatch() is replacePatch(Patch{}) and runs on the worker.
     // AudioEngine::loadGraph runs now. Call them in that order and the
     // worker's empty patch commits a moment later and takes the directly
-    // loaded graph with it. The Test Tone switch did exactly this, so the
-    // switch said the tone was on while the chain had been emptied and
-    // nothing was playing.
+    // loaded graph with it.
+    //
+    // The Test Tone switch used to do exactly this, which is how it came
+    // to say the tone was on while the chain had been emptied and nothing
+    // was playing. It does not any more -- the tone is a master stage and
+    // issues no graph at all -- but the hazard belongs to the pair of
+    // calls, not to the caller, and the next caller deserves the warning.
     engine::AudioEngine eng;
     eng.initialise();
     engine::PluginHost host;
@@ -1087,15 +1088,20 @@ TEST_CASE("Session: a replacePatch in flight overwrites a graph loaded straight 
     REQUIRE(runtime->getLiveGraph() != standInRaw);
 }
 
-TEST_CASE("Session: the state version moves without a patch swap; the generation does not",
-          "[session][state-machine][test-tone]")
+TEST_CASE("Session: the state version moves without a patch swap; the generation does not", "[session][state-machine]")
 {
-    // Why TransportBar gates the Test Tone on getPatchGeneration() and not on
-    // getStateVersion() (#111). replacePatch only publishes Building when
-    // Session was Idle, so a clear issued while a load is already in flight
-    // bumps no version of its own -- and the version then moves when the
-    // OTHER load commits. A gate on the version would open there and drop the
-    // tone on top of a chain graph Session still points into.
+    // The difference between the two counters, which is not obvious and is
+    // the kind of thing someone reaches for when they want to know whether
+    // a patch they asked for has landed.
+    //
+    // getStateVersion() moves on every published state change. replacePatch
+    // only publishes Building when Session was Idle, so a clear issued while
+    // a load is already in flight bumps no version of its own -- and the
+    // version then moves when the OTHER load commits. Anything waiting on
+    // the version would be satisfied by somebody else's work.
+    //
+    // getPatchGeneration() moves only inside commitLoadPatch, so it means a
+    // whole-patch swap actually landed. That is the one to wait on.
     engine::AudioEngine eng;
     eng.initialise();
     engine::PluginHost host;

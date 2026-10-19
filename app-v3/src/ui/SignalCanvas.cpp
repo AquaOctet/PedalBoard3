@@ -821,8 +821,7 @@ void SignalCanvas::timerCallback()
 {
     // Per-plugin activity (a mapped control just moved it) and the VU Meter
     // cards' levels. Processors are read only while Session is idle: during a
-    // rebuild the cached pointers can dangle (Test Tone frees the graph right
-    // after clearPatch publishes Building).
+    // rebuild the cached pointers can dangle.
     const bool idle = ctx_.session.getState() == session::Session::State::Idle;
     const auto now = juce::Time::getMillisecondCounterHiRes();
 

@@ -69,4 +69,18 @@ bool AudioEngine::isMasterMuted() const noexcept
     return runtime_->getMasterMute().isMuted();
 }
 
+void AudioEngine::setTestToneEnabled(bool shouldPlay)
+{
+    if (runtime_->getTestTone().isEnabled() == shouldPlay)
+        return; // same as the mute: no broadcast for a no-op
+
+    runtime_->getTestTone().setEnabled(shouldPlay);
+    testToneBroadcaster_.sendChangeMessage();
+}
+
+bool AudioEngine::isTestToneEnabled() const noexcept
+{
+    return runtime_->getTestTone().isEnabled();
+}
+
 } // namespace pedalboard3::engine

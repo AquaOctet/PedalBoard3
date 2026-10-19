@@ -66,7 +66,7 @@ const AppCommandInfo* findAppCommandByJuceId(int juceCommandId) noexcept;
 // BankDocument::onSaveRequested and is unhandled (false) until the UI
 // installs one.
 // edit.undo / edit.redo run on `history`; unhandled without one, or while
-// Test Tone has replaced the live graph.
+// the live graph is not the active slot's.
 // The transport.* commands run on `transport` (M6 U3); unhandled without one.
 // audio.toggleMute runs on `audio` (#106); unhandled without one. It is
 // deliberately not gated on anything — a panic mute that a feature switch can

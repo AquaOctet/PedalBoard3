@@ -230,10 +230,11 @@ public:
     }
 
     // Undo and Redo grey out with nothing to undo or redo (#96). EditHistory
-    // has said so since it was written and nothing asked. The Test Tone check
-    // is the same one invokeAppCommand makes: the tone replaces the chain, so
-    // the history's nodes are not live and the command would refuse anyway —
-    // a menu item that does nothing when you pick it is worse than a grey one.
+    // has said so since it was written and nothing asked. The live-capture
+    // check is the same one invokeAppCommand makes: with the live graph off
+    // the active slot the history's nodes are not live and the command would
+    // refuse anyway — a menu item that does nothing when you pick it is
+    // worse than a grey one.
     bool canEdit() const { return ctx_.bankDocument.isLiveCaptureEnabled() && ctx_.editHistory.canUndo(); }
     bool canRedo() const { return ctx_.bankDocument.isLiveCaptureEnabled() && ctx_.editHistory.canRedo(); }
 

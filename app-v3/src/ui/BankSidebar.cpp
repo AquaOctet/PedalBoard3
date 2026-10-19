@@ -79,8 +79,8 @@ void BankSidebar::changeListenerCallback(juce::ChangeBroadcaster*)
 void BankSidebar::refresh()
 {
     const auto& doc = ctx_.bankDocument;
-    // The playing patch's plugin count is live; while Test Tone has the graph
-    // (or a swap is in flight) the slot is the truth instead.
+    // The playing patch's plugin count is live; while a swap is in flight
+    // the slot is the truth instead.
     const int activeCount =
         doc.liveMatchesActiveSlot() ? ctx_.session.getNodeCount() : static_cast<int>(doc.activePatch().nodes.size());
     rows_ = bank::rowsFor(doc.bank(), activeCount);

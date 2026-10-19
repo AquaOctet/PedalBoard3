@@ -28,7 +28,7 @@ class Session;
 // it; undo puts both back exactly (Session::restoreNode), not the bridge
 // Session made across the gap. An add is recorded when it commits, with the
 // connections from before it. Both stacks clear on a whole-patch swap (a bank
-// switch, Open, New, Test Tone); a new edit clears redo; depth is capped at
+// switch, Open, New); a new edit clears redo; depth is capped at
 // kMaxDepth.
 //
 // Undo and redo need Session Idle (canUndo / canRedo say so). Putting a node

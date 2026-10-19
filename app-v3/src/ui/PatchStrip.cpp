@@ -95,6 +95,8 @@ void PatchStrip::refresh()
                      kNameMaxWidth,
                      kNamePadding * 2 + indexWidth + kIndexGap + nameWidth + kIndexGap + kCaretWidth + kNameSlack);
     const int want = kArrowWidth * 2 + wanted;
+    static_assert(kArrowWidth * 2 + kNameMinWidth == PatchStrip::kMinimumWidth,
+                  "PatchStrip::kMinimumWidth is what the bar reserves; keep it with the floor it names");
     if (want != preferredWidth_)
     {
         preferredWidth_ = want;

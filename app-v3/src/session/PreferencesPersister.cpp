@@ -208,8 +208,8 @@ void PreferencesPersister::changeListenerCallback(juce::ChangeBroadcaster* sourc
         {
             // An empty live patch is still a valid bank state (the user
             // cleared the board, or the bank's active slot is empty): keep
-            // the other slots, drop the active slot's nodes. Test Tone
-            // (capture disabled) leaves the persisted bank alone.
+            // the other slots, drop the active slot's nodes. A live graph
+            // that is not the slot's leaves the persisted bank alone.
             if (bankDocument_.liveMatchesActiveSlot())
             {
                 auto bank = bankDocument_.bank();

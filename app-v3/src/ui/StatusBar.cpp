@@ -185,10 +185,12 @@ void StatusBar::refresh()
     // read at a glance, and a muted rig has to look muted from across a stage.
     const bool muted = ctx_.audioEngine.isMasterMuted();
 
-    // The Test Tone replaces the chain while it plays (#111). Unannounced,
-    // that reads as a crash: the canvas empties and the status bar says
-    // "Chain: 0 plugins" with no reason given. It takes the dot too, in
-    // amber — not an error, but not the normal state either.
+    // The Test Tone (#111). It is a master stage now, so the board is still
+    // there, still loaded and still editable — the tone is simply what is
+    // reaching the output instead. That makes it exactly like MUTED: a
+    // suffix on the normal line, not a replacement for it. It takes the dot
+    // in amber, because "what you hear is not your board" is worth seeing
+    // from across a stage, and mute wins the dot if both are on.
     const bool tone = isTestToneOn && isTestToneOn();
     if (tone)
         stateDotColour_ = tokens::accentWarning;
@@ -199,18 +201,17 @@ void StatusBar::refresh()
                          muted  ? tokens::accentDestructive
                          : tone ? tokens::accentWarning
                                 : tokens::fgPrimary);
-    // Plain ASCII in the tone branch on purpose: the same UTF-8 bullet the
-    // other branch uses came out as mojibake here, and a status line that is
-    // explaining an alarming-looking state is the last place to risk it.
-    // MUTED has to survive the tone message. A muted rig plus a test tone is
-    // "I switched the tone on and got nothing" -- the exact report -- and the
-    // first draft of this line dropped the MUTED suffix whenever the tone was
-    // up, hiding the one fact that explains the silence.
-    juce::String toneText("TEST TONE: the chain is set aside until you switch it off");
+    // Both suffixes, in that order, and neither hides the other. A muted rig
+    // with the tone up is "I switched the tone on and got nothing" — the
+    // exact report this came from — so MUTED has to stay visible alongside
+    // it, and the chain count has to stay visible alongside both now that
+    // the board really is still loaded.
+    juce::String line = chainText + "  •  " + stateText;
+    if (tone)
+        line += "  •  TEST TONE";
     if (muted)
-        toneText = "TEST TONE, MUTED: nothing will be heard until you unmute";
-    leftLabel_.setText(tone ? toneText : chainText + "  •  " + stateText + (muted ? "  •  MUTED" : ""),
-                       juce::dontSendNotification);
+        line += "  •  MUTED";
+    leftLabel_.setText(line, juce::dontSendNotification);
 
     // Error pill — shown when state is Idle and lastError is non-empty.
     // (During Building/Swapping the previous error from a prior run

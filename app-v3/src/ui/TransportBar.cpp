@@ -15,7 +15,6 @@
 #include "engine/AudioEngine.h"
 #include "engine/PluginHost.h"
 #include "engine/PluginScanner.h"
-#include "engine/processors/TestToneProcessor.h"
 #include "FileActions.h"
 #include "session/BankDocument.h"
 #include "session/EditHistory.h"
@@ -48,72 +47,46 @@ constexpr int kMuteButtonWidth = 36;
 // The group dividers (#109): a hairline this tall, centred on the bar.
 constexpr int kDividerHeight = 20;
 constexpr int kDividerGap = 7; // either side of one
-// Below this the CPU meter folds away. The fold order down the bar is
-// latency, then CPU, then the device badge, and it is a priority order: on a
-// narrow window you are playing, not diagnosing, and the patch name is the
-// one thing on the bar you actually need to read. Before this, the dividers'
-// extra width came out of the patch name and it ellipsised to "3/6 ...".
-constexpr int kCpuHideBelow = 1040;
-// Below this the latency readout folds away.
-constexpr int kLatencyHideBelow = 1180;
-// The device badge folds the same way (#90): the output device goes first,
-// then the input, then the chip itself, so the bar never has to squeeze the
-// patch name down to nothing to make room for a readout.
-// Lowered once the menus became icons (#90): that gave back 178 px, most of a
-// device name, so each fold happens a window-size earlier than it did.
+constexpr int kInputMonitorWidth = InputMonitor::kPreferredWidth;
+
+// How the bar gives way (#116).
 //
-// The input device then went back up from 1200 to 1320 when the master mute
-// arrived (#106), because at 1280 the two cannot both fit and the patch name
-// was wrapping onto a second line to make room. The mute wins that trade: it
-// is the control you reach for when the sound is already wrong, and the input
-// device's name is also one click away in the badge's own tooltip.
-constexpr int kBadgeDropOutputBelow = 1420;
-constexpr int kBadgeDropInputBelow = 1320;
-constexpr int kBadgeHideBelow = 1000;
-// Below these window widths the transport pill folds its position away, then ♩.
-constexpr int kTransportFoldBelow = 1120;
-constexpr int kTransportFoldMoreBelow = 960;
+// It used to fold on absolute window widths: below 1420 the badge dropped the
+// output device, below 1180 the latency went, and so on. The trouble with a
+// threshold is that it does not know what else is on the bar. Between the
+// patch strip and the right-hand cluster there is slack -- often a couple of
+// hundred pixels of it -- and a threshold spends none of that before it
+// starts taking things away. Drag a 1500 px window in by sixty pixels and the
+// output device name disappeared while the empty space it could have come out
+// of was still sitting there. That is the complaint this replaces: "there is
+// a lot of white space between the top patch and the midi/osc sensor, and
+// instead of using that when shrinking, it decides to collapse other things".
+//
+// So the bar now prices itself. Everything is laid out at its full size, the
+// shortfall against the window is measured, and the ladder below is walked
+// only as far as covering that shortfall needs. With slack in hand, nothing
+// folds at all.
+//
+// The ladder is a priority order, cheapest loss first. Diagnostics give way
+// before identity, and identity before control:
+enum class Fold
+{
+    LatencyAway,    // a number that moves only when the device does
+    CpuAway,        // the next least urgent while you are playing
+    BadgePairs,     // "[1,2]" twice -- the detail, not the device (#114)
+    InputMeterAway, // still a diagnostic, but a live one
+    BadgeOutput,    // now we are losing which device you are on
+    TransportPos,   // the position readout inside the pill
+    BadgeInput,
+    TransportClick,
+    BadgeAway, // the driver chip goes too
+    ActivityAway,
+    Count
+};
+constexpr int kFoldSteps = static_cast<int>(Fold::Count);
 // Patch-menu item ids at or above this select patch (id - base).
 constexpr int kGoToPatchBase = 1000;
 constexpr int kBoardFeatureBase = 500; // the board's feature switches, below kGoToPatchBase
-
-// Build a minimal graph that routes a TestToneProcessor straight to
-// the master output, prepared at the current device's sample rate and
-// buffer size, or 48k/512 without a device.
-std::unique_ptr<juce::AudioProcessorGraph> buildTestToneGraph(juce::AudioDeviceManager& dm)
-{
-    double sr = 48000.0;
-    int bs = 512;
-    if (auto* dev = dm.getCurrentAudioDevice())
-    {
-        sr = dev->getCurrentSampleRate();
-        bs = dev->getCurrentBufferSizeSamples();
-        if (sr <= 0.0)
-            sr = 48000.0;
-        if (bs <= 0)
-            bs = 512;
-    }
-
-    auto graph = std::make_unique<juce::AudioProcessorGraph>();
-    graph->setPlayConfigDetails(2, 2, sr, bs);
-
-    auto toneNode = graph->addNode(std::make_unique<engine::processors::TestToneProcessor>());
-    auto outNode = graph->addNode(std::make_unique<juce::AudioProcessorGraph::AudioGraphIOProcessor>(
-        juce::AudioProcessorGraph::AudioGraphIOProcessor::audioOutputNode));
-
-    if (auto* tone = dynamic_cast<engine::processors::TestToneProcessor*>(toneNode->getProcessor()))
-    {
-        tone->setAmplitude(0.25f);
-        tone->setFrequency(440.0f);
-        tone->setEnabled(true);
-    }
-
-    graph->addConnection({{toneNode->nodeID, 0}, {outNode->nodeID, 0}});
-    graph->addConnection({{toneNode->nodeID, 1}, {outNode->nodeID, 1}});
-
-    graph->prepareToPlay(sr, bs);
-    return graph;
-}
 
 // Opens `menu` under `button` as the mockup does (UI chrome U3): at least the
 // menu width, a small gap below the button, and the button tinted teal while
@@ -160,8 +133,8 @@ void showMenuBelow(juce::PopupMenu menu, juce::Button& button, std::function<voi
 
 TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas, FileActions& files)
     : ctx_(ctx), canvas_(canvas), files_(files), deviceBadge_(ctx), activityLights_(ctx.controlHub),
-      latencyReadout_(ctx.audioEngine.getDeviceManager()), cpuMeter_(ctx.audioEngine.getDeviceManager()),
-      transportControls_(ctx), patchStrip_(ctx)
+      inputMonitor_(ctx.audioEngine), latencyReadout_(ctx.audioEngine.getDeviceManager()),
+      cpuMeter_(ctx.audioEngine.getDeviceManager()), transportControls_(ctx), patchStrip_(ctx)
 {
     setOpaque(true);
 
@@ -184,10 +157,23 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas, FileActions& f
     addAndMakeVisible(addPluginButton_);
     addAndMakeVisible(deviceBadge_);
     deviceBadge_.onClick = [this] { showAudioDevicesWindow(ctx_, testTone_); };
-    deviceBadge_.onLayoutChanged = [this] { resized(); };
+    deviceBadge_.onLayoutChanged = [this]
+    {
+        // A device with a longer name makes the bar wider at full size, and
+        // the window's minimum follows it (#116).
+        resized();
+        if (onNaturalWidthChanged)
+            onNaturalWidthChanged();
+    };
     addAndMakeVisible(activityLights_);
+    addAndMakeVisible(inputMonitor_);
     addAndMakeVisible(latencyReadout_);
-    latencyReadout_.onLayoutChanged = [this] { resized(); };
+    latencyReadout_.onLayoutChanged = [this]
+    {
+        resized();
+        if (onNaturalWidthChanged)
+            onNaturalWidthChanged();
+    };
     addAndMakeVisible(muteButton_);
     muteButton_.onClick = [this] { ctx_.audioEngine.toggleMasterMute(); };
     ctx_.audioEngine.masterMuteChanged().addChangeListener(this);
@@ -243,53 +229,17 @@ void TransportBar::changeListenerCallback(juce::ChangeBroadcaster* source)
     }
     if (source == &ctx_.features)
     {
-        resized(); // the transport pill comes or goes with Tempo / BPM
+        // The transport pill comes or goes with Tempo / BPM, which changes
+        // what the bar needs at full size.
+        resized();
+        if (onNaturalWidthChanged)
+            onNaturalWidthChanged();
         return;
     }
-    if (source == &ctx_.bankDocument)
-    {
-        // A swap the bank issued while Test Tone was on (a Program Change, the
-        // strip's arrows) replaced the tone graph with a patch, and the
-        // document re-enabled live capture as it did so. Clear the toggle to
-        // match; a rename or an add leaves capture off and the tone playing.
-        if (toneActive_ && ctx_.bankDocument.isLiveCaptureEnabled())
-        {
-            toneActive_ = false;
-            testTone_ = false; // valueChanged() then finds nothing left to do
-        }
-    }
-
-    // Session state may have transitioned; Add Plugin is enabled only
-    // when Idle and Test Tone is off (otherwise the chain isn't the
-    // live graph being driven by the engine).
-    startToneIfClearLanded();
+    // Session state may have transitioned; Add Plugin follows it. The tone
+    // is no longer part of that question: it is a master stage, so the board
+    // stays live and editable while it plays.
     updateAddPluginEnabled();
-}
-
-void TransportBar::startToneIfClearLanded()
-{
-    if (!tonePending_)
-        return;
-    // Idle AND the counter has moved: the clear we asked for has been through
-    // the worker and committed. Idle alone would also be true in the gap
-    // before the worker starts, which is the window the bug lived in.
-    if (ctx_.session.getState() != session::Session::State::Idle ||
-        ctx_.session.getPatchGeneration() <= toneRequestedAtGeneration_)
-        return;
-
-    // And the chain really is empty. The generation says a whole-patch swap
-    // landed; this says it was OUR clear rather than somebody else's load
-    // finishing first. Without it, a toggle made mid-load drops the tone on
-    // top of a freshly committed chain and frees the graph Session's nodes_
-    // still point into.
-    if (ctx_.session.getNodeCount() != 0)
-        return;
-
-    tonePending_ = false;
-    if (!toneActive_)
-        return; // switched off while we waited
-
-    ctx_.audioEngine.loadGraph(buildTestToneGraph(*ctx_.audioEngine.getDeviceManager()));
 }
 
 void TransportBar::paint(juce::Graphics& g)
@@ -320,10 +270,101 @@ void TransportBar::refreshMuteButton()
                                    "change.");
 }
 
+int TransportBar::naturalWidth() const
+{
+    // Everything on the bar at full size, with the patch strip at its
+    // narrowest. That last part matters: the strip's preferred width follows
+    // the patch NAME, so pricing it at preferred would make the window's
+    // minimum size jump about every time you renamed a patch.
+    int w = kBarPadding * 2;
+
+    // Left cluster, always present.
+    w += kMenuButtonWidth * 3 + kAddButtonWidth + kButtonGap * 3;
+    w += kDividerGap * 2; // folder-group | badge
+
+    w += deviceBadge_.widthAtFold(0);
+    w += kDividerGap * 2; // badge | patch strip
+
+    w += PatchStrip::kMinimumWidth;
+
+    if (ctx_.features.isAvailable(session::Feature::Tempo))
+        w += kDividerGap * 2 + transportControls_.widthAtFold(0);
+
+    w += kDividerGap * 2; // ... | right cluster
+    w += kActivityWidth + kButtonGap + kInputMonitorWidth;
+    w += kButtonGap * 2 + latencyReadout_.preferredWidth();
+    w += kButtonGap + kCpuMeterWidth;
+    w += kDividerGap * 2 + kMuteButtonWidth;
+
+    return w;
+}
+
 void TransportBar::resized()
 {
-    auto bounds = getLocalBounds().reduced(kBarPadding, 6);
     dividerX_.clear();
+
+    // How much we are over, if at all. Everything below is about spending
+    // that number down; with it at or below zero the bar lays out whole.
+    const int deficit = naturalWidth() - getWidth();
+
+    // Walk the ladder only as far as covering the shortfall needs, taking
+    // each step's saving off what is left. A step that saves little is still
+    // taken in its place rather than skipped for a fatter one further down:
+    // the order is a statement about what is worth losing first, not an
+    // optimisation problem.
+    const auto savingOf = [this](Fold step)
+    {
+        switch (step)
+        {
+        case Fold::LatencyAway:
+            return latencyReadout_.preferredWidth() + kButtonGap * 2;
+        case Fold::CpuAway:
+            return kCpuMeterWidth + kButtonGap;
+        case Fold::BadgePairs:
+            return deviceBadge_.widthAtFold(0) - deviceBadge_.widthAtFold(1);
+        case Fold::InputMeterAway:
+            return kInputMonitorWidth + kButtonGap;
+        case Fold::BadgeOutput:
+            return deviceBadge_.widthAtFold(1) - deviceBadge_.widthAtFold(2);
+        case Fold::TransportPos:
+            return ctx_.features.isAvailable(session::Feature::Tempo)
+                       ? transportControls_.widthAtFold(0) - transportControls_.widthAtFold(1)
+                       : 0;
+        case Fold::BadgeInput:
+            return deviceBadge_.widthAtFold(2) - deviceBadge_.widthAtFold(3);
+        case Fold::TransportClick:
+            return ctx_.features.isAvailable(session::Feature::Tempo)
+                       ? transportControls_.widthAtFold(1) - transportControls_.widthAtFold(2)
+                       : 0;
+        case Fold::BadgeAway:
+            return deviceBadge_.widthAtFold(3) + kDividerGap * 2;
+        case Fold::ActivityAway:
+            return kActivityWidth;
+        case Fold::Count:
+            break;
+        }
+        return 0;
+    };
+
+    int folded = 0;
+    for (int remaining = deficit; remaining > 0 && folded < kFoldSteps; ++folded)
+        remaining -= savingOf(static_cast<Fold>(folded));
+
+    const auto applied = [folded](Fold step) { return folded > static_cast<int>(step); };
+
+    // Spend the folds we decided on.
+    const bool latencyOn = !applied(Fold::LatencyAway);
+    const bool cpuOn = !applied(Fold::CpuAway);
+    const bool inputMeterOn = !applied(Fold::InputMeterAway);
+    const bool badgeOn = !applied(Fold::BadgeAway);
+    const bool activityOn = !applied(Fold::ActivityAway);
+    const int badgeFold = applied(Fold::BadgeInput)    ? 3
+                          : applied(Fold::BadgeOutput) ? 2
+                          : applied(Fold::BadgePairs)  ? 1
+                                                       : 0;
+    const int transportFold = applied(Fold::TransportClick) ? 2 : applied(Fold::TransportPos) ? 1 : 0;
+
+    auto bounds = getLocalBounds().reduced(kBarPadding, 6);
 
     // Each group takes a divider's worth of room off the edge it faces, and
     // records where the line goes. Taking the room here rather than painting
@@ -342,18 +383,27 @@ void TransportBar::resized()
         bounds.removeFromLeft(kDividerGap);
     };
 
-    // Right cluster: MIDI / OSC lights | latency | CPU | mute.
+    // Right cluster: MIDI / OSC lights | input | latency | CPU | mute.
     muteButton_.setBounds(bounds.removeFromRight(kMuteButtonWidth));
     divideRight();
 
-    const bool latencyOn = getWidth() >= kLatencyHideBelow;
-    const bool cpuOn = getWidth() >= kCpuHideBelow;
     latencyReadout_.setVisible(latencyOn);
     cpuMeter_.setVisible(cpuOn);
+    inputMonitor_.setVisible(inputMeterOn);
+    activityLights_.setVisible(activityOn);
+
+    const int activityWidth = activityOn ? kActivityWidth : 0;
+    const int inputWidth = inputMeterOn ? kInputMonitorWidth + kButtonGap : 0;
     const int latencyWidth = latencyOn ? latencyReadout_.preferredWidth() + kButtonGap * 2 : 0;
     const int cpuWidth = cpuOn ? kCpuMeterWidth + kButtonGap : 0;
-    auto right = bounds.removeFromRight(kActivityWidth + latencyWidth + cpuWidth);
-    activityLights_.setBounds(right.removeFromLeft(kActivityWidth));
+    auto right = bounds.removeFromRight(activityWidth + inputWidth + latencyWidth + cpuWidth);
+    if (activityOn)
+        activityLights_.setBounds(right.removeFromLeft(kActivityWidth));
+    if (inputMeterOn)
+    {
+        right.removeFromLeft(kButtonGap);
+        inputMonitor_.setBounds(right.removeFromLeft(kInputMonitorWidth));
+    }
     if (latencyOn)
     {
         right.removeFromLeft(kButtonGap * 2);
@@ -367,16 +417,13 @@ void TransportBar::resized()
 
     divideRight();
 
-    // The transport pill, left of the lights (M6 U4, optional-features U4), only
-    // while Tempo / BPM is available. On a narrow window it folds its position
-    // away, then its click button; the patch name still gives way first.
+    // The transport pill, left of the lights (M6 U4, optional-features U4),
+    // only while Tempo / BPM is available.
     const bool tempoOn = ctx_.features.isAvailable(session::Feature::Tempo);
     transportControls_.setVisible(tempoOn);
     if (tempoOn)
     {
-        transportControls_.setFoldLevel(getWidth() < kTransportFoldMoreBelow ? 2
-                                        : getWidth() < kTransportFoldBelow   ? 1
-                                                                             : 0);
+        transportControls_.setFoldLevel(transportFold);
         transportControls_.setBounds(bounds.removeFromRight(transportControls_.preferredWidth()));
         divideRight();
     }
@@ -392,18 +439,24 @@ void TransportBar::resized()
     divideLeft();
 
     // The device badge, left of the patch strip.
-    const bool badgeOn = getWidth() >= kBadgeHideBelow;
     deviceBadge_.setVisible(badgeOn);
     if (badgeOn)
     {
-        deviceBadge_.setFoldLevel(getWidth() < kBadgeDropInputBelow ? 2 : getWidth() < kBadgeDropOutputBelow ? 1 : 0);
+        deviceBadge_.setFoldLevel(badgeFold);
         deviceBadge_.setBounds(bounds.removeFromLeft(deviceBadge_.preferredWidth()));
         divideLeft();
     }
 
-    // The patch strip takes what it asks for, or what is left if that is
-    // less: it is still the first thing on the bar to give way.
+    // Whatever is left goes to the patch strip, up to what it asks for. This
+    // is where the slack lives, and it is why the bar can be dragged in a
+    // long way before any of the folds above are reached.
     patchStrip_.setBounds(bounds.removeFromLeft(juce::jmin(patchStrip_.preferredWidth(), bounds.getWidth())));
+
+    // Whatever is still unclaimed after the strip has taken what it wants.
+    // This is the gap the complaint was about -- the empty run between the
+    // patch strip and the transport pill -- and it is recorded rather than
+    // inferred so the snapshot tool can report it as a number.
+    slack_ = bounds.getWidth();
 }
 
 juce::PopupMenu TransportBar::makePatchMenu()
@@ -561,11 +614,11 @@ void TransportBar::updateAddPluginEnabled()
 
 bool TransportBar::canAddPlugin() const
 {
-    // Not while Session is mid-build/swap, AND not while Test Tone is on —
-    // the tone graph is not Session-managed, so adding a plugin would either
-    // be a no-op (post-fix) or stale-pointer-crash (pre-fix).
-    const bool idle = ctx_.session.getState() == session::Session::State::Idle;
-    return idle && !toneActive_;
+    // Session Idle, and that is all. The tone used to disable this too,
+    // because the tone graph was not Session-managed and an add would have
+    // gone to a graph nobody was driving. A master-stage tone leaves the
+    // board live, so there is nothing to stop you editing while it plays.
+    return ctx_.session.getState() == session::Session::State::Idle;
 }
 
 juce::PopupMenu TransportBar::makeAddPluginMenu()
@@ -987,60 +1040,31 @@ void TransportBar::toggleTestTone()
     testTone_.getValueSource().sendChangeMessage(true);
 }
 
+bool TransportBar::isTestToneLive() const noexcept
+{
+    return ctx_.audioEngine.isTestToneEnabled();
+}
+
 void TransportBar::valueChanged(juce::Value&)
 {
-    // The Test Tone switch. Act only on a real change: a bank swap that already
-    // replaced the tone turns the switch off after the fact.
+    // The Test Tone switch. Act only on a real change: the Settings menu and
+    // the Audio Devices dialog share this Value, so turning it on in one
+    // place notifies the other.
     const bool want = static_cast<bool>(testTone_.getValue());
     if (want == toneActive_)
         return;
     toneActive_ = want;
+
+    // That is the whole of it now. The tone is a master stage in the runtime
+    // (#111), so there is no graph to build, no patch to clear and wait for,
+    // no bank slot to stash the board in, and no editors to close first --
+    // the board keeps running untouched behind the tone and comes back
+    // without being rebuilt. Everything this function used to do was there
+    // to survive a design in which a diagnostic deleted your rig.
+    ctx_.audioEngine.setTestToneEnabled(want);
+
     if (onTestToneChanged)
         onTestToneChanged();
-
-    if (want)
-    {
-        // The live graph is about to stop being the active patch: capture its
-        // state into the bank slot first, then suspend live capture so a
-        // switch/save while the tone plays cannot overwrite the slot with the
-        // empty patch clearPatch installs (BankDocument re-enables it on its
-        // next swap).
-        // Read the PATCH GENERATION before asking for the clear. Not the
-        // state version: that moves on every published state change, and
-        // replacePatch only publishes Building when Session was Idle, so a
-        // toggle made while a patch was already loading would be satisfied
-        // by that unrelated load committing. The generation moves only
-        // inside commitLoadPatch, so it means a whole-patch swap landed.
-        toneRequestedAtGeneration_ = ctx_.session.getPatchGeneration();
-        tonePending_ = true;
-
-        ctx_.bankDocument.storeActive();
-        ctx_.bankDocument.setLiveCaptureEnabled(false);
-
-        // CALLER-MANAGED EDITOR LIFECYCLE (D1b / AC-UI-P): close
-        // every open EditorWindow synchronously BEFORE Session
-        // destroys the underlying plugin instances on clearPatch.
-        canvas_.closeAllEditors();
-        // The tone graph goes in from the Session listener once the clear has
-        // landed, not here. Loading it here is what was broken: clearPatch is
-        // replacePatch(Patch{}) on the worker, so the empty patch committed a
-        // moment later and took the tone with it. The switch said the tone was
-        // on and the chain was gone (#111).
-        ctx_.session.clearPatch();
-        startToneIfClearLanded();
-    }
-    else
-    {
-        // Toggle OFF: bring the active bank slot back through Session's
-        // worker → commitLoadPatch path (NOT audioEngine.loadGraph(nullptr),
-        // which would leave Session::liveGraph_ dangling at the destroyed
-        // tone graph and crash the next addPlugin). The slot holds the
-        // state captured when the tone went on, so the board comes back as
-        // it was. The brief audible silence during the swap is acceptable.
-        tonePending_ = false; // switched off before the clear landed: owe nothing
-        ctx_.bankDocument.reloadActive();
-    }
-    updateAddPluginEnabled();
 }
 
 } // namespace pedalboard3::ui

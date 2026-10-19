@@ -28,9 +28,11 @@ class Session;
 // Session), so storeActive keeps it.
 //
 // Live capture can be suspended (setLiveCaptureEnabled(false)) while the live
-// graph is NOT the active patch — Test Tone replaces it with a diagnostic
-// graph — so a switch or save during that window does not overwrite the slot
-// with an empty patch. Any swap this document performs re-enables capture.
+// graph is NOT the active patch, so a switch or save during that window does
+// not overwrite the slot with an empty patch. Any swap this document performs
+// re-enables capture. Nothing in the app suspends it today — the Test Tone
+// used to, before it became a master stage (#111) — but the guard is what
+// makes "the live graph is not the slot" a representable state at all.
 //
 // Broadcasts a change message after every bank mutation (switch, add,
 // duplicate, rename, remove, load). Message-thread only, like Session's API.
@@ -62,8 +64,8 @@ public:
     // major version wrote (M5 U4, plan KD7): Save doesn't write over it.
     void loadBank(PatchBank bank, juce::File file = {}, bool readOnly = false);
 
-    // Re-issue the active slot to Session without capturing first (Test Tone
-    // off: the live graph was the tone, the slot is the truth).
+    // Re-issue the active slot to Session without capturing first: for when
+    // the live graph is not the slot's and the slot is the truth.
     void reloadActive();
 
     // Switching (capture-then-swap). select returns false and does nothing for
@@ -99,7 +101,7 @@ public:
     bool isLiveCaptureEnabled() const noexcept { return liveCaptureEnabled_; }
 
     // True when Session's live patch IS the active slot's patch: live capture
-    // is enabled (not Test Tone) and the last swap this document issued has
+    // is enabled and the last swap this document issued has
     // committed. False while that swap is still building, and after it failed
     // — Session then still holds the PREVIOUS patch, so capturing "the live
     // patch" would overwrite the active slot with another slot's content (a

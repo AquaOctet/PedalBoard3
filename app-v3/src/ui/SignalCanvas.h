@@ -77,10 +77,9 @@ public:
     explicit SignalCanvas(AppContext& ctx);
     ~SignalCanvas() override;
 
-    // Public API the TransportBar calls before invoking any Session
-    // mutator that destroys plugin instances (e.g. clearPatch from
-    // Test Tone). Closes every EditorWindow synchronously, on the
-    // message thread, BEFORE the caller calls into Session.
+    // Public API for callers about to invoke a Session mutator that
+    // destroys plugin instances. Closes every EditorWindow synchronously,
+    // on the message thread, BEFORE the caller calls into Session.
     void closeAllEditors();
 
     void paint(juce::Graphics&) override;

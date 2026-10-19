@@ -302,7 +302,7 @@ TEST_CASE("BankDocument: live capture can be suspended and a swap re-enables it"
     f.doc.loadBank(threeBank());
     f.settle();
 
-    // Simulate Test Tone: capture, suspend, then the live graph becomes empty.
+    // Capture, suspend, then let the live graph become empty.
     f.doc.storeActive();
     f.doc.setLiveCaptureEnabled(false);
     f.s.clearPatch();
@@ -508,12 +508,16 @@ TEST_CASE("BankDocument: file.save runs the save handler the UI installs", "[ses
     REQUIRE(saves == 1);
 }
 
-TEST_CASE("the Test Tone round trip leaves the board as it was", "[session][bank][test-tone]")
+TEST_CASE("BankDocument: suspend, swap a foreign graph in, and reloadActive puts the board back", "[session][bank]")
 {
-    // The whole Test Tone sequence TransportBar::valueChanged performs, at the
-    // level where it can actually be tested (#111). ON: capture the slot, stop
-    // live capture, clear, then put a stand-in graph in once the clear has
-    // landed. OFF: reloadActive.
+    // Capture the slot, stop live capture, clear, drop a graph Session did
+    // not build into the engine, then reloadActive.
+    //
+    // The Test Tone used to do exactly this, which is where the sequence
+    // came from and why it was worth pinning. It does not any more -- the
+    // tone is a master stage and never touches the board (#111) -- but
+    // nothing else in BankDocument guarantees this path stays sound, and a
+    // future out-of-band swap would want it to be.
     Fixture f;
     f.doc.loadBank(threeBank(), tempBankFile("tone.pdl"));
     f.settle();
