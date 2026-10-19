@@ -99,9 +99,10 @@ public:
     void toggleTestTone() { setTestToneEnabled(!isTestToneEnabled()); }
     juce::ChangeBroadcaster& testToneChanged() noexcept { return testToneBroadcaster_; }
 
-    // Peak input level since the last call, 0..1, and resets (#117). Driven
-    // by the input meter's timer.
+    // Peak in and out since the last call, 0..1, and resets (#117). Driven
+    // by the IN / OUT meters' timer.
     float readInputPeak() noexcept { return runtime_->getInputLevel().readAndClear(); }
+    float readOutputPeak() noexcept { return runtime_->getOutputLevel().readAndClear(); }
 
     // The error message from the most recent initialise() call (empty when
     // the device opened cleanly). Retained so the UI can tell the user WHY

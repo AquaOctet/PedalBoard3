@@ -59,14 +59,16 @@ add_library(pb3_app_core STATIC
     ui/CanvasLayout.h
     ui/CardText.h
     ui/ColourScheme.h
-    ui/CpuMeter.cpp
-    ui/CpuMeter.h
+    ui/SystemMeters.cpp
+    ui/SystemMeters.h
     ui/DeviceBadge.cpp
     ui/DeviceBadge.h
     ui/IconButton.h
-    ui/InputMonitor.cpp
+    ui/IoMonitor.cpp
+    ui/MeterRow.cpp
     ui/LatencyReadout.cpp
-    ui/InputMonitor.h
+    ui/IoMonitor.h
+    ui/MeterRow.h
     ui/LatencyReadout.h
     ui/PatchStrip.cpp
     ui/PatchStrip.h
@@ -168,9 +170,10 @@ pb3_apply_strict_warnings(pb3_app_core
     ui/AppMappingsWindow.cpp
     ui/BankSidebar.cpp
     ui/BoardMappingsPanel.cpp
-    ui/CpuMeter.cpp
+    ui/SystemMeters.cpp
     ui/DeviceBadge.cpp
-    ui/InputMonitor.cpp
+    ui/IoMonitor.cpp
+    ui/MeterRow.cpp
     ui/LatencyReadout.cpp
     ui/PatchStrip.cpp
     ui/Alert.cpp

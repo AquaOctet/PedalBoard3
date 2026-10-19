@@ -2,12 +2,12 @@
 
 #include "ActivityLights.h"
 #include "AppContext.h"
-#include "CpuMeter.h"
 #include "DeviceBadge.h"
 #include "IconButton.h"
-#include "InputMonitor.h"
+#include "IoMonitor.h"
 #include "LatencyReadout.h"
 #include "PatchStrip.h"
+#include "SystemMeters.h"
 #include "TransportControls.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -45,13 +45,13 @@ class SignalCanvas;
 //           (its popover has Tap and the time signature), the position and
 //           the Metronome's click button. On a narrow window the position
 //           folds away, then the click button.
-//   right:  the MIDI / OSC activity lights, the audio input monitor, the
-//           round-trip latency, the CPU meter and the master mute (UI refresh
-//           U3 / U2; latency is #90, mute is #106, the input monitor is
-//           #117). The latency folds away first on a narrow window: the
-//           lights and the meters move second by second and it only moves
-//           when the device does. The mute never folds away — it is the
-//           control you reach for when something is already wrong.
+//   right:  the MIDI / OSC activity lights, the IN / OUT level meters, the
+//           round-trip latency, the CPU and MEM meters and the master mute
+//           (UI refresh U3 / U2; latency is #90, mute is #106, IN / OUT is
+//           #117, MEM is #118). The latency folds away first on a narrow
+//           window: the meters move second by second and it only moves when
+//           the device does. The mute never folds away — it is the control
+//           you reach for when something is already wrong.
 //
 // Nothing folds while there is slack between the patch strip and the right
 // cluster (#116): the bar prices itself against the window and walks a fold
@@ -94,8 +94,8 @@ public:
     int patchStripSlack() const { return patchStrip_.getWidth() - PatchStrip::kMinimumWidth; }
     int deviceBadgeWidth() const { return deviceBadge_.isVisible() ? deviceBadge_.getWidth() : 0; }
     const juce::Component& latencyReadoutForTest() const { return latencyReadout_; }
-    const juce::Component& cpuMeterForTest() const { return cpuMeter_; }
-    const juce::Component& inputMonitorForTest() const { return inputMonitor_; }
+    const juce::Component& systemMetersForTest() const { return systemMeters_; }
+    const juce::Component& ioMonitorForTest() const { return ioMonitor_; }
     const juce::Component& activityLightsForTest() const { return activityLights_; }
 
     // Settings > App Mappings... (M4 U5). MainWindow owns the window and the key
@@ -187,9 +187,9 @@ private:
     IconButton pluginsButton_{plugIcon(), "Plugins"};
     DeviceBadge deviceBadge_;
     ActivityLights activityLights_;
-    InputMonitor inputMonitor_;
+    IoMonitor ioMonitor_;
     LatencyReadout latencyReadout_;
-    CpuMeter cpuMeter_;
+    SystemMeters systemMeters_;
     IconButton muteButton_{speakerIcon(), "Master mute"};
     TransportControls transportControls_;
 

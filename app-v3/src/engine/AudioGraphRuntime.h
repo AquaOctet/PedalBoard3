@@ -1,7 +1,7 @@
 #pragma once
 
-#include "InputLevel.h"
 #include "MasterMute.h"
+#include "PeakLevel.h"
 #include "processors/OutputSanitiser.h"
 #include "TestTone.h"
 #include "Transport.h"
@@ -38,8 +38,10 @@ namespace pedalboard3::engine
 //                      out; and the tone has to be mutable, because the
 //                      status bar promises that muted means silent.
 //
-// The input peak is taken at the very top, before the graph runs, so the
-// input meter reads the cable rather than the board (#117).
+// The two metering points sit at the two ends (#117): the input peak at
+// the very top, before the graph runs, so the meter reads the cable rather
+// than the board; the output peak at the very bottom, after the mute, so
+// it reads what is leaving rather than what the graph produced.
 //
 // The runtime also owns the transport (M6 U1): it is the live graph's play
 // head, which JUCE's graph hands to every node each block, and it advances
@@ -145,8 +147,10 @@ public:
     // no longer re-instantiates every plugin.
     TestTone& getTestTone() noexcept { return testTone_; }
 
-    // What is arriving at the audio input, before the board sees it (#117).
-    InputLevel& getInputLevel() noexcept { return inputLevel_; }
+    // What is arriving at the audio input, before the board sees it, and
+    // what is leaving after everything has had its say (#117).
+    PeakLevel& getInputLevel() noexcept { return inputLevel_; }
+    PeakLevel& getOutputLevel() noexcept { return outputLevel_; }
 
 private:
     // Audio-thread helper: runs 16ch × {allSoundOff, allNotesOff,
@@ -161,7 +165,8 @@ private:
     processors::OutputSanitiser sanitiser_;
     TestTone testTone_;
     MasterMute masterMute_;
-    InputLevel inputLevel_;
+    PeakLevel inputLevel_;
+    PeakLevel outputLevel_;
     Transport transport_;
 
     // Pre-built MIDI flush template + per-call scratch (plugins that

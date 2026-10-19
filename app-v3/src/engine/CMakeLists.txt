@@ -21,7 +21,7 @@ add_library(pb3_engine_core STATIC
     AudioEngine.h
     AudioGraphRuntime.cpp
     AudioGraphRuntime.h
-    InputLevel.h
+    PeakLevel.h
     MasterMute.h
     TestTone.h
     Transport.cpp
@@ -118,4 +118,19 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_sources(pb3_engine_core PRIVATE ../platform/CrashGuard_posix.cpp)
 else()
     target_sources(pb3_engine_core PRIVATE ../platform/CrashGuard_none.cpp)
+endif()
+
+# The memory readout's platform half (#118): the process resident set, asked
+# for once a second by the top bar's MEM meter. It lives with the engine
+# rather than the UI so the smoke tests can link it without a window.
+target_sources(pb3_engine_core PRIVATE ../platform/ProcessMemory.h)
+if(WIN32)
+    target_sources(pb3_engine_core PRIVATE ../platform/ProcessMemory_windows.cpp)
+    target_link_libraries(pb3_engine_core PRIVATE psapi)
+elseif(APPLE)
+    target_sources(pb3_engine_core PRIVATE ../platform/ProcessMemory_mac.cpp)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_sources(pb3_engine_core PRIVATE ../platform/ProcessMemory_linux.cpp)
+else()
+    target_sources(pb3_engine_core PRIVATE ../platform/ProcessMemory_none.cpp)
 endif()

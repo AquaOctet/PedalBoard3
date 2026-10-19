@@ -605,14 +605,14 @@ int main(int argc, char** argv)
                     root.setSize(width, 800);
                     const auto shown = [&](const juce::Component& c) { return c.isVisible() ? "y" : "-"; };
                     std::printf(
-                        "TOP BAR %5d  gap %4d  name %4d  badge %3d  latency %s  cpu %s  input %s  midi/osc %s\n",
+                        "TOP BAR %5d  gap %4d  name %4d  badge %3d  latency %s  cpu/mem %s  in/out %s  midi/osc %s\n",
                         width,
                         topBar.barSlack(),
                         topBar.patchStripSlack(),
                         topBar.deviceBadgeWidth(),
                         shown(topBar.latencyReadoutForTest()),
-                        shown(topBar.cpuMeterForTest()),
-                        shown(topBar.inputMonitorForTest()),
+                        shown(topBar.systemMetersForTest()),
+                        shown(topBar.ioMonitorForTest()),
                         shown(topBar.activityLightsForTest()));
                 }
                 root.setSize(1280, 800);

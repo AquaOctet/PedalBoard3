@@ -42,12 +42,12 @@ constexpr int kButtonGap = 6;
 constexpr int kMenuButtonWidth = 36; // the square folder / gear / plug
 constexpr int kAddButtonWidth = 36;  // the square [+]
 constexpr int kActivityWidth = 104;  // MIDI and OSC lights
-constexpr int kCpuMeterWidth = 168;
+constexpr int kSystemMetersWidth = 168;
 constexpr int kMuteButtonWidth = 36;
 // The group dividers (#109): a hairline this tall, centred on the bar.
 constexpr int kDividerHeight = 20;
 constexpr int kDividerGap = 7; // either side of one
-constexpr int kInputMonitorWidth = InputMonitor::kPreferredWidth;
+constexpr int kIoMonitorWidth = IoMonitor::kPreferredWidth;
 
 // How the bar gives way (#116).
 //
@@ -71,12 +71,12 @@ constexpr int kInputMonitorWidth = InputMonitor::kPreferredWidth;
 // before identity, and identity before control:
 enum class Fold
 {
-    LatencyAway,    // a number that moves only when the device does
-    CpuAway,        // the next least urgent while you are playing
-    BadgePairs,     // "[1,2]" twice -- the detail, not the device (#114)
-    InputMeterAway, // still a diagnostic, but a live one
-    BadgeOutput,    // now we are losing which device you are on
-    TransportPos,   // the position readout inside the pill
+    LatencyAway,  // a number that moves only when the device does
+    CpuAway,      // the CPU and MEM stack, next least urgent while playing
+    BadgePairs,   // "[1,2]" twice -- the detail, not the device (#114)
+    IoMetersAway, // IN / OUT: still diagnostics, but live ones
+    BadgeOutput,  // now we are losing which device you are on
+    TransportPos, // the position readout inside the pill
     BadgeInput,
     TransportClick,
     BadgeAway, // the driver chip goes too
@@ -133,8 +133,8 @@ void showMenuBelow(juce::PopupMenu menu, juce::Button& button, std::function<voi
 
 TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas, FileActions& files)
     : ctx_(ctx), canvas_(canvas), files_(files), deviceBadge_(ctx), activityLights_(ctx.controlHub),
-      inputMonitor_(ctx.audioEngine), latencyReadout_(ctx.audioEngine.getDeviceManager()),
-      cpuMeter_(ctx.audioEngine.getDeviceManager()), transportControls_(ctx), patchStrip_(ctx)
+      ioMonitor_(ctx.audioEngine), latencyReadout_(ctx.audioEngine.getDeviceManager()),
+      systemMeters_(ctx.audioEngine.getDeviceManager()), transportControls_(ctx), patchStrip_(ctx)
 {
     setOpaque(true);
 
@@ -166,7 +166,7 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas, FileActions& f
             onNaturalWidthChanged();
     };
     addAndMakeVisible(activityLights_);
-    addAndMakeVisible(inputMonitor_);
+    addAndMakeVisible(ioMonitor_);
     addAndMakeVisible(latencyReadout_);
     latencyReadout_.onLayoutChanged = [this]
     {
@@ -178,7 +178,7 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas, FileActions& f
     muteButton_.onClick = [this] { ctx_.audioEngine.toggleMasterMute(); };
     ctx_.audioEngine.masterMuteChanged().addChangeListener(this);
     refreshMuteButton();
-    addAndMakeVisible(cpuMeter_);
+    addAndMakeVisible(systemMeters_);
     addAndMakeVisible(transportControls_);
     transportControls_.onLayoutChanged = [this] { resized(); };
     addAndMakeVisible(settingsButton_);
@@ -291,9 +291,9 @@ int TransportBar::naturalWidth() const
         w += kDividerGap * 2 + transportControls_.widthAtFold(0);
 
     w += kDividerGap * 2; // ... | right cluster
-    w += kActivityWidth + kButtonGap + kInputMonitorWidth;
+    w += kActivityWidth + kButtonGap + kIoMonitorWidth;
     w += kButtonGap * 2 + latencyReadout_.preferredWidth();
-    w += kButtonGap + kCpuMeterWidth;
+    w += kButtonGap + kSystemMetersWidth;
     w += kDividerGap * 2 + kMuteButtonWidth;
 
     return w;
@@ -319,11 +319,11 @@ void TransportBar::resized()
         case Fold::LatencyAway:
             return latencyReadout_.preferredWidth() + kButtonGap * 2;
         case Fold::CpuAway:
-            return kCpuMeterWidth + kButtonGap;
+            return kSystemMetersWidth + kButtonGap;
         case Fold::BadgePairs:
             return deviceBadge_.widthAtFold(0) - deviceBadge_.widthAtFold(1);
-        case Fold::InputMeterAway:
-            return kInputMonitorWidth + kButtonGap;
+        case Fold::IoMetersAway:
+            return kIoMonitorWidth + kButtonGap;
         case Fold::BadgeOutput:
             return deviceBadge_.widthAtFold(1) - deviceBadge_.widthAtFold(2);
         case Fold::TransportPos:
@@ -355,7 +355,7 @@ void TransportBar::resized()
     // Spend the folds we decided on.
     const bool latencyOn = !applied(Fold::LatencyAway);
     const bool cpuOn = !applied(Fold::CpuAway);
-    const bool inputMeterOn = !applied(Fold::InputMeterAway);
+    const bool ioMetersOn = !applied(Fold::IoMetersAway);
     const bool badgeOn = !applied(Fold::BadgeAway);
     const bool activityOn = !applied(Fold::ActivityAway);
     const int badgeFold = applied(Fold::BadgeInput)    ? 3
@@ -388,21 +388,21 @@ void TransportBar::resized()
     divideRight();
 
     latencyReadout_.setVisible(latencyOn);
-    cpuMeter_.setVisible(cpuOn);
-    inputMonitor_.setVisible(inputMeterOn);
+    systemMeters_.setVisible(cpuOn);
+    ioMonitor_.setVisible(ioMetersOn);
     activityLights_.setVisible(activityOn);
 
     const int activityWidth = activityOn ? kActivityWidth : 0;
-    const int inputWidth = inputMeterOn ? kInputMonitorWidth + kButtonGap : 0;
+    const int inputWidth = ioMetersOn ? kIoMonitorWidth + kButtonGap : 0;
     const int latencyWidth = latencyOn ? latencyReadout_.preferredWidth() + kButtonGap * 2 : 0;
-    const int cpuWidth = cpuOn ? kCpuMeterWidth + kButtonGap : 0;
+    const int cpuWidth = cpuOn ? kSystemMetersWidth + kButtonGap : 0;
     auto right = bounds.removeFromRight(activityWidth + inputWidth + latencyWidth + cpuWidth);
     if (activityOn)
         activityLights_.setBounds(right.removeFromLeft(kActivityWidth));
-    if (inputMeterOn)
+    if (ioMetersOn)
     {
         right.removeFromLeft(kButtonGap);
-        inputMonitor_.setBounds(right.removeFromLeft(kInputMonitorWidth));
+        ioMonitor_.setBounds(right.removeFromLeft(kIoMonitorWidth));
     }
     if (latencyOn)
     {
@@ -412,7 +412,7 @@ void TransportBar::resized()
     if (cpuOn)
     {
         right.removeFromLeft(kButtonGap);
-        cpuMeter_.setBounds(right.removeFromLeft(kCpuMeterWidth));
+        systemMeters_.setBounds(right.removeFromLeft(kSystemMetersWidth));
     }
 
     divideRight();

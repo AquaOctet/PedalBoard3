@@ -7,26 +7,31 @@
 namespace pedalboard3::engine
 {
 
-// What is arriving from the audio input, measured at the master stage before
-// the board sees it.
+// One metering point: the loudest sample seen since somebody last looked.
 //
-// It is here rather than in a node for the same reason the mute and the tone
-// are: a board with nothing on it, or one whose first plugin is silent or
-// bypassed or crashed, still has to be able to answer "is my guitar reaching
-// this machine". A meter that reads zero because the board is empty tells you
-// nothing about the cable.
+// AudioGraphRuntime keeps two, at the two places worth watching (#117):
 //
-// The audio thread writes the running peak and never clears it; the reader
+//   input   what arrived from the device, taken before the graph runs, so an
+//           empty board, a bypassed first plugin or a silent synth cannot
+//           make a live input look dead. A meter that reads zero because the
+//           board is empty answers the wrong question.
+//   output  what is actually leaving, taken after the sanitiser, the test
+//           tone and the master mute. Everything that can change what you
+//           hear has happened by then, so muted reads as silence and the
+//           test tone reads as the tone -- which is the point of having the
+//           meter at the end rather than at the graph's last node.
+//
+// The audio thread writes a running peak and never clears it; the reader
 // takes the value and resets the slot in one exchange. That way the meter
 // shows the loudest sample since it last looked rather than whichever block
 // happened to be in flight when it looked, so a transient between two 30 Hz
 // reads is still seen. A read that races a write loses at most one block.
 //
 // RT contract: capture() does not allocate or lock.
-class InputLevel
+class PeakLevel
 {
 public:
-    // Audio thread. `buffer` holds the device input, before the graph runs.
+    // Audio thread.
     void capture(const juce::AudioBuffer<float>& buffer) noexcept
     {
         float blockPeak = 0.0f;

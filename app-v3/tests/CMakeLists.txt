@@ -13,7 +13,7 @@
 
 set(PB3_TEST_SOURCES
     support/RealSettingsGuard.cpp
-    unit/engine/InputLevel_test.cpp
+    unit/engine/PeakLevel_test.cpp
     unit/engine/MasterMute_test.cpp
     unit/engine/OutputSanitiser_test.cpp
     unit/engine/BypassableInstance_test.cpp

@@ -175,6 +175,11 @@ void AudioGraphRuntime::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     testTone_.process(buffer);
     masterMute_.process(buffer);
 
+    // Dead last, so the output meter reads what actually leaves: muted is
+    // silence on the meter as well as in the room, and the test tone shows
+    // up as the tone (#117).
+    outputLevel_.capture(buffer);
+
     // 3. Publish that we've completed a block. Release so a concurrent
     //    reader using `acquire` sees all the buffer writes that preceded
     //    this store.
