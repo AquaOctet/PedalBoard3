@@ -741,6 +741,98 @@ int main(int argc, char** argv)
             shoot("window-muted", root, 1280, 800);
             setMuted(false);
 
+            // Every icon at the size it is actually drawn, and again at 4x
+            // (#125). The small row is the one to judge: a glyph that cannot
+            // be told from its neighbour there has failed however good it
+            // looks magnified. The big row is only for finding WHICH stroke
+            // is wrong once the small one looks off.
+            {
+                struct Glyph
+                {
+                    const char* name;
+                    juce::Path path;
+                    // The box this glyph is actually drawn in, which is not
+                    // the same for every member of a set: see R6. Rendering
+                    // the sheet at one uniform box would hide the very
+                    // optical correction it exists to check.
+                    int box;
+                };
+                const Glyph cardGlyphs[] = {{"power", ui::powerIcon(), 14},
+                                            {"faders", ui::slidersIcon(), 14},
+                                            {"window", ui::editorWindowIcon(), 14},
+                                            {"cross", ui::closeIcon(), 11},
+                                            {"note", ui::noteIcon(), 14}};
+                const Glyph barGlyphs[] = {{"folder", ui::folderIcon(), 16},
+                                           {"gear", ui::gearIcon(), 16},
+                                           {"plug", ui::plugIcon(), 16},
+                                           {"speaker", ui::speakerIcon(), 16},
+                                           {"muted", ui::volumeMutedIcon(), 16},
+                                           {"mic", ui::micIcon(), 13},
+                                           {"pulse", ui::activityIcon(), 13}};
+
+                const auto sheet = [&out](const juce::String& name, const Glyph* glyphs, int count)
+                {
+                    constexpr int kScale = 4;
+                    constexpr int kPad = 16;
+                    constexpr int kCell = 96;
+                    int box = 0;
+                    for (int i = 0; i < count; ++i)
+                        box = juce::jmax(box, glyphs[i].box);
+                    const int w = kPad * 2 + kCell * count;
+                    const int h = kPad * 3 + box + box * kScale + 18;
+
+                    juce::Image image(juce::Image::ARGB, w, h, true);
+                    // The Graphics must be dead before the image is read:
+                    // JUCE's renderer is free to hold state until it is
+                    // destroyed, and handing the image to out.add() with a
+                    // live Graphics on it wrote a fully transparent PNG.
+                    {
+                        juce::Graphics g(image);
+                        g.fillAll(ui::tokens::bgWindow);
+
+                        for (int i = 0; i < count; ++i)
+                        {
+                            const int cx = kPad + kCell * i + kCell / 2;
+
+                            // Real size, on the card's own background so the
+                            // contrast is the contrast it will actually have.
+                            const int thisBox = glyphs[i].box;
+                            const juce::Rectangle<float> small(static_cast<float>(cx - thisBox / 2),
+                                                               static_cast<float>(kPad + (box - thisBox) / 2),
+                                                               static_cast<float>(thisBox),
+                                                               static_cast<float>(thisBox));
+                            g.setColour(ui::tokens::bgSecondary);
+                            g.fillRoundedRectangle(small.expanded(4.0f), 3.0f);
+                            g.setColour(ui::tokens::fgPrimary);
+                            ui::strokeIcon(g, glyphs[i].path, small);
+
+                            const int bigSide = thisBox * kScale;
+                            const juce::Rectangle<float> big(static_cast<float>(cx - bigSide / 2),
+                                                             static_cast<float>(kPad * 2 + box),
+                                                             static_cast<float>(bigSide),
+                                                             static_cast<float>(bigSide));
+                            g.setColour(ui::tokens::bgSecondary);
+                            g.fillRoundedRectangle(big.expanded(4.0f), 4.0f);
+                            g.setColour(ui::tokens::fgPrimary);
+                            // Stroked at the SMALL box's weight, scaled up, so
+                            // the magnified view shows the real stroke ratio
+                            // rather than a fresh thin one.
+                            ui::strokeIcon(
+                                g, glyphs[i].path, big, ui::iconStrokeFor(static_cast<float>(thisBox)) * kScale);
+
+                            g.setColour(ui::tokens::fgMuted);
+                            g.setFont(juce::Font(juce::FontOptions(11.0f)));
+                            g.drawText(
+                                glyphs[i].name, cx - kCell / 2, h - kPad - 2, kCell, 14, juce::Justification::centred);
+                        }
+                    }
+                    out.add(name, image);
+                };
+
+                sheet("icons-card", cardGlyphs, 5);
+                sheet("icons-bar", barGlyphs, 7);
+            }
+
             // Wide enough that the device badge shows all three parts (#90):
             // the driver chip, the input with its mic and the output with its
             // speaker. Below 1400 it folds to the chip alone, so the narrower

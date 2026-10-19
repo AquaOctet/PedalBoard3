@@ -146,10 +146,18 @@ private:
     // to learn, on an object meant to be read at a glance from a stage, and
     // two of them ("M", "X") abbreviate nothing obvious. A power symbol, a
     // row of sliders, a window and a cross need no learning.
-    IconButton bypassButton_{powerIcon(), "Bypass", 7.0f};
-    IconButton mappingsButton_{slidersIcon(), "Mappings", 7.0f};
-    IconButton editButton_{editorWindowIcon(), "Editor", 7.0f};
-    IconButton removeButton_{closeIcon(), "Remove", 8.0f};
+    // A 22 px button with a 4 px inset: a 14 px icon box, which is the floor
+    // in docs/design/2026-10-19-icon-system.md. They were inset 7, leaving
+    // 8 px -- half the top bar's 16 and far too small for any of these
+    // shapes to survive (#125). The hit target is unchanged; only the
+    // drawing grew.
+    IconButton bypassButton_{powerIcon(), "Bypass", 4.0f};
+    IconButton mappingsButton_{slidersIcon(), "Mappings", 4.0f};
+    IconButton editButton_{editorWindowIcon(), "Editor", 4.0f};
+    // A bigger inset for the cross: see R6. Its diagonals reach the corners
+    // of their box where the others reach only the edges, so at the same
+    // inset it reads as the largest thing in the row.
+    IconButton removeButton_{closeIcon(), "Remove", 5.5f};
     std::unique_ptr<juce::TextEditor> renameEditor_;
     // The last rename editor, kept alive until its own key or focus callback
     // has returned; freed on the next rename or with the card.

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cmath>
+
 #include <juce_graphics/juce_graphics.h>
 
 namespace pedalboard3::ui
@@ -244,76 +246,96 @@ inline juce::Path volumeMutedIcon()
 // used the "<" and ">" characters, which sit on the text baseline rather than
 // on the control's centre line and are a different weight from every other
 // mark on the bar.
-// The plugin cards' four buttons (#124). They were the letters BYP, M, ED
-// and X, which is four abbreviations to learn on an object you are meant to
-// read at a glance from a stage, and "M" and "X" are not even abbreviations
-// of anything obvious.
+// The plugin cards' four buttons. Designed to the detail budget in
+// docs/design/2026-10-19-icon-system.md: at a 14 px box the 24-grid scales
+// by 0.58, so nothing finer than 3 units survives and no glyph gets more
+// than three features.
 
-// lucide "power": a ring open at the top with a stem through the gap.
+// Bypass. The power symbol, which is the convention on hardware and in
+// every DAW, so it needs no learning. Two features: a ring open at the top
+// and a stem through the gap.
+//
+// The gap runs 300 deg round to 240 deg -- 60 deg of it. The first version
+// used 50 deg, which at 14 px is under two pixels of notch and reads as a
+// closed circle with a smudge on top.
 inline juce::Path powerIcon()
 {
     juce::Path p;
     p.addCentredArc(12.0f,
                     13.0f,
-                    7.0f,
-                    7.0f,
+                    7.5f,
+                    7.5f,
                     0.0f,
-                    juce::MathConstants<float>::pi * 0.28f,
-                    juce::MathConstants<float>::pi * 1.72f,
+                    juce::MathConstants<float>::pi * 0.333f, // 60 deg past the top
+                    juce::MathConstants<float>::pi * 1.667f, // round to 60 deg short of it
                     true);
-    p.startNewSubPath(12.0f, 3.0f);
-    p.lineTo(12.0f, 12.0f);
+    p.startNewSubPath(12.0f, 3.5f);
+    p.lineTo(12.0f, 11.5f);
     return scaledToIconBox(p);
 }
 
-// lucide "sliders-horizontal": three tracks, each with a handle, which is
-// what a mapping is -- a control somewhere moving a parameter here.
+// Mappings: two faders, offset, which is what a mapping is -- something
+// out there moving a control in here.
+//
+// Two tracks, not the three of lucide's sliders-horizontal: three tracks
+// plus three handles is six features and the gaps between them fall under
+// the 3-unit floor. Square handles, not round: a 4-unit square keeps its
+// corners at 2.3 px where a 4-unit circle renders as a smudge.
 inline juce::Path slidersIcon()
 {
     juce::Path p;
-    const float rows[] = {6.5f, 12.0f, 17.5f};
-    const float handles[] = {15.0f, 9.0f, 17.0f};
-    for (int i = 0; i < 3; ++i)
-    {
-        p.startNewSubPath(3.0f, rows[i]);
-        p.lineTo(21.0f, rows[i]);
-        p.addEllipse(handles[i] - 2.0f, rows[i] - 2.0f, 4.0f, 4.0f);
-    }
+    p.startNewSubPath(3.0f, 9.0f);
+    p.lineTo(21.0f, 9.0f);
+    p.addRectangle(13.0f, 6.5f, 5.0f, 5.0f);
+
+    p.startNewSubPath(3.0f, 16.0f);
+    p.lineTo(21.0f, 16.0f);
+    p.addRectangle(6.0f, 13.5f, 5.0f, 5.0f);
     return scaledToIconBox(p);
 }
 
-// lucide "sliders" with a frame: the plugin's own editor window.
+// Open the plugin's own editor, so: a window. Frame plus a title rule, and
+// the rule sits 5 units down rather than 2 so the two do not merge into a
+// thick top edge at 14 px.
 inline juce::Path editorWindowIcon()
 {
     juce::Path p;
-    p.addRoundedRectangle(3.0f, 4.0f, 18.0f, 16.0f, 2.5f);
-    p.startNewSubPath(3.0f, 9.0f);
-    p.lineTo(21.0f, 9.0f);
+    p.addRoundedRectangle(3.5f, 4.5f, 17.0f, 15.0f, 2.5f);
+    p.startNewSubPath(3.5f, 9.5f);
+    p.lineTo(20.5f, 9.5f);
     return scaledToIconBox(p);
 }
 
-// lucide "x".
+// Remove. One feature, so it survives any size.
+//
+// The extent here is cosmetic: strokeIcon scales a glyph's own bounding box
+// to fill the button, so drawing the X at 6..18 and at 4.5..19.5 render
+// identically. A cross looks bigger than its neighbours because a diagonal
+// inscribed in a square reaches further than a circle inscribed in the same
+// square, and the fix for that is a larger inset at the call site, not a
+// smaller path here. See R6 in docs/design/2026-10-19-icon-system.md.
 inline juce::Path closeIcon()
 {
     juce::Path p;
-    p.startNewSubPath(6.0f, 6.0f);
-    p.lineTo(18.0f, 18.0f);
-    p.startNewSubPath(18.0f, 6.0f);
-    p.lineTo(6.0f, 18.0f);
+    p.startNewSubPath(4.5f, 4.5f);
+    p.lineTo(19.5f, 19.5f);
+    p.startNewSubPath(19.5f, 4.5f);
+    p.lineTo(4.5f, 19.5f);
     return scaledToIconBox(p);
 }
 
-// lucide "message-square-text": the node's own note (#124).
+// The node's own note. A speech bubble: frame, tail, and one line of
+// writing. Two lines of writing was three features and the two rules fell
+// 3 units apart, right on the floor.
 inline juce::Path noteIcon()
 {
     juce::Path p;
-    p.addRoundedRectangle(3.0f, 4.0f, 18.0f, 14.0f, 2.5f);
-    p.startNewSubPath(7.5f, 20.5f);
-    p.lineTo(7.5f, 18.0f);
-    p.startNewSubPath(7.0f, 9.0f);
-    p.lineTo(17.0f, 9.0f);
-    p.startNewSubPath(7.0f, 13.0f);
-    p.lineTo(13.0f, 13.0f);
+    p.addRoundedRectangle(3.5f, 4.5f, 17.0f, 13.0f, 2.5f);
+    p.startNewSubPath(8.0f, 17.5f);
+    p.lineTo(8.0f, 21.0f);
+    p.lineTo(11.5f, 17.5f);
+    p.startNewSubPath(7.5f, 11.0f);
+    p.lineTo(16.5f, 11.0f);
     return scaledToIconBox(p);
 }
 
@@ -352,12 +374,52 @@ inline juce::Path chevronDownIcon()
 // SMALLER of its two sides, not the height. Callers hand this a cell that is
 // icon-wide but row-high, so taking the height scaled a 13 px mic up to the
 // full 36 px of the top bar and ran it over the text beside it.
-inline void strokeIcon(juce::Graphics& g, const juce::Path& icon, juce::Rectangle<float> area, float thickness = 1.17f)
+// Stroke `icon` to fill `area`, at a weight proportional to how big that
+// area is and aligned to the pixel grid. See docs/design/2026-10-19-icon-system.md.
+//
+// Both of those used to be wrong, and together they are what "blurry" meant
+// (#125):
+//
+//   - The weight was a constant 1.17. At the top bar's 16 px box that is 7%
+//     of the glyph; in the plugin cards' 8 px box it was 15%, so adjacent
+//     strokes bled together and every enclosed shape filled in solid.
+//
+//   - Nothing landed on the grid. A path authored on a 24-unit grid, scaled
+//     to 14 by scaledToIconBox and scaled again to the button's box, puts
+//     every horizontal and vertical run at a fractional coordinate -- and a
+//     1 px stroke centred at y=10.0 is spread over two rows of pixels at
+//     half intensity each instead of covering one row.
+//
+// Pass `thickness` only to override the proportional weight deliberately.
+inline float iconStrokeFor(float box) noexcept
+{
+    return juce::jlimit(1.0f, 1.8f, box / 11.0f);
+}
+
+inline void strokeIcon(juce::Graphics& g, const juce::Path& icon, juce::Rectangle<float> area, float thickness = 0.0f)
 {
     const auto side = juce::jmin(area.getWidth(), area.getHeight());
+    if (side <= 0.0f)
+        return;
+
+    const float weight = thickness > 0.0f ? thickness : iconStrokeFor(side);
+
     auto placed = icon;
     placed.applyTransform(icon.getTransformToScaleToFit(area.withSizeKeepingCentre(side, side), true));
-    g.strokePath(placed, juce::PathStrokeType(thickness, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+    // Half-pixel alignment for an odd-width stroke: a 1 px line wants its
+    // centre at x.5 so it covers exactly one column of pixels. Shift the
+    // whole glyph rather than each run, so the shape is not distorted --
+    // every axis-aligned run in these icons shares the same sub-pixel phase
+    // because they come off one uniform scale.
+    const auto bounds = placed.getBounds();
+    const bool oddStroke = static_cast<int>(std::lround(weight)) % 2 == 1;
+    const float phase = oddStroke ? 0.5f : 0.0f;
+    const float dx = (std::floor(bounds.getX()) + phase) - bounds.getX();
+    const float dy = (std::floor(bounds.getY()) + phase) - bounds.getY();
+    placed.applyTransform(juce::AffineTransform::translation(dx, dy));
+
+    g.strokePath(placed, juce::PathStrokeType(weight, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 }
 
 } // namespace pedalboard3::ui
