@@ -108,6 +108,7 @@ add_library(pb3_app_core STATIC
     ui/PluginBrowser.h
     ui/PluginCard.cpp
     ui/PluginCard.h
+    ui/PortDot.h
     ui/ProcessorControls.cpp
     ui/ProcessorControls.h
     ui/RecorderWindow.cpp

@@ -1,6 +1,7 @@
 #include "PluginCard.h"
 
 #include "CardText.h"
+#include "PortDot.h"
 #include "ProcessorControls.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -21,7 +22,7 @@ constexpr int kGripWidth = 14;
 constexpr int kButtonGap = 3;
 
 // Ports sit at the card's edges, clear of the body text.
-constexpr int kPortRadius = 5;
+constexpr int kPortRadius = ports::kRadius;
 constexpr int kInPortX = 12;
 constexpr int kOutPortInset = 10;
 constexpr int kPortYL = 46;
@@ -288,24 +289,17 @@ void PluginCard::paint(juce::Graphics& g)
         g.drawText(lines.meta, kTextLeft, 54, textWidth, 14, juce::Justification::centredLeft, true);
     }
 
-    // Ports: audio in teal, audio out amber, MIDI cyan, each ringed so it reads
-    // against the card.
-    const auto drawPort = [&g](int cx, int cy, juce::Colour c)
-    {
-        const auto box = juce::Rectangle<float>(0.0f, 0.0f, kPortRadius * 2.0f, kPortRadius * 2.0f)
-                             .withCentre({static_cast<float>(cx), static_cast<float>(cy)});
-        g.setColour(c);
-        g.fillEllipse(box);
-        g.setColour(tokens::bgWindow);
-        g.drawEllipse(box, 1.5f);
-    };
+    // Ports: audio in teal, audio out amber, MIDI cyan. Shared with the
+    // canvas's Input and Output endpoints so both ends of a cable are the
+    // same circle (#121).
+    const auto drawPort = [&g](int cx, int cy, juce::Colour c) { ports::drawDot(g, {cx, cy}, c); };
     const int outX = getWidth() - kOutPortInset;
-    drawPort(kInPortX, kPortYL, tokens::accentPrimary);
-    drawPort(kInPortX, kPortYR, tokens::accentPrimary);
-    drawPort(kInPortX, kPortYMidi, tokens::accentInfo);
-    drawPort(outX, kPortYL, tokens::accentWarning);
-    drawPort(outX, kPortYR, tokens::accentWarning);
-    drawPort(outX, kPortYMidi, tokens::accentInfo);
+    drawPort(kInPortX, kPortYL, ports::audioIn());
+    drawPort(kInPortX, kPortYR, ports::audioIn());
+    drawPort(kInPortX, kPortYMidi, ports::midi());
+    drawPort(outX, kPortYL, ports::audioOut());
+    drawPort(outX, kPortYR, ports::audioOut());
+    drawPort(outX, kPortYMidi, ports::midi());
 
     // The edge: the "chosen" accent when selected, brighter on hover. Selected
     // is pink rather than the running cyan-green on purpose (#105): on this

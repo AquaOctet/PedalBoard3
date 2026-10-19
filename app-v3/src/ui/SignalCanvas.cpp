@@ -8,6 +8,7 @@
 #include "engine/processors/FilePlayerProcessor.h"
 #include "engine/processors/VuMeterProcessor.h"
 #include "PluginBrowser.h"
+#include "PortDot.h"
 #include "ProcessorControls.h"
 #include "session/BoardFiles.h"
 #include "session/ControlHub.h"
@@ -417,8 +418,15 @@ void SignalCanvas::paint(juce::Graphics& g)
             juce::DropShadow(juce::Colours::black.withAlpha(0.35f), 12, {0, 3}).drawForPath(g, cardPath);
     }
 
-    // Endpoint card frames.
-    auto drawEndpoint = [&g](const juce::Rectangle<int>& r, const juce::String& label)
+    // Endpoint card frames, and their ports (#121).
+    //
+    // The ports are not decoration. Without them a cable began and ended in
+    // mid-air against a rounded rectangle, the two ends of the chain looked
+    // like a different kind of object from every card between them, and
+    // there was nothing to say where a cable could be dropped. They are
+    // drawn at exactly the points portPositionFor returns, so the dot is
+    // where the cable meets it rather than near it.
+    auto drawEndpoint = [this, &g](const juce::Rectangle<int>& r, const juce::String& label, bool isSource)
     {
         auto rf = r.toFloat().reduced(0.5f);
         g.setColour(tokens::bgCard.withMultipliedAlpha(0.85f));
@@ -428,9 +436,17 @@ void SignalCanvas::paint(juce::Graphics& g)
         g.setColour(tokens::fgMuted);
         g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
         g.drawText(label, r, juce::Justification::centred);
+
+        // Input is a source, so its audio dots are amber; Output is a
+        // destination, so its are teal. The same run of colour the eye
+        // already follows from one card to the next.
+        const auto audio = isSource ? ports::audioOut() : ports::audioIn();
+        for (const int channel : {kChannelL, kChannelR})
+            ports::drawDot(g, portPositionFor(session::graphIO, channel, isSource), audio);
+        ports::drawDot(g, portPositionFor(session::graphIO, kChannelMidi, isSource), ports::midi());
     };
-    drawEndpoint(inputCardBounds_, "Input");
-    drawEndpoint(outputCardBounds_, "Output");
+    drawEndpoint(inputCardBounds_, "Input", /*isSource*/ true);
+    drawEndpoint(outputCardBounds_, "Output", /*isSource*/ false);
 
     // Cables — one stroke per connection so each carries its own amber->teal
     // gradient (audio), cyan (MIDI), dashing (bypassed source), or selection
