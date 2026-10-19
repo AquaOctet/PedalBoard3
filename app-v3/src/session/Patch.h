@@ -56,6 +56,19 @@ struct PatchNode
     bool bypass{false};
     juce::String customName;
 
+    // The player's own note about this node (#124): "second verse only",
+    // "set by ear, do not touch", "borrowed from the Tuesday board".
+    //
+    // Separate from customName because they answer different questions. The
+    // name is what the thing IS, and it is on the card in bold whether you
+    // want it or not; the note is why it is there, and it only takes space
+    // when somebody wrote one. A rack of six compressors with identical
+    // names is the case that needs it.
+    //
+    // Additive and back-compatible: written only when non-empty, so older
+    // files and un-noted nodes carry no attribute and read back empty.
+    juce::String note;
+
     // Per-node MIDI channel filter (roadmap M4 / checklist R8): 0 = omni,
     // 1..16 passes only that channel to the plugin (BypassableInstance does
     // the filtering). Additive + back-compatible: written only when non-zero,

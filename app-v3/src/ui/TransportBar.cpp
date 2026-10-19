@@ -39,6 +39,11 @@ namespace
 {
 constexpr int kBarPadding = 12;
 constexpr int kButtonGap = 6;
+// Between the DELAY column and the CPU / MEM stack (#124). Bigger than the
+// gaps inside the right cluster on purpose: DELAY is one narrow column of
+// text and CPU / MEM is a block of meters, and at kButtonGap they ran
+// together into one unreadable strip.
+constexpr int kDelayMetersGap = 18;
 constexpr int kMenuButtonWidth = 36; // the square folder / gear / plug
 constexpr int kActivityWidth = 104;  // MIDI and OSC lights
 constexpr int kSystemMetersWidth = 168;
@@ -283,7 +288,7 @@ int TransportBar::naturalWidth() const
     w += kDividerGap * 2; // ... | right cluster
     w += kActivityWidth + kButtonGap + kIoMonitorWidth;
     w += kButtonGap * 2 + latencyReadout_.preferredWidth();
-    w += kButtonGap + kSystemMetersWidth;
+    w += kDelayMetersGap + kSystemMetersWidth;
     w += kDividerGap * 2 + kMuteButtonWidth;
 
     return w;
@@ -309,7 +314,7 @@ void TransportBar::resized()
         case Fold::LatencyAway:
             return latencyReadout_.preferredWidth() + kButtonGap * 2;
         case Fold::CpuAway:
-            return kSystemMetersWidth + kButtonGap;
+            return kSystemMetersWidth + kDelayMetersGap;
         case Fold::BadgePairs:
             return deviceBadge_.widthAtFold(0) - deviceBadge_.widthAtFold(1);
         case Fold::IoMetersAway:
@@ -378,7 +383,7 @@ void TransportBar::resized()
     const int activityWidth = activityOn ? kActivityWidth : 0;
     const int inputWidth = ioMetersOn ? kIoMonitorWidth + kButtonGap : 0;
     const int latencyWidth = latencyOn ? latencyReadout_.preferredWidth() + kButtonGap * 2 : 0;
-    const int cpuWidth = cpuOn ? kSystemMetersWidth + kButtonGap : 0;
+    const int cpuWidth = cpuOn ? kSystemMetersWidth + kDelayMetersGap : 0;
     auto right = bounds.removeFromRight(activityWidth + inputWidth + latencyWidth + cpuWidth);
     if (activityOn)
         activityLights_.setBounds(right.removeFromLeft(kActivityWidth));
@@ -394,7 +399,7 @@ void TransportBar::resized()
     }
     if (cpuOn)
     {
-        right.removeFromLeft(kButtonGap);
+        right.removeFromLeft(kDelayMetersGap);
         systemMeters_.setBounds(right.removeFromLeft(kSystemMetersWidth));
     }
 

@@ -78,19 +78,29 @@ void LatencyReadout::paint(juce::Graphics& g)
     // obviously a latency if you already knew that is what lives there.
     auto area = getLocalBounds().withSizeKeepingCentre(getWidth(), meter::kStackHeight);
 
+    // Centred, both rows, unlike its neighbours (#124). Those are caption +
+    // track + number across a wide cell, so left-aligning their captions
+    // lines them up with their tracks. This is one narrow column of two
+    // short strings; left-aligning it just pinned it to whichever edge the
+    // layout happened to give it.
     auto caption = area.removeFromTop(meter::kRowHeight);
     g.setFont(captionFont());
     g.setColour(hasDevice_ ? tokens::fgMuted : tokens::fgSubtle);
-    g.drawText("DELAY", caption, juce::Justification::centredLeft);
+    g.drawText("DELAY", caption, juce::Justification::centred);
 
     area.removeFromTop(meter::kRowGap);
     auto value = area.removeFromTop(meter::kRowHeight);
+
+    // The icon and the figure as one centred unit, so the number stays under
+    // the caption rather than drifting as the figure changes width.
+    const int unit = kIconSize + kIconTextGap + juce::GlyphArrangement::getStringWidthInt(textFont(), text_);
+    auto centred = value.withSizeKeepingCentre(juce::jmin(unit, value.getWidth()), value.getHeight());
     g.setColour(tokens::fgMuted);
-    strokeIcon(g, activityIcon(), value.removeFromLeft(kIconSize).toFloat());
-    value.removeFromLeft(kIconTextGap);
+    strokeIcon(g, activityIcon(), centred.removeFromLeft(kIconSize).toFloat());
+    centred.removeFromLeft(kIconTextGap);
     g.setFont(textFont());
     g.setColour(hasDevice_ ? tokens::fgPrimary : tokens::fgSubtle);
-    g.drawText(text_, value, juce::Justification::centredLeft);
+    g.drawText(text_, centred, juce::Justification::centredLeft);
 }
 
 } // namespace pedalboard3::ui

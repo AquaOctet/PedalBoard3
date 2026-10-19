@@ -487,6 +487,16 @@ void Session::setNodeCustomName(NodeId id, juce::String name)
     }
 }
 
+void Session::setNodeNote(NodeId id, juce::String note)
+{
+    std::lock_guard<std::mutex> lk(statusMutex_);
+    if (auto* pn = activePatch_.findNode(id))
+    {
+        pn->note = std::move(note);
+        bumpVersionAndNotify();
+    }
+}
+
 void Session::restoreNode(PatchNode node, int index, std::vector<PatchConnection> connections)
 {
     AddPluginRequest req;
@@ -803,6 +813,7 @@ std::vector<Session::NodeSnapshot> Session::getNodeSnapshots() const
         }
         s.bypassed = n.bypass;
         s.customName = n.customName;
+        s.note = n.note;
         s.midiChannel = n.midiChannel;
         s.missingReason = n.missingReason;
         if (graphCurrent)

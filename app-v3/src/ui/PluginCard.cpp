@@ -1,6 +1,7 @@
 #include "PluginCard.h"
 
 #include "CardText.h"
+#include "Pb3LookAndFeel.h"
 #include "PortDot.h"
 #include "ProcessorControls.h"
 
@@ -20,6 +21,11 @@ constexpr int kHeaderHeight = 32;
 constexpr int kStripHeight = 3;
 constexpr int kGripWidth = 14;
 constexpr int kButtonGap = 3;
+constexpr int kIconButtonWidth = 22;
+constexpr int kChipPadding = 6;
+// Between the title and the first button, so a long name that ellipsises
+// does not finish hard against the bypass icon.
+constexpr int kNameButtonGap = 6;
 
 // Ports sit at the card's edges, clear of the body text.
 constexpr int kPortRadius = ports::kRadius;
@@ -57,7 +63,7 @@ PluginCard::PluginCard(NodeSnapshot initialSnapshot, Callbacks callbacks)
     removeButton_.setColour(juce::TextButton::textColourOffId, tokens::accentDestructive);
     removeButton_.setVisible(false); // shown on hover
 
-    bypassButton_.setTooltip("Bypass");
+    bypassButton_.setTooltip("Bypass this plugin");
     mappingsButton_.setTooltip("MIDI / OSC mappings");
     editButton_.setTooltip("Open the plugin's editor");
     removeButton_.setTooltip("Remove the plugin (Ctrl+Z brings it back)");
@@ -280,13 +286,33 @@ void PluginCard::paint(juce::Graphics& g)
     }
     else
     {
+        // The kind as a chip, not as a grey word (#124). Two lines of
+        // differently-sized grey text under a bold title is three
+        // typographic weights fighting in 40 pixels; a filled chip is one
+        // shape that reads instantly and leaves the line below it to say
+        // something worth reading.
         const auto lines = card::linesFor(snapshot_, mappingCount_);
-        g.setFont(juce::Font(juce::FontOptions(12.0f)));
-        g.setColour(tokens::fgMuted);
-        g.drawText(lines.kind, kTextLeft, 37, textWidth, 16, juce::Justification::centredLeft, true);
-        g.setFont(monoFont(10.0f));
-        g.setColour(tokens::fgMuted.withAlpha(0.8f));
-        g.drawText(lines.meta, kTextLeft, 54, textWidth, 14, juce::Justification::centredLeft, true);
+        const auto chipFont = juce::Font(juce::FontOptions(10.0f, juce::Font::bold));
+        const int chipTextWidth = juce::GlyphArrangement::getStringWidthInt(chipFont, lines.kind);
+        const juce::Rectangle<float> chip(static_cast<float>(kTextLeft),
+                                          38.0f,
+                                          static_cast<float>(juce::jmin(chipTextWidth + kChipPadding * 2, textWidth)),
+                                          15.0f);
+        g.setColour(snapshot_.bypassed ? tokens::bgMuted : accent_.withAlpha(0.18f));
+        g.fillRoundedRectangle(chip, 3.0f);
+        g.setFont(chipFont);
+        g.setColour(snapshot_.bypassed ? tokens::fgSubtle : accent_);
+        g.drawText(lines.kind, chip.toNearestInt(), juce::Justification::centred, true);
+
+        // The second line: the player's note in a readable face, or the
+        // format and vendor in mono as before. A note is prose and should
+        // not be set in a monospace font.
+        if (lines.meta.isNotEmpty())
+        {
+            g.setFont(lines.metaIsNote ? juce::Font(juce::FontOptions(11.0f, juce::Font::italic)) : monoFont(10.0f));
+            g.setColour(lines.metaIsNote ? tokens::fgMuted : tokens::fgSubtle);
+            g.drawText(lines.meta, kTextLeft, 56, textWidth, 14, juce::Justification::centredLeft, true);
+        }
     }
 
     // Ports: audio in teal, audio out amber, MIDI cyan. Shared with the
@@ -333,11 +359,13 @@ void PluginCard::resized()
         button.setBounds(header.removeFromRight(width));
         header.removeFromRight(kButtonGap);
     };
-    place(removeButton_, 22);
-    place(editButton_, 26);
-    place(mappingsButton_, 22);
-    place(bypassButton_, 32);
-    nameArea_ = header.withTrimmedLeft(kGripWidth);
+    // All the same width now that they are icons. BYP needed 32 px and M
+    // needed 22, which is why the row never looked deliberate.
+    place(removeButton_, kIconButtonWidth);
+    place(editButton_, kIconButtonWidth);
+    place(mappingsButton_, kIconButtonWidth);
+    place(bypassButton_, kIconButtonWidth);
+    nameArea_ = header.withTrimmedLeft(kGripWidth).withTrimmedRight(kNameButtonGap);
 
     if (renameEditor_ != nullptr)
         renameEditor_->setBounds(nameArea_.expanded(2, 1));
@@ -366,8 +394,78 @@ bool PluginCard::hitTest(int x, int y)
 
 void PluginCard::mouseDown(const juce::MouseEvent& e)
 {
+    // Right-click is a menu, not the start of a drag.
+    if (e.mods.isPopupMenu())
+    {
+        didDrag_ = false;
+        showCardMenu();
+        return;
+    }
     didDrag_ = false;
     dragger_.startDraggingComponent(this, e);
+}
+
+void PluginCard::showCardMenu()
+{
+    // The note needs somewhere to be typed, and once there is a menu the
+    // things that were only reachable as a double-click on exactly the right
+    // few pixels of the title belong in it too (#124).
+    juce::PopupMenu menu;
+    menu.addItem("Rename...", [this] { beginRename(); });
+    menu.addItem(snapshot_.note.isEmpty() ? "Add a note..." : "Edit note...", [this] { promptForNote(); });
+    if (snapshot_.note.isNotEmpty())
+        menu.addItem("Clear note",
+                     [this]
+                     {
+                         if (callbacks_.onSetNote)
+                             callbacks_.onSetNote(snapshot_.id, {});
+                     });
+    menu.addSeparator();
+    menu.addItem("Bypass",
+                 true,
+                 snapshot_.bypassed,
+                 [this]
+                 {
+                     if (callbacks_.onBypassToggle)
+                         callbacks_.onBypassToggle(snapshot_.id);
+                 });
+    menu.addItem("Mappings...",
+                 [this]
+                 {
+                     if (callbacks_.onOpenMappings)
+                         callbacks_.onOpenMappings(snapshot_.id);
+                 });
+    menu.addSeparator();
+    menu.addItem("Remove",
+                 [this]
+                 {
+                     if (callbacks_.onRemove)
+                         callbacks_.onRemove(snapshot_.id);
+                 });
+    menu.showMenuAsync(juce::PopupMenu::Options{}.withMinimumWidth(Pb3LookAndFeel::kMenuMinimumWidth));
+}
+
+void PluginCard::promptForNote()
+{
+    auto* window = new juce::AlertWindow(
+        "Note", "A note to yourself about " + card::titleFor(snapshot_) + ".", juce::MessageBoxIconType::NoIcon);
+    window->addTextEditor("note", snapshot_.note, {});
+    window->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    window->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+
+    juce::Component::SafePointer<PluginCard> safeThis(this);
+    window->enterModalState(true,
+                            juce::ModalCallbackFunction::create(
+                                [safeThis, window](int result)
+                                {
+                                    const auto text = window->getTextEditorContents("note").trim();
+                                    delete window;
+                                    if (result != 1 || safeThis == nullptr)
+                                        return;
+                                    if (safeThis->callbacks_.onSetNote)
+                                        safeThis->callbacks_.onSetNote(safeThis->snapshot_.id, text);
+                                }),
+                            false);
 }
 
 void PluginCard::mouseDrag(const juce::MouseEvent& e)

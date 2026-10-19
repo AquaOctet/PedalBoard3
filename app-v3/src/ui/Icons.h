@@ -244,6 +244,79 @@ inline juce::Path volumeMutedIcon()
 // used the "<" and ">" characters, which sit on the text baseline rather than
 // on the control's centre line and are a different weight from every other
 // mark on the bar.
+// The plugin cards' four buttons (#124). They were the letters BYP, M, ED
+// and X, which is four abbreviations to learn on an object you are meant to
+// read at a glance from a stage, and "M" and "X" are not even abbreviations
+// of anything obvious.
+
+// lucide "power": a ring open at the top with a stem through the gap.
+inline juce::Path powerIcon()
+{
+    juce::Path p;
+    p.addCentredArc(12.0f,
+                    13.0f,
+                    7.0f,
+                    7.0f,
+                    0.0f,
+                    juce::MathConstants<float>::pi * 0.28f,
+                    juce::MathConstants<float>::pi * 1.72f,
+                    true);
+    p.startNewSubPath(12.0f, 3.0f);
+    p.lineTo(12.0f, 12.0f);
+    return scaledToIconBox(p);
+}
+
+// lucide "sliders-horizontal": three tracks, each with a handle, which is
+// what a mapping is -- a control somewhere moving a parameter here.
+inline juce::Path slidersIcon()
+{
+    juce::Path p;
+    const float rows[] = {6.5f, 12.0f, 17.5f};
+    const float handles[] = {15.0f, 9.0f, 17.0f};
+    for (int i = 0; i < 3; ++i)
+    {
+        p.startNewSubPath(3.0f, rows[i]);
+        p.lineTo(21.0f, rows[i]);
+        p.addEllipse(handles[i] - 2.0f, rows[i] - 2.0f, 4.0f, 4.0f);
+    }
+    return scaledToIconBox(p);
+}
+
+// lucide "sliders" with a frame: the plugin's own editor window.
+inline juce::Path editorWindowIcon()
+{
+    juce::Path p;
+    p.addRoundedRectangle(3.0f, 4.0f, 18.0f, 16.0f, 2.5f);
+    p.startNewSubPath(3.0f, 9.0f);
+    p.lineTo(21.0f, 9.0f);
+    return scaledToIconBox(p);
+}
+
+// lucide "x".
+inline juce::Path closeIcon()
+{
+    juce::Path p;
+    p.startNewSubPath(6.0f, 6.0f);
+    p.lineTo(18.0f, 18.0f);
+    p.startNewSubPath(18.0f, 6.0f);
+    p.lineTo(6.0f, 18.0f);
+    return scaledToIconBox(p);
+}
+
+// lucide "message-square-text": the node's own note (#124).
+inline juce::Path noteIcon()
+{
+    juce::Path p;
+    p.addRoundedRectangle(3.0f, 4.0f, 18.0f, 14.0f, 2.5f);
+    p.startNewSubPath(7.5f, 20.5f);
+    p.lineTo(7.5f, 18.0f);
+    p.startNewSubPath(7.0f, 9.0f);
+    p.lineTo(17.0f, 9.0f);
+    p.startNewSubPath(7.0f, 13.0f);
+    p.lineTo(13.0f, 13.0f);
+    return scaledToIconBox(p);
+}
+
 inline juce::Path chevronLeftIcon()
 {
     juce::Path p;

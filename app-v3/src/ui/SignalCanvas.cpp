@@ -220,6 +220,9 @@ std::unique_ptr<PluginCard> SignalCanvas::makeCard(const PluginCard::NodeSnapsho
         [this](NodeId id) { onCardDragging(id); },
         [this](NodeId id, juce::Point<int> p) { onCardMoved(id, p); },
         [this](NodeId id) { openMappings(id); },
+        // The note goes through the edit history too: it is a thing you
+        // type, so it is a thing you can mistype (#124).
+        [this](NodeId id, juce::String note) { ctx_.editHistory.setNodeNote(id, std::move(note)); },
         [this](NodeId id) { setSelectedNode(id); },
         // In-place rename goes through the edit history, so it can be undone (U8).
         [this](NodeId id, juce::String name) { ctx_.editHistory.setNodeCustomName(id, std::move(name)); },

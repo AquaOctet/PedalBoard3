@@ -712,3 +712,52 @@ TEST_CASE("Patch: <IDENTITY> reads only its allowlist, and a path is at most a h
     REQUIRE(node.desc.fileOrIdentifier.isEmpty());
     REQUIRE(node.fileHint == "/old/place/EQ.vst3");
 }
+
+TEST_CASE("Patch: a node's note round-trips, and absent means empty", "[session][patch][xml][note]")
+{
+    // The player's own note about a node (#124). Additive and
+    // back-compatible: written only when there is one, so a board saved by
+    // an older build, or a node nobody wrote about, reads back empty rather
+    // than as an attribute full of nothing.
+    session::Patch p;
+    auto a = makeNode(1, "Comp");
+    a.note = "second verse only - set by ear";
+    p.nodes.push_back(a);
+    p.nodes.push_back(makeNode(2, "Reverb")); // no note
+
+    auto xml = session::patchToXml(p);
+    REQUIRE(xml != nullptr);
+
+    auto rt = session::patchFromXml(*xml);
+    REQUIRE(rt != nullptr);
+    REQUIRE(rt->nodes.size() == 2);
+    REQUIRE(rt->nodes[0].note == "second verse only - set by ear");
+    REQUIRE(rt->nodes[1].note.isEmpty());
+
+    // The un-noted node carries no attribute at all, which is what keeps an
+    // older build's reader from seeing something it does not understand.
+    const auto* nodesEl = xml->getChildByName("NODES");
+    REQUIRE(nodesEl != nullptr);
+    const auto* second = nodesEl->getChildElement(1);
+    REQUIRE(second != nullptr);
+    REQUIRE_FALSE(second->hasAttribute("note"));
+}
+
+TEST_CASE("Patch: a note survives a round-trip through a board written without one", "[session][patch][xml][note]")
+{
+    // Forwards-compatibility the other way: a <NODE> from a build that never
+    // heard of notes must read back cleanly, and gain one without disturbing
+    // anything else on the element.
+    session::Patch p;
+    p.nodes.push_back(makeNode(1, "Comp"));
+
+    auto xml = session::patchToXml(p);
+    REQUIRE(xml != nullptr);
+    auto* nodeEl = xml->getChildByName("NODES")->getChildElement(0);
+    REQUIRE(nodeEl != nullptr);
+    nodeEl->removeAttribute("note"); // as an older writer would have left it
+
+    auto rt = session::patchFromXml(*xml);
+    REQUIRE(rt != nullptr);
+    REQUIRE(rt->nodes[0].note.isEmpty());
+}

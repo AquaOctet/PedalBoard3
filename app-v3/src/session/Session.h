@@ -89,6 +89,7 @@ public:
         juce::String name;
         bool bypassed{false};
         juce::String customName;
+        juce::String note;  // the player's own note (#124)
         int midiChannel{0}; // 0 = omni, 1..16 (PatchNode::midiChannel)
 
         // Whether this node has any use for the graph's MIDI pins (#123).
@@ -195,6 +196,9 @@ public:
     // edit. Same guards as setNodeBypass; a no-op for a node that's alive.
     void rearmNode(NodeId);
     void setNodeCustomName(NodeId, juce::String);
+    // The player's own note about the node (#124). Like the custom name it is
+    // patch data, not graph state, so it needs no rebuild.
+    void setNodeNote(NodeId, juce::String);
 
     // ---- Undo support (finish pass U7, EditHistory) ------------------------
 
