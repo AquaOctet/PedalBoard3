@@ -27,7 +27,11 @@ AudioEngine::Result AudioEngine::initialise(const juce::XmlElement* savedState)
 
     player_.setProcessor(runtime_.get());
     deviceManager_.addAudioCallback(&player_);
+    deviceManager_.addChangeListener(this);
     initialised_ = true;
+
+    if (deviceManager_.getCurrentAudioDevice() != nullptr)
+        lastGoodState_ = deviceManager_.createStateXml();
 
     // Retain the message so the UI can surface WHY audio is silent; the
     // returned Result is otherwise the only carrier and callers drop it.
@@ -44,6 +48,7 @@ void AudioEngine::shutdown()
     if (!initialised_)
         return;
 
+    deviceManager_.removeChangeListener(this);
     deviceManager_.removeAudioCallback(&player_);
     player_.setProcessor(nullptr);
     deviceManager_.closeAudioDevice();
@@ -53,6 +58,59 @@ void AudioEngine::shutdown()
 std::unique_ptr<juce::AudioProcessorGraph> AudioEngine::loadGraph(std::unique_ptr<juce::AudioProcessorGraph> next)
 {
     return runtime_->swapPreparedGraph(std::move(next));
+}
+
+void AudioEngine::changeListenerCallback(juce::ChangeBroadcaster*)
+{
+    // AudioDeviceManager broadcasts for a setup change and for a device-list
+    // change alike, so this runs often and has to be cheap and idempotent.
+    if (reopening_)
+        return;
+
+    if (deviceManager_.getCurrentAudioDevice() != nullptr)
+    {
+        // Working: remember this, it is what we put back later.
+        lastGoodState_ = deviceManager_.createStateXml();
+        return;
+    }
+
+    // No device. If we ever had one, this is an unplug -- or the replug
+    // after it, which is the case JUCE does not handle.
+    if (lastGoodState_ != nullptr)
+        reopenRememberedDevice();
+}
+
+bool AudioEngine::reopenRememberedDevice()
+{
+    if (!initialised_ || lastGoodState_ == nullptr)
+        return deviceManager_.getCurrentAudioDevice() != nullptr;
+
+    if (deviceManager_.getCurrentAudioDevice() != nullptr)
+        return true;
+
+    // setAudioDeviceSetup / initialise broadcast, and we are inside a
+    // broadcast: without this the failure path would re-enter and spin.
+    const juce::ScopedValueSetter<bool> busy(reopening_, true);
+
+    // selectDefaultDeviceOnFailure stays FALSE here on purpose. This runs on
+    // every device-list change while nothing is open -- including the
+    // unplug itself -- and falling back to "some other device" would quietly
+    // move a player's output to the laptop speakers mid-set. Either the
+    // device they chose is back or we stay silent and say so.
+    const auto err = deviceManager_.initialise(2, 2, lastGoodState_.get(), /*selectDefaultOnFailure*/ false);
+
+    const bool open = deviceManager_.getCurrentAudioDevice() != nullptr;
+    if (open)
+    {
+        lastInitError_.clear();
+        lastGoodState_ = deviceManager_.createStateXml();
+        deviceRecoveredBroadcaster_.sendChangeMessage();
+    }
+    else if (err.isNotEmpty())
+    {
+        lastInitError_ = err;
+    }
+    return open;
 }
 
 void AudioEngine::setMasterMuted(bool shouldMute)

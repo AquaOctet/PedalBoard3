@@ -729,6 +729,22 @@ void SignalCanvas::mouseDown(const juce::MouseEvent& e)
     setSelectedNode(std::nullopt);
     selectedCable_ = cableAt(p);
     repaint();
+
+    // Right-click on bare canvas opens Add Plugin, placed where you clicked
+    // (#120). Only on bare canvas: a right-click that landed on a cable has
+    // just selected it, and a menu over the top of that would be answering a
+    // question nobody asked.
+    if (e.mods.isPopupMenu() && !selectedCable_.has_value() && onCanvasContextMenu)
+        onCanvasContextMenu(modelPositionFor(p));
+}
+
+juce::Point<float> SignalCanvas::modelPositionFor(juce::Point<int> canvasPoint) const
+{
+    // Same conversion the drag-and-drop paths make: undo the scroll offset,
+    // then centre the card on the pointer rather than hanging it off the
+    // bottom right of the cursor.
+    return (canvasPoint - viewOffset_.value_or(juce::Point<int>{}) - juce::Point<int>(kCardWidth / 2, kCardHeight / 2))
+        .toFloat();
 }
 
 void SignalCanvas::mouseDrag(const juce::MouseEvent& e)

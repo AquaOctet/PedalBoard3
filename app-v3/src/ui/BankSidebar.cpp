@@ -1,4 +1,5 @@
 #include "BankSidebar.h"
+#include "ChromeMetrics.h"
 
 #include "Pb3LookAndFeel.h"
 #include "session/FeatureGate.h"
@@ -100,7 +101,9 @@ void BankSidebar::paint(juce::Graphics& g)
     const auto header = area.removeFromTop(kHeaderHeight);
     g.setColour(tokens::fgMuted);
     g.setFont(juce::Font(juce::FontOptions(12.0f).withStyle("Bold")));
-    g.drawText("BANK", header.withTrimmedLeft(28), juce::Justification::centredLeft); // after the toggle
+    // After the toggle, which now takes a 36 px cell so its icon lines up
+    // with the top bar's (#120); the label follows the cell, not the icon.
+    g.drawText("BANK", header.withTrimmedLeft(chrome::kIconButtonSize + 4), juce::Justification::centredLeft);
 
     const auto nameRow = area.removeFromTop(kBoardNameHeight);
     const int patches = ctx_.bankDocument.size();
@@ -119,7 +122,11 @@ void BankSidebar::resized()
 {
     auto area = getLocalBounds();
     auto header = area.removeFromTop(kHeaderHeight).reduced(kPad, 6);
-    collapseButton_.setBounds(header.removeFromLeft(18).withSizeKeepingCentre(18, 18)); // under File
+    // Under the top bar's File button, and on the same vertical line as
+    // it (#120): a 36 px cell with the icon centred, exactly as the bar
+    // lays its own icon buttons out.
+    collapseButton_.setBounds(
+        header.removeFromLeft(chrome::kIconButtonSize).withSizeKeepingCentre(chrome::kIconSize, chrome::kIconSize));
     area.removeFromTop(kBoardNameHeight);
 
     auto footer = area.removeFromBottom(kFooterHeight).reduced(kPad, 10);

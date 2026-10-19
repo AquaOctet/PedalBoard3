@@ -102,6 +102,10 @@ public:
         mappingsPanel_.onOpenDialog = [this](session::NodeId id) { canvas_.openMappings(id); };
         mappingsPanel_.onSelectNode = [this](session::NodeId id) { canvas_.selectNode(id); };
         canvas_.onSelectionChanged = [this](std::optional<session::NodeId> id) { mappingsPanel_.setSelectedNode(id); };
+        // Right-click the board to add a plugin, where you clicked (#120).
+        // This replaced the top bar's [+], which could only ever append to
+        // the end of the chain.
+        canvas_.onCanvasContextMenu = [this](juce::Point<float> at) { transportBar_.openAddPluginMenuAt(at); };
         transportBar_.onToggleMappingsPanel = [this] { toggleMappingsPanel(); };
         transportBar_.isMappingsPanelShown = [this] { return mappingsOpen_; };
 
@@ -126,6 +130,7 @@ public:
     ~RootComponent() override
     {
         canvas_.onSelectionChanged = nullptr; // the panel is destroyed first
+        canvas_.onCanvasContextMenu = nullptr;
         viewport_.removeMouseListener(this);
     }
 

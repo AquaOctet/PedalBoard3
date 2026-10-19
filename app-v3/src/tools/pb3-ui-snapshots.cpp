@@ -447,8 +447,6 @@ int main(int argc, char** argv)
         out.addMenu("menu-plugins", &pluginsMenu);
         const auto* addPlugin = findSubMenu(pluginsMenu, "Add Plugin");
         out.addMenu("menu-add-plugin", addPlugin, 1);
-        const auto patchMenu = bar.makePatchMenu();
-        out.addMenu("menu-patch", &patchMenu, 2);
         ui::BankSidebar sidebar(rig.context);
         const auto rowMenu = sidebar.makeRowMenu(2);
         out.addMenu("menu-bank-row", &rowMenu);
@@ -604,16 +602,14 @@ int main(int argc, char** argv)
                 {
                     root.setSize(width, 800);
                     const auto shown = [&](const juce::Component& c) { return c.isVisible() ? "y" : "-"; };
-                    std::printf(
-                        "TOP BAR %5d  gap %4d  name %4d  badge %3d  latency %s  cpu/mem %s  in/out %s  midi/osc %s\n",
-                        width,
-                        topBar.barSlack(),
-                        topBar.patchStripSlack(),
-                        topBar.deviceBadgeWidth(),
-                        shown(topBar.latencyReadoutForTest()),
-                        shown(topBar.systemMetersForTest()),
-                        shown(topBar.ioMonitorForTest()),
-                        shown(topBar.activityLightsForTest()));
+                    std::printf("TOP BAR %5d  gap %4d  badge %3d  latency %s  cpu/mem %s  in/out %s  midi/osc %s\n",
+                                width,
+                                topBar.barSlack(),
+                                topBar.deviceBadgeWidth(),
+                                shown(topBar.latencyReadoutForTest()),
+                                shown(topBar.systemMetersForTest()),
+                                shown(topBar.ioMonitorForTest()),
+                                shown(topBar.activityLightsForTest()));
                 }
                 root.setSize(1280, 800);
             }

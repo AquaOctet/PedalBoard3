@@ -1,4 +1,5 @@
 #include "PluginBrowser.h"
+#include "ChromeMetrics.h"
 #include "engine/processors/LooperProcessor.h"
 #include "engine/processors/MetronomeProcessor.h"
 #include "session/FeatureGate.h"
@@ -253,7 +254,11 @@ void PluginBrowser::resized()
 {
     auto area = getLocalBounds();
     auto header = area.removeFromTop(kHeaderHeight).reduced(kPad, 6);
-    toggle_.setBounds(header.removeFromRight(18).withSizeKeepingCentre(18, 18)); // the outer top corner
+    // The outer top corner, on the same vertical line as the top bar's
+    // icon buttons (#120): the master mute sits directly above this one
+    // and the two were nine pixels apart.
+    toggle_.setBounds(
+        header.removeFromRight(chrome::kIconButtonSize).withSizeKeepingCentre(chrome::kIconSize, chrome::kIconSize));
     area.removeFromBottom(kFooterHeight);
 
     auto body = area.reduced(kPad, 0);

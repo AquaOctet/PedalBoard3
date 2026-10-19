@@ -40,7 +40,6 @@ namespace
 constexpr int kBarPadding = 12;
 constexpr int kButtonGap = 6;
 constexpr int kMenuButtonWidth = 36; // the square folder / gear / plug
-constexpr int kAddButtonWidth = 36;  // the square [+]
 constexpr int kActivityWidth = 104;  // MIDI and OSC lights
 constexpr int kSystemMetersWidth = 168;
 constexpr int kMuteButtonWidth = 36;
@@ -134,7 +133,7 @@ void showMenuBelow(juce::PopupMenu menu, juce::Button& button, std::function<voi
 TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas, FileActions& files)
     : ctx_(ctx), canvas_(canvas), files_(files), deviceBadge_(ctx), activityLights_(ctx.controlHub),
       ioMonitor_(ctx.audioEngine), latencyReadout_(ctx.audioEngine.getDeviceManager()),
-      systemMeters_(ctx.audioEngine.getDeviceManager()), transportControls_(ctx), patchStrip_(ctx)
+      systemMeters_(ctx.audioEngine.getDeviceManager()), transportControls_(ctx)
 {
     setOpaque(true);
 
@@ -144,7 +143,6 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas, FileActions& f
     ctx_.bankDocument.beforeSwap = [this] { canvas_.closeAllEditors(); };
 
     fileButton_.onClick = [this] { openFileMenu(); };
-    addPluginButton_.onClick = [this] { openAddPluginMenu(); };
     settingsButton_.onClick = [this] { showMenuBelow(makeSettingsMenu(), settingsButton_); };
     pluginsButton_.onClick = [this] { openPluginsMenu(); };
 
@@ -154,7 +152,6 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas, FileActions& f
     testTone_.addListener(this);
 
     addAndMakeVisible(fileButton_);
-    addAndMakeVisible(addPluginButton_);
     addAndMakeVisible(deviceBadge_);
     deviceBadge_.onClick = [this] { showAudioDevicesWindow(ctx_, testTone_); };
     deviceBadge_.onLayoutChanged = [this]
@@ -184,11 +181,6 @@ TransportBar::TransportBar(AppContext& ctx, SignalCanvas& canvas, FileActions& f
     addAndMakeVisible(settingsButton_);
     addAndMakeVisible(pluginsButton_);
     pluginsButton_.setTooltip("Plugins: add a plugin, the plugin list, rescan");
-    addPluginButton_.setTooltip("Add plugin");
-
-    patchStrip_.onOpenMenu = [this] { openPatchMenu(); };
-    patchStrip_.onLayoutChanged = [this] { resized(); };
-    addAndMakeVisible(patchStrip_);
 
     updateAddPluginEnabled();
 
@@ -279,13 +271,10 @@ int TransportBar::naturalWidth() const
     int w = kBarPadding * 2;
 
     // Left cluster, always present.
-    w += kMenuButtonWidth * 3 + kAddButtonWidth + kButtonGap * 3;
+    w += kMenuButtonWidth * 3 + kButtonGap * 2;
     w += kDividerGap * 2; // folder-group | badge
 
     w += deviceBadge_.widthAtFold(0);
-    w += kDividerGap * 2; // badge | patch strip
-
-    w += PatchStrip::kMinimumWidth;
 
     if (ctx_.features.isAvailable(session::Feature::Tempo))
         w += kDividerGap * 2 + transportControls_.widthAtFold(0);
@@ -434,8 +423,6 @@ void TransportBar::resized()
     settingsButton_.setBounds(bounds.removeFromLeft(kMenuButtonWidth));
     bounds.removeFromLeft(kButtonGap);
     pluginsButton_.setBounds(bounds.removeFromLeft(kMenuButtonWidth));
-    bounds.removeFromLeft(kButtonGap);
-    addPluginButton_.setBounds(bounds.removeFromLeft(kAddButtonWidth));
     divideLeft();
 
     // The device badge, left of the patch strip.
@@ -444,94 +431,12 @@ void TransportBar::resized()
     {
         deviceBadge_.setFoldLevel(badgeFold);
         deviceBadge_.setBounds(bounds.removeFromLeft(deviceBadge_.preferredWidth()));
-        divideLeft();
     }
 
-    // Whatever is left goes to the patch strip, up to what it asks for. This
-    // is where the slack lives, and it is why the bar can be dragged in a
-    // long way before any of the folds above are reached.
-    patchStrip_.setBounds(bounds.removeFromLeft(juce::jmin(patchStrip_.preferredWidth(), bounds.getWidth())));
-
-    // Whatever is still unclaimed after the strip has taken what it wants.
-    // This is the gap the complaint was about -- the empty run between the
-    // patch strip and the transport pill -- and it is recorded rather than
-    // inferred so the snapshot tool can report it as a number.
+    // Whatever is left over. The fold ladder is required to spend this before
+    // it takes anything away, and it is recorded rather than inferred so the
+    // snapshot tool can report it as a number.
     slack_ = bounds.getWidth();
-}
-
-juce::PopupMenu TransportBar::makePatchMenu()
-{
-    const auto& bank = ctx_.bankDocument.bank();
-
-    juce::PopupMenu menu;
-    menu.addItem(1, "New Patch");
-    menu.addItem(2, "Duplicate Patch");
-    menu.addItem(3, "Rename Patch...");
-    menu.addItem(4, "Remove Patch...");
-    menu.addSectionHeader("Go to Patch");
-    for (int i = 0; i < bank.size(); ++i)
-        menu.addItem(kGoToPatchBase + i,
-                     juce::String(i + 1) + ".  " + bank.patches[static_cast<size_t>(i)].name,
-                     true,
-                     i == bank.activeIndex);
-
-    // The board's feature switches (optional-features U3, KD4): each feature
-    // that's on in Settings, ticked while it's on for this board.
-    menu.addSectionHeader("This board uses");
-    bool anyEnabled = false;
-    for (const auto feature : session::kAllFeatures)
-        if (ctx_.features.isEnabled(feature))
-        {
-            anyEnabled = true;
-            menu.addItem(kBoardFeatureBase + static_cast<int>(session::indexOf(feature)),
-                         session::featureName(feature),
-                         true,
-                         ctx_.features.isOnForBoard(feature));
-        }
-    if (!anyEnabled)
-        menu.addItem(juce::PopupMenu::Item("Features you turn on in Settings appear here").setEnabled(false));
-    return menu;
-}
-
-void TransportBar::openPatchMenu()
-{
-    showMenuBelow(makePatchMenu(),
-                  patchStrip_,
-                  [this](int choice)
-                  {
-                      auto& doc = ctx_.bankDocument;
-                      if (choice == 1)
-                      {
-                          session::Patch fresh;
-                          fresh.name = "Patch " + juce::String(doc.size() + 1);
-                          if (ctx_.features.isAvailable(session::Feature::Tempo))
-                              ctx_.preferences.applyNewPatchDefaults(fresh);
-                          doc.select(doc.addPatch(std::move(fresh)));
-                      }
-                      else if (choice == 2)
-                      {
-                          doc.select(doc.duplicate(doc.activeIndex()));
-                      }
-                      else if (choice == 3)
-                      {
-                          promptRenamePatch();
-                      }
-                      else if (choice == 4)
-                      {
-                          confirmRemovePatch();
-                      }
-                      else if (choice >= kBoardFeatureBase &&
-                               choice < kBoardFeatureBase + static_cast<int>(session::kFeatureCount))
-                      {
-                          const auto feature =
-                              session::kAllFeatures[static_cast<std::size_t>(choice - kBoardFeatureBase)];
-                          ctx_.features.setOnForBoard(feature, !ctx_.features.isOnForBoard(feature));
-                      }
-                      else if (choice >= kGoToPatchBase)
-                      {
-                          doc.select(choice - kGoToPatchBase);
-                      }
-                  });
 }
 
 void TransportBar::promptRenamePatch()
@@ -609,7 +514,10 @@ juce::PopupMenu TransportBar::makePluginsMenu()
 
 void TransportBar::updateAddPluginEnabled()
 {
-    addPluginButton_.setEnabled(canAddPlugin());
+    // Nothing on the bar is gated on this any more -- the [+] is gone and
+    // the Plugins menu is rebuilt each time it opens, so it reads
+    // canAddPlugin() itself. Kept as the single place that decides.
+    (void)canAddPlugin();
 }
 
 bool TransportBar::canAddPlugin() const
@@ -621,7 +529,7 @@ bool TransportBar::canAddPlugin() const
     return ctx_.session.getState() == session::Session::State::Idle;
 }
 
-juce::PopupMenu TransportBar::makeAddPluginMenu()
+juce::PopupMenu TransportBar::makeAddPluginMenu(std::optional<juce::Point<float>> position)
 {
     // Effects-only filter: v3.0 ships as a live-performance effect rack;
     // instruments are sidestepped per the master-plan scope and to dodge
@@ -648,13 +556,13 @@ juce::PopupMenu TransportBar::makeAddPluginMenu()
                          .setEnabled(false));
     }
 
-    const auto addEntries = [this, &menu](const std::vector<browser::Entry>& entries)
+    const auto addEntries = [this, &menu, position](const std::vector<browser::Entry>& entries)
     {
         for (const auto& entry : entries)
         {
             juce::PopupMenu::Item item(entry.name);
             item.shortcutKeyDescription = browser::formatTag(entry);
-            item.setAction([this, id = entry.id] { addBrowserEntry(ctx_, id, std::nullopt); });
+            item.setAction([this, id = entry.id, position] { addBrowserEntry(ctx_, id, position); });
             menu.addItem(std::move(item));
         }
     };
@@ -667,9 +575,15 @@ juce::PopupMenu TransportBar::makeAddPluginMenu()
     return menu;
 }
 
-void TransportBar::openAddPluginMenu()
+void TransportBar::openAddPluginMenuAt(juce::Point<float> position)
 {
-    showMenuBelow(makeAddPluginMenu(), addPluginButton_);
+    if (!canAddPlugin())
+        return;
+
+    // At the mouse, not under a button: this one is opened by right-clicking
+    // the board, and the card is going to land where the click was.
+    makeAddPluginMenu(position).showMenuAsync(
+        juce::PopupMenu::Options{}.withMinimumWidth(Pb3LookAndFeel::kMenuMinimumWidth));
 }
 
 void TransportBar::openPluginList()
@@ -1022,6 +936,28 @@ juce::PopupMenu TransportBar::makeSettingsMenu()
                      if (onOpenAppMappings)
                          onOpenAppMappings();
                  });
+    // The board's feature switches (optional-features U3, KD4): each feature
+    // that is on in Settings, ticked while it is on for THIS board.
+    //
+    // They lived in the patch strip's menu until #120 removed the strip, and
+    // Settings is where they should always have been -- the same menu turns
+    // the features on app-wide, so turning one on for the board it is for is
+    // two items apart rather than in a different control entirely.
+    menu.addSectionHeader("This board uses");
+    bool anyEnabled = false;
+    for (const auto feature : session::kAllFeatures)
+        if (ctx_.features.isEnabled(feature))
+        {
+            anyEnabled = true;
+            const auto f = feature;
+            menu.addItem(session::featureName(f),
+                         true,
+                         ctx_.features.isOnForBoard(f),
+                         [this, f] { ctx_.features.setOnForBoard(f, !ctx_.features.isOnForBoard(f)); });
+        }
+    if (!anyEnabled)
+        menu.addItem(juce::PopupMenu::Item("Features you turn on above appear here").setEnabled(false));
+
     menu.addSeparator();
     menu.addItem("Test Tone", true, toneActive_, [this] { toggleTestTone(); });
     return menu;

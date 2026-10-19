@@ -57,6 +57,7 @@ add_library(pb3_app_core STATIC
     ui/BodyLayout.h
     ui/BrowserModel.h
     ui/CanvasLayout.h
+    ui/ChromeMetrics.h
     ui/CardText.h
     ui/ColourScheme.h
     ui/SystemMeters.cpp
@@ -70,8 +71,6 @@ add_library(pb3_app_core STATIC
     ui/IoMonitor.h
     ui/MeterRow.h
     ui/LatencyReadout.h
-    ui/PatchStrip.cpp
-    ui/PatchStrip.h
     ui/Alert.cpp
     ui/Alert.h
     ui/AudioSettingsModel.h
@@ -175,7 +174,6 @@ pb3_apply_strict_warnings(pb3_app_core
     ui/IoMonitor.cpp
     ui/MeterRow.cpp
     ui/LatencyReadout.cpp
-    ui/PatchStrip.cpp
     ui/Alert.cpp
     ui/AudioSettingsPanel.cpp
     ui/DialogFrame.cpp

@@ -6,13 +6,13 @@
 #include "IconButton.h"
 #include "IoMonitor.h"
 #include "LatencyReadout.h"
-#include "PatchStrip.h"
 #include "SystemMeters.h"
 #include "TransportControls.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace pedalboard3::ui
@@ -31,15 +31,17 @@ class SignalCanvas;
 //           Patch Bank, App Mappings, About; the file actions are
 //           ui::FileActions. [Gear] is Audio Devices..., MIDI Settings...,
 //           OSC Settings... and the Test Tone switch (UI refresh U10).
-//           [Plug] is Add Plugin, Plugin List..., Rescan. Then [+], which
-//           opens the Add Plugin menu directly: KnownPluginList effects and
-//           built-in nodes, added through EditHistory (AC-UI-N; U1, #32).
-//   centre: the patch strip (roadmap M3 U5; one control since #109) —
-//           `‹ | 2/6 Verse Clean ▾ | ›`. The chevrons step the bank; the
-//           name opens the bank menu (new, duplicate, rename, remove, go to
-//           a patch) and carries a caret so you can tell. Every switch goes
-//           through BankDocument, which closes open editors first via
-//           beforeSwap (D1b / AC-UI-P).
+//           [Plug] is Add Plugin, Plugin List..., Rescan. There was a [+]
+//           beside it opening the same Add Plugin menu — two buttons for one
+//           action, neither of them where you were looking. Right-click the
+//           board instead (#120): the plugin lands where you clicked, which
+//           the bar button could never do.
+//   centre: nothing. The patch strip lived here until #120 took it out: the
+//           bank sidebar names the playing patch, lists the others and
+//           switches between them, and a second copy of that on the bar was
+//           spending the window's widest real estate on a duplicate. The
+//           menu itself is still built here (makePatchMenu) for the macOS
+//           menu bar and the bank sidebar's own rows.
 //   then:   the transport pill (M6 U4, optional-features U4), only while
 //           Tempo / BPM is available: Play / Pause, Return to Zero, the tempo
 //           (its popover has Tap and the time signature), the position and
@@ -88,10 +90,9 @@ public:
     // this replaced was "it collapses things while there is white space
     // sitting there", so the evidence has to be a measurement of the space
     // and of what is still showing, not a picture at one width.
-    // The unclaimed run between the patch strip and whatever is right of
+    // The unclaimed run between the left cluster and whatever is right of
     // it: the "white space" the fold ladder is required to spend first.
     int barSlack() const noexcept { return slack_; }
-    int patchStripSlack() const { return patchStrip_.getWidth() - PatchStrip::kMinimumWidth; }
     int deviceBadgeWidth() const { return deviceBadge_.isVisible() ? deviceBadge_.getWidth() : 0; }
     const juce::Component& latencyReadoutForTest() const { return latencyReadout_; }
     const juce::Component& systemMetersForTest() const { return systemMeters_; }
@@ -120,6 +121,10 @@ public:
     // sidebar (UI refresh U4) uses them too.
     void promptRenamePatch();
     void confirmRemovePatch();
+
+    // Open the Add Plugin menu at `position` (model coordinates), for the
+    // canvas's right-click (#120).
+    void openAddPluginMenuAt(juce::Point<float> position);
 
     // Switch the Test Tone (Settings > Test Tone, and the Audio Devices
     // dialog's toggle). Public so the UI snapshot tool can drive the real
@@ -150,17 +155,14 @@ public:
     juce::PopupMenu makeFileMenu(juce::ApplicationCommandManager* menuBarCommands = nullptr);
     juce::PopupMenu makeSettingsMenu();
     juce::PopupMenu makePluginsMenu();
-    // The patch strip's menu: new, duplicate, rename, remove, go to a patch,
-    // and the board's feature switches.
-    juce::PopupMenu makePatchMenu();
 
 private:
     void changeListenerCallback(juce::ChangeBroadcaster*) override;
 
-    void openAddPluginMenu();
-    // The Add Plugin menu, shared by [+] and Plugins > Add Plugin; each item
-    // carries its own action.
-    juce::PopupMenu makeAddPluginMenu();
+    // The Add Plugin menu, shared by Plugins > Add Plugin and the canvas's
+    // right-click; each item carries its own action. `position` is where the
+    // card goes, or nothing for the end of the chain.
+    juce::PopupMenu makeAddPluginMenu(std::optional<juce::Point<float>> position = std::nullopt);
     bool canAddPlugin() const; // Session Idle
     void openFileMenu();
     void openPluginList();
@@ -172,9 +174,6 @@ private:
     void refreshMuteButton();
     void openPluginsMenu();
 
-    // Patch strip (M3 U5, reworked for #109).
-    void openPatchMenu();
-
     AppContext& ctx_;
     SignalCanvas& canvas_;
     FileActions& files_;
@@ -182,7 +181,6 @@ private:
     // The three menus are icons, not words (#90). Their tooltips carry the
     // name, and on macOS the menu bar still spells them out.
     IconButton fileButton_{folderIcon(), "File"};
-    juce::TextButton addPluginButton_{"+"};
     IconButton settingsButton_{gearIcon(), "Settings"};
     IconButton pluginsButton_{plugIcon(), "Plugins"};
     DeviceBadge deviceBadge_;
@@ -207,8 +205,6 @@ private:
     // board is untouched, so the bar just forwards the switch.
     juce::Value testTone_{false};
     bool toneActive_{false}; // what is actually playing
-
-    PatchStrip patchStrip_;
 
     // The unclaimed width left in the middle after the last resized().
     int slack_{0};
