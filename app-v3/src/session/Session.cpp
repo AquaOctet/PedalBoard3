@@ -92,6 +92,12 @@ public:
                     addReq = std::move(session_.addQueue_.front());
                     session_.addQueue_.pop_front();
                 }
+
+                // Taking a request off the queue does not make it done, and
+                // until this counter existed nothing said so. See the note
+                // on outstanding_ in Session.h.
+                if (loadReq.has_value() || addReq.has_value())
+                    ++session_.outstanding_;
             }
 
             const auto cfg = deriveConfig(session_.engine_);
@@ -337,9 +343,8 @@ void Session::removeNode(NodeId id)
         return;
 
     // A live-graph mutation must not run while a rebuild is in flight. During
-    // the async window after clearPatch()/replacePatch() — e.g. a Test Tone
-    // toggle, which frees the previous chain graph out-of-band — the cached
-    // liveGraph_ and the Node* in nodes_ can already be dangling. replacePatch
+    // async window after clearPatch()/replacePatch() the cached liveGraph_
+    // and the Node* in nodes_ can already be dangling. replacePatch
     // publishes State::Building synchronously before the old graph is freed, so
     // gating on Idle keeps removeNode off the freed memory (use-after-free).
     // Once the rebuild lands, Session is Idle again and nodes_/liveGraph_ are
@@ -351,7 +356,7 @@ void Session::removeNode(NodeId id)
 
     // Identity guard (crash-hunt #7): nodes_' Node* live inside the graph
     // Session last committed. If anything outside Session swapped another
-    // graph in (Test Tone-style loadGraph), those pointers dangle — refuse
+    // graph in via AudioEngine::loadGraph, those pointers dangle — refuse
     // the mutation instead of dereferencing freed memory. The next commit
     // re-syncs liveGraph_/nodes_. (When liveGraph_ is null there is nothing
     // to dereference, so the guard is skipped.)
@@ -413,8 +418,8 @@ void Session::moveNode(NodeId id, int newIndex)
 void Session::setNodeBypass(NodeId id, bool shouldBypass)
 {
     // Same dangling-graph guard as removeNode: the cached BypassableInstance*
-    // lives inside the live graph's node, which can be freed during a rebuild
-    // (Test Tone toggle). Only touch it while Idle.
+    // lives inside the live graph's node, which can be freed during a
+    // rebuild. Only touch it while Idle.
     if (getState() != State::Idle)
         return;
 
@@ -478,6 +483,16 @@ void Session::setNodeCustomName(NodeId id, juce::String name)
     if (auto* pn = activePatch_.findNode(id))
     {
         pn->customName = std::move(name);
+        bumpVersionAndNotify();
+    }
+}
+
+void Session::setNodeNote(NodeId id, juce::String note)
+{
+    std::lock_guard<std::mutex> lk(statusMutex_);
+    if (auto* pn = activePatch_.findNode(id))
+    {
+        pn->note = std::move(note);
         bumpVersionAndNotify();
     }
 }
@@ -726,7 +741,7 @@ std::optional<PatchNode> Session::getNodeWithState(NodeId id) const
         return node; // a missing plugin: the bytes it loaded with (M5 U3)
 
     // The cached pointers belong to the graph Session committed; after an
-    // out-of-band swap (Test Tone) they dangle, so the node comes back without
+    // out-of-band swap they dangle, so the node comes back without
     // live state (crash-hunt #7).
     auto it = nodes_.find(id);
     if (it == nodes_.end() || it->second.hosted == nullptr || currentRuntimeGraph() != liveGraph_)
@@ -798,10 +813,20 @@ std::vector<Session::NodeSnapshot> Session::getNodeSnapshots() const
         }
         s.bypassed = n.bypass;
         s.customName = n.customName;
+        s.note = n.note;
         s.midiChannel = n.midiChannel;
         s.missingReason = n.missingReason;
         if (graphCurrent)
         {
+            // Whether the MIDI pins mean anything here (#123). Asked of the
+            // processor rather than inferred from the description, because
+            // only the processor knows.
+            if (const auto midiIt = nodes_.find(n.id); midiIt != nodes_.end() && midiIt->second.hosted != nullptr)
+            {
+                s.acceptsMidi = midiIt->second.hosted->acceptsMidi();
+                s.producesMidi = midiIt->second.hosted->producesMidi();
+            }
+
             // A plugin that died while playing (M5 U5).
             const auto it = nodes_.find(n.id);
             if (it != nodes_.end() && it->second.bypass != nullptr && it->second.bypass->isDead())
@@ -842,10 +867,22 @@ juce::AudioProcessor* Session::getHostedPlugin(NodeId id) const noexcept
     auto it = nodes_.find(id);
     if (it == nodes_.end())
         return nullptr;
-    // A crashed plugin is never called again (M5 U5): no editor, meter or
-    // mapping reaches it. (The wrapper is only read while its graph is live.)
+    // Nothing while the runtime is driving a graph that is not ours
+    // (#111): `hosted` then points into a graph that has already been
+    // destroyed, and this is the one accessor that handed it out
+    // anyway. Every sibling guard in this file refuses on the same test --
+    // removeNode, setNodeBypass, rearmNode, getNodeWithState,
+    // getNodeSnapshots, applyConnectionsToLiveGraph -- and the callers here
+    // are the worst ones to get it wrong: the canvas VU timer and the
+    // ControlHub resolver dereference it on every tick and every mapped
+    // MIDI message.
     const bool graphCurrent = liveGraph_ != nullptr && currentRuntimeGraph() == liveGraph_;
-    if (graphCurrent && it->second.bypass != nullptr && it->second.bypass->hasCrashed())
+    if (!graphCurrent)
+        return nullptr;
+
+    // A crashed plugin is never called again (M5 U5): no editor, meter or
+    // mapping reaches it.
+    if (it->second.bypass != nullptr && it->second.bypass->hasCrashed())
         return nullptr;
     return it->second.hosted;
 }
@@ -910,7 +947,12 @@ void Session::rearmWorkerIfQueueNonEmpty()
     bool more = false;
     {
         std::lock_guard<std::mutex> lk(queueMutex_);
-        more = pendingLoadPatch_.has_value() || !addQueue_.empty();
+        // `outstanding_` is the half this used to miss. A request the worker
+        // has already taken is in neither queue, so a Session that had just
+        // committed one job would publish Idle while the worker was still
+        // building the next — and Idle is what the UI reads as "your change
+        // landed, go ahead". See Session.h.
+        more = pendingLoadPatch_.has_value() || !addQueue_.empty() || outstanding_ > 0;
     }
     if (more)
     {
@@ -1095,7 +1137,7 @@ void Session::applyConnectionsToLiveGraph()
     // below live inside the graph Session last committed. Adopting whatever
     // graph the runtime currently holds (the old refresh behaviour) would
     // dereference those pointers against a foreign graph after an
-    // out-of-band swap (Test Tone). If the runtime's graph isn't ours,
+    // out-of-band swap. If the runtime's graph isn't ours,
     // leave it alone — the next commit re-syncs.
     auto* current = currentRuntimeGraph();
     if (current == nullptr)
@@ -1261,10 +1303,9 @@ void Session::commitAddPlugin(AddPluginResult&& result)
 
         // Refresh liveGraph_ from the runtime's authoritative atomic
         // pointer. The cached field can become stale when anything
-        // outside Session calls AudioEngine::loadGraph — e.g. the
-        // Test Tone diagnostic in TransportBar swaps a non-chain graph
-        // in directly, then `loadGraph(nullptr)` on toggle-off clears
-        // it. Either path leaves liveGraph_ pointing at freed memory.
+        // outside Session calls AudioEngine::loadGraph with a graph
+        // Session did not build, which leaves liveGraph_ pointing at
+        // freed memory once that graph goes.
         // Adopting the runtime's graph is only safe while Session holds
         // no committed nodes — with nodes present, their graphNode
         // pointers belong to the old graph and applyConnections below
@@ -1371,8 +1412,8 @@ void Session::listenTo(const PreparedGraph::NodeRefs& refs)
 
 void Session::stopListeningToLiveNodes()
 {
-    // If a graph was swapped in outside Session (Test Tone), the processors in
-    // nodes_ were destroyed with the old graph.
+    // If a graph was swapped in outside Session, the processors in nodes_
+    // were destroyed with the old graph.
     if (liveGraph_ == nullptr || currentRuntimeGraph() != liveGraph_)
         return;
     for (const auto& entry : nodes_)
@@ -1414,6 +1455,15 @@ void Session::onBuildResult()
 
         if (std::holds_alternative<std::monostate>(result))
             continue;
+
+        // One request retired, whether or not it is about to be committed:
+        // the discard below is an outcome too, and leaving it counted would
+        // pin Session in Building for good.
+        {
+            std::lock_guard<std::mutex> lk(queueMutex_);
+            if (outstanding_ > 0)
+                --outstanding_;
+        }
 
         // Coalescing check — if a newer LoadPatch is pending, drop this
         // result (RAII destroys any prepared instance/graph here).

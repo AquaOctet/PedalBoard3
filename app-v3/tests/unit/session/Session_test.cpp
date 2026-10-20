@@ -107,6 +107,28 @@ juce::PluginDescription makeDesc(const juce::String& name)
     return d;
 }
 
+// Enough time for several whole-patch swaps on a machine where each one
+// burns AudioGraphRuntime's full ack budget. See the note in the test that
+// uses it.
+constexpr int kSlowSwapBudgetMs = 15000;
+
+// Pump until `done()` holds and Session has settled, or give up. Use this
+// rather than pumpUntilIdle whenever the test cares about WHAT landed:
+// Session publishes Idle between finishing one queued job and starting the
+// next, so "Idle" on its own does not mean the queue is empty.
+template <typename Predicate>
+void pumpUntilSettled(session::Session& s, Predicate done, int timeoutMs)
+{
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
+    while (std::chrono::steady_clock::now() < deadline)
+    {
+        s.dispatchPendingResult();
+        if (s.getState() == session::Session::State::Idle && done())
+            return;
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+}
+
 void pumpUntilIdle(session::Session& s, int timeoutMs = 2000)
 {
     // The worker thread fires juce::AsyncUpdater::triggerAsyncUpdate; in a
@@ -305,7 +327,6 @@ TEST_CASE("Session: getNodeIdsInOrder returns empty for fresh Session", "[sessio
 // -----------------------------------------------------------------------
 //
 // Scenario: anything outside Session that calls AudioEngine::loadGraph
-// (the Test Tone diagnostic in TransportBar is the production case)
 // invalidates Session's cached liveGraph_ pointer. Without the re-fetch
 // fix, the next incremental mutation dereferences a freed graph and
 // crashes the audio thread on commit.
@@ -360,9 +381,8 @@ TEST_CASE("Session: removeNode on absent NodeId after external loadGraph(nullptr
 
     session::Session s(eng, host, builder.fn());
 
-    // Drop the runtime's live graph from underneath Session. Production
-    // analogue: TransportBar's Test Tone toggle-off path calls
-    // engine.loadGraph(nullptr).
+    // Drop the runtime's live graph from underneath Session, the way any
+    // caller of engine.loadGraph(nullptr) outside Session would.
     auto previous = eng.loadGraph(nullptr);
     (void)previous;
 
@@ -418,9 +438,8 @@ TEST_CASE("Session: moveNode after external loadGraph is a safe list-only reorde
 TEST_CASE("Session: destructive mutators are no-ops while a rebuild is in flight", "[session][rebind]")
 {
     // Regression guard for the dangling-graph use-after-free: during the async
-    // window after clearPatch()/replacePatch() (production trigger: Test Tone
-    // toggle, which frees the previous chain graph out-of-band) the cached
-    // Node*s in nodes_ can be dangling. removeNode/setNodeBypass/moveNode must
+    // window after clearPatch()/replacePatch() the cached Node*s in nodes_
+    // can be dangling. removeNode/setNodeBypass/moveNode must
     // short-circuit while Session is not Idle rather than dereference them.
     engine::AudioEngine eng;
     eng.initialise();
@@ -666,7 +685,7 @@ TEST_CASE("Session: node mutations refuse a live graph swapped outside Session",
 {
     ChainFixture f;
 
-    // Swap a foreign graph in directly (Test Tone-style), bypassing Session.
+    // Swap a foreign graph in directly, bypassing Session.
     // Keep the returned chain graph alive so this test never depends on the
     // guard for its own memory safety.
     auto foreign = std::make_unique<juce::AudioProcessorGraph>();
@@ -1045,4 +1064,198 @@ TEST_CASE("Session: a plugin that isn't scanned loads as Missing, and its settin
     REQUIRE(s.getNodeCount() == 2);
     REQUIRE(s.getNodeSnapshots()[1].isMissing());
     REQUIRE(s.getActivePatchWithState().nodes[1].state == gone.state);
+}
+
+TEST_CASE("Session: a replacePatch in flight overwrites a graph loaded straight into the engine",
+          "[session][state-machine][test-tone]")
+{
+    // The hazard behind #111, pinned so nobody reintroduces it.
+    //
+    // clearPatch() is replacePatch(Patch{}) and runs on the worker.
+    // AudioEngine::loadGraph runs now. Call them in that order and the
+    // worker's empty patch commits a moment later and takes the directly
+    // loaded graph with it.
+    //
+    // The Test Tone switch used to do exactly this, which is how it came
+    // to say the tone was on while the chain had been emptied and nothing
+    // was playing. It does not any more -- the tone is a master stage and
+    // issues no graph at all -- but the hazard belongs to the pair of
+    // calls, not to the caller, and the next caller deserves the warning.
+    engine::AudioEngine eng;
+    eng.initialise();
+    engine::PluginHost host;
+    FakeBuilder builder;
+
+    session::Session s(eng, host, builder.fn());
+    s.replacePatch(makeOneNodePatch("Gain"));
+    pumpUntilIdle(s);
+    REQUIRE(s.getNodeCount() == 1);
+
+    auto* runtime = eng.getRuntime();
+    REQUIRE(runtime != nullptr);
+
+    s.clearPatch(); // async
+    auto standIn = std::make_unique<juce::AudioProcessorGraph>();
+    standIn->setPlayConfigDetails(2, 2, 48000.0, 512);
+    standIn->prepareToPlay(48000.0, 512);
+    auto* standInRaw = standIn.get();
+    eng.loadGraph(std::move(standIn));
+    REQUIRE(runtime->getLiveGraph() == standInRaw); // it really did go in
+
+    pumpUntilIdle(s);
+
+    // ...and it is gone again. This is the engine behaving as designed:
+    // Session owns the runtime graph, and a direct load cannot win a race
+    // against a commit that was already on its way.
+    REQUIRE(runtime->getLiveGraph() != standInRaw);
+}
+
+TEST_CASE("Session: the state version moves without a patch swap; the generation does not", "[session][state-machine]")
+{
+    // The difference between the two counters, which is not obvious and is
+    // the kind of thing someone reaches for when they want to know whether
+    // a patch they asked for has landed.
+    //
+    // getStateVersion() moves on every published state change. replacePatch
+    // only publishes Building when Session was Idle, so a clear issued while
+    // a load is already in flight bumps no version of its own -- and the
+    // version then moves when the OTHER load commits. Anything waiting on
+    // the version would be satisfied by somebody else's work.
+    //
+    // getPatchGeneration() moves only inside commitLoadPatch, so it means a
+    // whole-patch swap actually landed. That is the one to wait on.
+    engine::AudioEngine eng;
+    eng.initialise();
+    engine::PluginHost host;
+    FakeBuilder builder;
+
+    session::Session s(eng, host, builder.fn(/*delayMs*/ 40));
+    s.replacePatch(makeOneNodePatch("Gain"));
+    pumpUntilIdle(s);
+
+    const auto genBefore = s.getPatchGeneration();
+
+    // A second load, then a clear while that one is still building.
+    s.replacePatch(makeOneNodePatch("Gain2"));
+    s.clearPatch();
+
+    // The clear published nothing: Session was already Building.
+    REQUIRE(s.getPatchGeneration() == genBefore);
+
+    // Two whole-patch swaps have to finish here, and a swap can legitimately
+    // cost AudioGraphRuntime's full two-second ack budget on a machine whose
+    // audio device opened but never pumps -- a CI runner with no hardware
+    // does exactly that. pumpUntilIdle's own two-second default is therefore
+    // not a budget for this test; it is barely one swap. Waiting on the
+    // condition with room for both is the difference between a test that
+    // means something and one that passes where it happens to be fast.
+    pumpUntilSettled(s, [&s] { return s.getNodeCount() == 0; }, kSlowSwapBudgetMs);
+
+    // The generation moved, and the chain really is empty rather than
+    // holding whichever of the two loads happened to land.
+    REQUIRE(s.getPatchGeneration() > genBefore);
+    REQUIRE(s.getNodeCount() == 0);
+}
+
+TEST_CASE("Session: Idle is never published while the worker is still building", "[session][state-machine]")
+{
+    // The bug CI found, reproduced on purpose rather than by luck.
+    //
+    // The worker takes a request OFF the queue before it builds it, so for
+    // as long as a build runs, both queues are empty and nothing in Session
+    // knew the work existed. Commit the PREVIOUS job in that window and
+    // Session published Idle with a rebuild under way -- and Idle is what
+    // Add Plugin, undo, redo and every "has my change landed" check read as
+    // permission to go ahead.
+    //
+    // Reproducing it needs the worker to be inside the second build before
+    // the first one's result is dispatched, which is a race the original
+    // version of this test lost: it issued both requests back to back, the
+    // slot was simply overwritten before the worker ever woke, and only one
+    // build happened. The builder's call counter is the handle on it -- it
+    // ticks at the top of each build, so waiting on it is waiting for the
+    // worker to have actually taken a request.
+    engine::AudioEngine eng;
+    eng.initialise();
+    engine::PluginHost host;
+    FakeBuilder builder;
+
+    // Long enough that the clear cannot possibly finish while Second's
+    // result is being committed: dispatchPendingResult drains every result
+    // that is ready, so a short build just lands in the same call and the
+    // window closes before the test can look at it.
+    session::Session s(eng, host, builder.fn(/*delayMs*/ 400));
+
+    const auto waitForCall = [&builder](int target)
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(kSlowSwapBudgetMs);
+        while (builder.callCount() < target && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        return builder.callCount() >= target;
+    };
+
+    s.replacePatch(makeOneNodePatch("First"));
+    pumpUntilIdle(s);
+    REQUIRE(s.getNodeCount() == 1);
+
+    const int callsBefore = builder.callCount();
+
+    // Second goes in and the worker picks it up.
+    s.replacePatch(makeOneNodePatch("Second"));
+    REQUIRE(waitForCall(callsBefore + 1));
+
+    // The clear goes into the slot behind it, and we wait until the worker
+    // has taken THAT too. Now: Second's result is sitting in the queue, the
+    // slot is empty, and a build is running. This is the window.
+    s.clearPatch();
+    REQUIRE(waitForCall(callsBefore + 2));
+
+    // One dispatch commits Second. Nothing is queued, so the old code had
+    // nothing left to look at and published Idle -- with the clear being
+    // built behind it.
+    s.dispatchPendingResult();
+
+    // Verified both ways: with the outstanding_ check removed from
+    // rearmWorkerIfQueueNonEmpty this reads state=Idle, nodes=1.
+    INFO("state " << static_cast<int>(s.getState()) << ", nodes " << s.getNodeCount());
+    const bool idleWithWorkInFlight = s.getState() == session::Session::State::Idle && s.getNodeCount() != 0;
+    REQUIRE_FALSE(idleWithWorkInFlight);
+
+    // And it does finish, with the clear winning as it should.
+    pumpUntilSettled(s, [&s] { return s.getNodeCount() == 0; }, kSlowSwapBudgetMs);
+    REQUIRE(s.getNodeCount() == 0);
+}
+
+TEST_CASE("Session: a graph loaded after the clear has landed stays put", "[session][state-machine][test-tone]")
+{
+    // The rule TransportBar::startToneIfClearLanded follows: wait for Idle
+    // *and* for the state counter to move, then load. Idle alone is not
+    // enough, because Session is still Idle in the gap between clearPatch()
+    // returning and the worker picking the job up.
+    engine::AudioEngine eng;
+    eng.initialise();
+    engine::PluginHost host;
+    FakeBuilder builder;
+
+    session::Session s(eng, host, builder.fn());
+    s.replacePatch(makeOneNodePatch("Gain"));
+    pumpUntilIdle(s);
+
+    auto* runtime = eng.getRuntime();
+    REQUIRE(runtime != nullptr);
+
+    const auto before = s.getStateVersion();
+    s.clearPatch();
+    pumpUntilIdle(s);
+    REQUIRE(s.getState() == session::Session::State::Idle);
+    REQUIRE(s.getStateVersion() > before); // the clear really did go through
+
+    auto tone = std::make_unique<juce::AudioProcessorGraph>();
+    tone->setPlayConfigDetails(2, 2, 48000.0, 512);
+    tone->prepareToPlay(48000.0, 512);
+    auto* toneRaw = tone.get();
+    eng.loadGraph(std::move(tone));
+
+    pumpUntilIdle(s);
+    REQUIRE(runtime->getLiveGraph() == toneRaw);
 }

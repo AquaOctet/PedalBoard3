@@ -20,6 +20,15 @@
 namespace pedalboard3::ui
 {
 
+namespace
+{
+// Floors under the floor: whatever the bar asks for, the window stays usable
+// and resizable.
+constexpr int kFloorWidth = 640;
+constexpr int kFloorHeight = 400;
+constexpr int kCeilingSize = 8192;
+} // namespace
+
 MainWindow::MainWindow(const juce::String& name, AppContext& context)
     : juce::DocumentWindow(name, tokens::bgWindow, juce::DocumentWindow::allButtons), ctx_(context), appName_(name)
 {
@@ -61,9 +70,24 @@ MainWindow::MainWindow(const juce::String& name, AppContext& context)
     ctx_.editHistory.addChangeListener(this);
     updateTitle();
 
-    centreWithSize(rootlayout::kInitialWidth, rootlayout::kInitialHeight);
+    root_->transportBar().onNaturalWidthChanged = [this] { applyMinimumSize(); };
+    applyMinimumSize();
+
+    const auto* limits = getConstrainer();
+    const int minWidth = limits != nullptr ? limits->getMinimumWidth() : rootlayout::kInitialWidth;
+    centreWithSize(juce::jmax(rootlayout::kInitialWidth, minWidth), rootlayout::kInitialHeight);
     restoreWindowPosition();
     setVisible(true);
+
+    // Again once the content has actually been laid out. The first call
+    // cannot know how much of the window's width the OS frame takes, because
+    // the content has no size yet; this one can measure it.
+    juce::MessageManager::callAsync(
+        [safe = juce::Component::SafePointer<MainWindow>(this)]
+        {
+            if (safe != nullptr)
+                safe->applyMinimumSize();
+        });
 }
 
 MainWindow::~MainWindow()
@@ -162,6 +186,35 @@ void MainWindow::updateTitle()
     setName(juce::String(doc.isModified() ? "* " : "") + boardDisplayName(doc.currentFile()) +
             (doc.isReadOnly() ? " (read-only)" : "") + " - " + appName_);
     root_->setReadOnly(doc.isReadOnly());
+}
+
+void MainWindow::applyMinimumSize()
+{
+    // The top bar decides this, because the top bar is what runs out of room
+    // first: the canvas below it scrolls and the panels either side close.
+    //
+    // This is the other half of #116. Folding on slack means the bar gives
+    // nothing up until its own spare space is gone -- and the user's reading
+    // of that is "when that white space is unavailable, that's the minimum it
+    // can shrink". So that width becomes the floor, and the snapping they
+    // called dated mostly stops happening at all, because you cannot get the
+    // window narrow enough to cause it.
+    const int barWidth = root_->transportBar().naturalWidth();
+
+    // How much of the window is frame rather than content. Zero until the
+    // content has been laid out once, which is why the constructor asks
+    // again on the next message.
+    const int chrome = root_->getWidth() > 0 ? juce::jmax(0, getWidth() - root_->getWidth()) : 0;
+
+    // Never wider than the screen can show. A machine with a small display,
+    // or a device whose name is enormous, must still be able to open the
+    // window; on one of those the bar folds as it used to and that is the
+    // right trade.
+    int usable = barWidth + chrome;
+    if (auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
+        usable = juce::jmin(usable, display->userArea.getWidth());
+
+    setResizeLimits(juce::jmax(kFloorWidth, usable), kFloorHeight, kCeilingSize, kCeilingSize);
 }
 
 void MainWindow::restoreWindowPosition()

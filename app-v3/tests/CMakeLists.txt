@@ -13,12 +13,14 @@
 
 set(PB3_TEST_SOURCES
     support/RealSettingsGuard.cpp
+    unit/engine/PeakLevel_test.cpp
     unit/engine/MasterMute_test.cpp
     unit/engine/OutputSanitiser_test.cpp
     unit/engine/BypassableInstance_test.cpp
     unit/engine/BypassableInstance_watchdog_test.cpp
     unit/engine/CrashGuard_test.cpp
     unit/engine/AudioGraphRuntime_test.cpp
+    unit/engine/TestTone_test.cpp
     unit/engine/TestToneProcessor_test.cpp
     unit/engine/LevelProcessor_test.cpp
     unit/engine/VuMeterProcessor_test.cpp

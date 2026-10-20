@@ -113,10 +113,17 @@ void TransportControls::setFoldLevel(int level)
 
 int TransportControls::preferredWidth() const noexcept
 {
+    return widthAtFold(foldLevel_);
+}
+
+int TransportControls::widthAtFold(int level) const noexcept
+{
+    // Priced, not applied: the bar decides which fold level fits before it
+    // moves anything.
     int width = kPad + kIconButton + 2 + kIconButton + kDividerGap + kTempoWidth;
-    if (foldLevel_ < 1)
+    if (level < 1)
         width += kDividerGap + kPositionWidth;
-    if (clickShown())
+    if (wantClick_ && level < 2)
         width += kDividerGap + kClickWidth;
     return width + kPad;
 }

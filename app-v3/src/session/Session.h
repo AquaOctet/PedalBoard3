@@ -89,7 +89,18 @@ public:
         juce::String name;
         bool bypassed{false};
         juce::String customName;
+        juce::String note;  // the player's own note (#124)
         int midiChannel{0}; // 0 = omni, 1..16 (PatchNode::midiChannel)
+
+        // Whether this node has any use for the graph's MIDI pins (#123).
+        // The auto-connect wires them between every pair of nodes whether or
+        // not either end reads them, so without this the canvas drew a MIDI
+        // cable the length of an effects rack that could never carry
+        // anything. Read from the live processor, so a node whose plugin is
+        // missing or not yet built reports false and shows no MIDI port --
+        // which is true: there is nothing there to receive one.
+        bool acceptsMidi{false};
+        bool producesMidi{false};
 
         // What the card says (UI refresh U7).
         bool builtIn{false};       // an internal node (NodeKind::Internal)
@@ -185,6 +196,9 @@ public:
     // edit. Same guards as setNodeBypass; a no-op for a node that's alive.
     void rearmNode(NodeId);
     void setNodeCustomName(NodeId, juce::String);
+    // The player's own note about the node (#124). Like the custom name it is
+    // patch data, not graph state, so it needs no rebuild.
+    void setNodeNote(NodeId, juce::String);
 
     // ---- Undo support (finish pass U7, EditHistory) ------------------------
 
@@ -407,7 +421,7 @@ private:
 
     // The runtime's currently-live graph pointer, or nullptr. The identity
     // guards (crash-hunt #7) compare this against the cached liveGraph_ to
-    // reject a graph swapped in outside Session (Test Tone) before touching
+    // reject a graph swapped in outside Session before touching
     // cached Node* that belong only to Session's own committed graph.
     juce::AudioProcessorGraph* currentRuntimeGraph() const noexcept;
 
@@ -431,6 +445,22 @@ private:
     static constexpr size_t kAddQueueMax = 16;
     mutable std::mutex queueMutex_;
     std::optional<LoadPatchRequest> pendingLoadPatch_;
+
+    // Requests the worker has taken off the queue and not yet had a result
+    // committed for. Guarded by queueMutex_.
+    //
+    // Without it, "is the queue empty" was being used to answer "is anything
+    // in flight", and those differ for exactly as long as a build takes. The
+    // worker pops a request before building it, so during that window both
+    // queues are empty; a Session that had just committed the previous job
+    // would then publish Idle with a rebuild under way. Everything that gates
+    // on Idle — Add Plugin, undo and redo, the tests' pumpUntilIdle — would
+    // act on a graph that was about to be replaced.
+    //
+    // Found by CI: a test asked for a load and a clear back to back and got
+    // the load's result, because Session said Idle while the clear was still
+    // being built.
+    int outstanding_{0};
     std::deque<AddPluginRequest> addQueue_;
 
     // Worker → message-thread result hand-off. A queue, not a single slot:

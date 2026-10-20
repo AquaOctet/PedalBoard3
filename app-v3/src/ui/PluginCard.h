@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ColourScheme.h"
+#include "IconButton.h"
 #include "session/NodeId.h"
 #include "session/Session.h"
 
@@ -49,6 +50,8 @@ public:
         // Opens the per-plugin MIDI / OSC mappings dialog (M4 U4), which also
         // owns MIDI learn.
         std::function<void(NodeId)> onOpenMappings;
+        // The player's note about this node (#124): empty clears it.
+        std::function<void(NodeId, juce::String)> onSetNote;
         // A click on the card (not a drag): the canvas selects it.
         std::function<void(NodeId)> onSelect;
         // The name was edited in place; empty reverts to the plugin's own name.
@@ -61,6 +64,9 @@ public:
     ~PluginCard() override;
 
     NodeId getNodeId() const noexcept { return snapshot_.id; }
+    // What the card is showing. The canvas reads it to decide which ports
+    // and cables to draw (#123).
+    const NodeSnapshot& snapshot() const noexcept { return snapshot_; }
 
     void setSnapshot(const NodeSnapshot&);
     void setAccentColour(juce::Colour); // teal = effect, amber = instrument
@@ -99,6 +105,10 @@ public:
     void mouseUp(const juce::MouseEvent&) override;
     void mouseDoubleClick(const juce::MouseEvent&) override;
 
+    // Right-click: rename, note, bypass, remove (#124).
+    void showCardMenu();
+    void promptForNote();
+
 private:
     // Hover over the card or any of its buttons, so Remove stays up while the
     // pointer is anywhere on the card. A separate listener, so the card's own
@@ -132,10 +142,20 @@ private:
     HoverWatcher hoverWatcher_{*this};
 
     juce::Rectangle<int> nameArea_;
-    juce::TextButton bypassButton_{"BYP"};
-    juce::TextButton mappingsButton_{"M"};
-    juce::TextButton editButton_{"ED"};
-    juce::TextButton removeButton_{"X"};
+    // Icons, not the letters BYP / M / ED / X (#124). Four abbreviations
+    // to learn, on an object meant to be read at a glance from a stage, and
+    // two of them ("M", "X") abbreviate nothing obvious. A power symbol, a
+    // row of sliders, a window and a cross need no learning.
+    // A 22 px button with a 4 px inset: a 14 px icon box, which is the floor
+    // in docs/design/2026-10-19-icon-system.md. They were inset 7, leaving
+    // 8 px -- half the top bar's 16 and far too small for any of these
+    // shapes to survive (#125). The hit target is unchanged; only the
+    // drawing grew.
+    IconButton bypassButton_{powerIcon(), "Bypass", 4.0f};
+    IconButton mappingsButton_{slidersIcon(), "Mappings", 4.0f};
+    // A plug, not a window: this opens the PLUGIN's own interface, and the
+    // framed rectangle read as a folder (#126).
+    IconButton editButton_{plugIcon(), "Editor", 4.0f};
     std::unique_ptr<juce::TextEditor> renameEditor_;
     // The last rename editor, kept alive until its own key or focus callback
     // has returned; freed on the next rename or with the card.

@@ -184,10 +184,34 @@ void StatusBar::refresh()
     // state dot with it (#106): the dot is the one thing on this bar that is
     // read at a glance, and a muted rig has to look muted from across a stage.
     const bool muted = ctx_.audioEngine.isMasterMuted();
+
+    // The Test Tone (#111). It is a master stage now, so the board is still
+    // there, still loaded and still editable — the tone is simply what is
+    // reaching the output instead. That makes it exactly like MUTED: a
+    // suffix on the normal line, not a replacement for it. It takes the dot
+    // in amber, because "what you hear is not your board" is worth seeing
+    // from across a stage, and mute wins the dot if both are on.
+    const bool tone = isTestToneOn && isTestToneOn();
+    if (tone)
+        stateDotColour_ = tokens::accentWarning;
     if (muted)
         stateDotColour_ = tokens::accentDestructive;
-    leftLabel_.setColour(juce::Label::textColourId, muted ? tokens::accentDestructive : tokens::fgPrimary);
-    leftLabel_.setText(chainText + "  •  " + stateText + (muted ? "  •  MUTED" : ""), juce::dontSendNotification);
+
+    leftLabel_.setColour(juce::Label::textColourId,
+                         muted  ? tokens::accentDestructive
+                         : tone ? tokens::accentWarning
+                                : tokens::fgPrimary);
+    // Both suffixes, in that order, and neither hides the other. A muted rig
+    // with the tone up is "I switched the tone on and got nothing" — the
+    // exact report this came from — so MUTED has to stay visible alongside
+    // it, and the chain count has to stay visible alongside both now that
+    // the board really is still loaded.
+    juce::String line = chainText + "  •  " + stateText;
+    if (tone)
+        line += "  •  TEST TONE";
+    if (muted)
+        line += "  •  MUTED";
+    leftLabel_.setText(line, juce::dontSendNotification);
 
     // Error pill — shown when state is Idle and lastError is non-empty.
     // (During Building/Swapping the previous error from a prior run

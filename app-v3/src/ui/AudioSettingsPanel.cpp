@@ -169,6 +169,16 @@ AudioSettingsPanel::AudioSettingsPanel(juce::AudioDeviceManager& devices, juce::
     addAndMakeVisible(closeButton_);
 
     devices_.addChangeListener(this);
+
+    // Ask the driver what is actually plugged in right now, before the first
+    // refresh reads the list. AudioIODeviceType caches its device names and
+    // only re-enumerates when told to, so a panel opened after something was
+    // plugged in would otherwise show the world as it was when the type was
+    // last scanned -- which, for a device unplugged and plugged back in, is
+    // a list that does not contain it (#119).
+    if (auto* type = devices_.getCurrentDeviceTypeObject())
+        type->scanForDevices();
+
     refresh();
     startTimerHz(kMeterHz);
     setSize(kWidth, kHeight);

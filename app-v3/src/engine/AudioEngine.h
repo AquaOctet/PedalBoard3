@@ -27,7 +27,7 @@ namespace pedalboard3::engine
 //
 // Not RT-safe. Message-thread only. `AudioDeviceManager` itself handles
 // locking for its audio callbacks.
-class AudioEngine
+class AudioEngine : private juce::ChangeListener
 {
 public:
     // Result of `initialise`. Keeps the API explicit about whether hardware
@@ -89,20 +89,60 @@ public:
     void toggleMasterMute() { setMasterMuted(!isMasterMuted()); }
     juce::ChangeBroadcaster& masterMuteChanged() noexcept { return masterMuteBroadcaster_; }
 
+    // The test tone (#111). A master stage, not a graph: it crossfades over
+    // the board's output and leaves the board itself completely alone, so
+    // switching it on no longer clears the patch and switching it off no
+    // longer rebuilds every plugin from its saved state. Listeners are told
+    // on the message thread so the top bar and status bar can show it.
+    void setTestToneEnabled(bool shouldPlay);
+    bool isTestToneEnabled() const noexcept;
+    void toggleTestTone() { setTestToneEnabled(!isTestToneEnabled()); }
+    juce::ChangeBroadcaster& testToneChanged() noexcept { return testToneBroadcaster_; }
+
+    // Peak in and out since the last call, 0..1, and resets (#117). Driven
+    // by the IN / OUT meters' timer.
+    float readInputPeak() noexcept { return runtime_->getInputLevel().readAndClear(); }
+    float readOutputPeak() noexcept { return runtime_->getOutputLevel().readAndClear(); }
+
     // The error message from the most recent initialise() call (empty when
     // the device opened cleanly). Retained so the UI can tell the user WHY
     // there's no sound — otherwise a failed device open is silent except
     // for a log line. Matches the last initialise() Result's message.
     const juce::String& getLastInitError() const noexcept { return lastInitError_; }
 
+    // The device went away and came back, and we reopened it (#119). The top
+    // bar listens so the badge stops saying there is no device without the
+    // user having to open anything.
+    juce::ChangeBroadcaster& deviceRecovered() noexcept { return deviceRecoveredBroadcaster_; }
+
+    // Try to reopen the remembered device now. Called automatically when the
+    // device list changes; public so the Audio Devices panel's own retry can
+    // use the same path.
+    //
+    // Returns true when a device is open afterwards.
+    bool reopenRememberedDevice();
+
 private:
+    // The device list changed: something was plugged in or unplugged.
+    void changeListenerCallback(juce::ChangeBroadcaster*) override;
+
     juce::ChangeBroadcaster masterMuteBroadcaster_;
+    juce::ChangeBroadcaster deviceRecoveredBroadcaster_;
+    juce::ChangeBroadcaster testToneBroadcaster_;
     juce::AudioDeviceManager deviceManager_;
     juce::AudioProcessorPlayer player_;
     std::unique_ptr<AudioGraphRuntime> runtime_;
 
     bool initialised_{false};
     juce::String lastInitError_;
+
+    // The last setup that actually opened, kept so we can put it back when
+    // the hardware returns. JUCE will not: AudioDeviceManager only re-opens
+    // a device that disappeared while it was OPEN, and by the time you plug
+    // the cable back in there is no current device, so its recovery path is
+    // skipped and nothing happens. See reopenRememberedDevice.
+    std::unique_ptr<juce::XmlElement> lastGoodState_;
+    bool reopening_{false};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioEngine)
 };

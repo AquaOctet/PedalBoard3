@@ -60,6 +60,9 @@ private:
     // Reopen where the window was left (finish pass U6), unless that spot is
     // no longer on a connected display.
     void restoreWindowPosition();
+    // The window never shrinks past the point where the top bar's own slack
+    // runs out (#116). Re-applied whenever that width changes.
+    void applyMinimumSize();
 
     // juce::MenuBarModel: the macOS menu bar (#25). Built on every platform so
     // every build compiles it; only macOS installs it (setMacMainMenu).

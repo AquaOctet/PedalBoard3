@@ -17,8 +17,9 @@ inline const juce::String kDot{juce::CharPointer_UTF8(" \xc2\xb7 ")};
 
 struct Lines
 {
-    juce::String kind; // "EQ", "Built-in"; with " · bypassed" while bypassed
-    juce::String meta; // "VST3 · FabFilter", or the mapping count in place of the vendor
+    juce::String kind;      // "EQ", "Built-in"; with " · bypassed" while bypassed
+    juce::String meta;      // "VST3 · FabFilter", or the mapping count in place of the vendor
+    bool metaIsNote{false}; // the meta line is the player's own words (#124)
 };
 
 // The card's title: its custom name, else the plugin's. "Missing: <name>" while
@@ -61,6 +62,18 @@ inline Lines linesFor(const session::Session::NodeSnapshot& node, int mappingCou
     }
     if (node.bypassed)
         lines.kind += kDot + "bypassed";
+
+    // The player's own note wins the second line when there is one (#124).
+    // "VST3 · FabFilter" is the same on every card from that vendor and
+    // tells you nothing you did not know when you added it; "second verse
+    // only" is the reason the thing is on the board. The format and vendor
+    // are still a hover away.
+    if (node.note.isNotEmpty())
+    {
+        lines.meta = node.note;
+        lines.metaIsNote = true;
+        return lines;
+    }
 
     juce::StringArray meta;
     if (node.format.isNotEmpty())

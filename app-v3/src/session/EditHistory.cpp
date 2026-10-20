@@ -76,6 +76,21 @@ void EditHistory::removeConnection(NodeId src, int srcChannel, NodeId dst, int d
     push(std::move(edit));
 }
 
+void EditHistory::setNodeNote(NodeId id, juce::String note)
+{
+    const auto patch = session_.getActivePatch();
+    const auto* node = patch.findNode(id);
+    if (node == nullptr || node->note == note)
+        return;
+    Edit edit;
+    edit.kind = Kind::Note;
+    edit.node.id = id;
+    edit.nameBefore = node->note;
+    edit.nameAfter = note;
+    session_.setNodeNote(id, std::move(note));
+    push(std::move(edit));
+}
+
 void EditHistory::setNodeCustomName(NodeId id, juce::String name)
 {
     const auto patch = session_.getActivePatch();
@@ -146,6 +161,10 @@ bool EditHistory::undo()
         session_.setNodeCustomName(edit.node.id, edit.nameBefore);
         redo_.push_back(std::move(edit));
         break;
+    case Kind::Note:
+        session_.setNodeNote(edit.node.id, edit.nameBefore);
+        redo_.push_back(std::move(edit));
+        break;
     }
     sendChangeMessage();
     return true;
@@ -184,6 +203,10 @@ bool EditHistory::redo()
         break;
     case Kind::Rename:
         session_.setNodeCustomName(edit.node.id, edit.nameAfter);
+        undo_.push_back(std::move(edit));
+        break;
+    case Kind::Note:
+        session_.setNodeNote(edit.node.id, edit.nameAfter);
         undo_.push_back(std::move(edit));
         break;
     }

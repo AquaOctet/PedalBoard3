@@ -218,7 +218,7 @@ TEST_CASE("EditHistory: the UI hook runs before every removal the history makes"
     REQUIRE(closed == std::vector<session::NodeId>{a, b});
 }
 
-TEST_CASE("EditHistory: edit.undo and edit.redo run through the app commands, not while Test Tone has the graph",
+TEST_CASE("EditHistory: edit.undo and edit.redo run through the app commands, not while capture is suspended",
           "[session][edit-history][app-commands]")
 {
     Fixture f;
@@ -231,7 +231,7 @@ TEST_CASE("EditHistory: edit.undo and edit.redo run through the app commands, no
     REQUIRE(f.s.getActivePatch().findNode(a)->customName.isEmpty());
     REQUIRE_FALSE(session::invokeAppCommand(doc, session::appcommands::kRedo)); // no history given
 
-    doc.setLiveCaptureEnabled(false); // what Test Tone does
+    doc.setLiveCaptureEnabled(false); // the live graph is not the slot's
     REQUIRE_FALSE(session::invokeAppCommand(doc, session::appcommands::kRedo, &f.h));
     doc.setLiveCaptureEnabled(true);
     REQUIRE(session::invokeAppCommand(doc, session::appcommands::kRedo, &f.h));
@@ -251,4 +251,51 @@ TEST_CASE("EditHistory: an add at a position commits there, and undo removes it"
     REQUIRE(f.h.undo());
     f.settle();
     REQUIRE(f.s.getNodeCount() == 0);
+}
+
+TEST_CASE("EditHistory: a node's note undoes and redoes, and an unchanged note records nothing",
+          "[session][edit-history][note]")
+{
+    // The note is a thing you type, so it is a thing you can mistype (#124).
+    // Same treatment as a rename.
+    Fixture f;
+    const auto a = f.add();
+
+    f.h.setNodeNote(a, "second verse only");
+    REQUIRE(f.s.getActivePatch().findNode(a)->note == "second verse only");
+
+    // Setting the same text again is not an edit, so it must not put a
+    // no-op on the stack for the user to undo past.
+    const auto depth = f.h.undoDepth();
+    f.h.setNodeNote(a, "second verse only");
+    REQUIRE(f.h.undoDepth() == depth);
+
+    REQUIRE(f.h.undo());
+    REQUIRE(f.s.getActivePatch().findNode(a)->note.isEmpty());
+    REQUIRE(f.h.redo());
+    REQUIRE(f.s.getActivePatch().findNode(a)->note == "second verse only");
+
+    // And clearing it is itself undoable.
+    f.h.setNodeNote(a, {});
+    REQUIRE(f.s.getActivePatch().findNode(a)->note.isEmpty());
+    REQUIRE(f.h.undo());
+    REQUIRE(f.s.getActivePatch().findNode(a)->note == "second verse only");
+}
+
+TEST_CASE("EditHistory: the note and the custom name are independent", "[session][edit-history][note]")
+{
+    // They answer different questions -- what the thing IS versus why it is
+    // on the board -- so undoing one must not disturb the other.
+    Fixture f;
+    const auto a = f.add();
+
+    f.h.setNodeCustomName(a, "Punch");
+    f.h.setNodeNote(a, "borrowed from the Tuesday board");
+
+    REQUIRE(f.h.undo()); // the note
+    REQUIRE(f.s.getActivePatch().findNode(a)->note.isEmpty());
+    REQUIRE(f.s.getActivePatch().findNode(a)->customName == "Punch");
+
+    REQUIRE(f.h.undo()); // the name
+    REQUIRE(f.s.getActivePatch().findNode(a)->customName.isEmpty());
 }

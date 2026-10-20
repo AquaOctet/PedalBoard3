@@ -276,3 +276,191 @@ TEST_CASE("AudioGraphRuntime: sanitiser pass zeros any NaN/Inf/out-of-range the 
     REQUIRE(isSilent(buf));
     REQUIRE(isFiniteEverywhere(buf));
 }
+
+// --- The Test Tone as a master stage (#111) -------------------------------
+//
+// The bug report was "running Test Tone breaks the chain" / "the whole chain
+// vanishes". It was accurate: the tone used to be a graph that replaced the
+// patch. These pin the replacement design, where the tone is a stage the
+// output passes through and the graph underneath is never touched.
+
+TEST_CASE("AudioGraphRuntime: the test tone plays without disturbing the live graph", "[engine][runtime][test-tone]")
+{
+    engine::AudioGraphRuntime rt;
+    rt.setPlayConfigDetails(2, 2, kDefaultSampleRate, kDefaultBlockSize);
+    rt.prepareToPlay(kDefaultSampleRate, kDefaultBlockSize);
+
+    auto built = buildGainGraph(2.0f);
+    built.graph->prepareToPlay(kDefaultSampleRate, kDefaultBlockSize);
+    auto* graphRaw = built.graph.get();
+    rt.swapPreparedGraph(std::move(built.graph));
+
+    rt.getTestTone().setEnabled(true);
+
+    auto buf = makeTestBuffer(2, kDefaultBlockSize);
+    for (int i = 0; i < 8; ++i) // past the crossfade
+    {
+        fillDC(buf, 0.25f);
+        renderBlocks(rt, buf);
+    }
+
+    // The graph is exactly where it was. This is the whole point: no swap,
+    // no rebuild, no plugin destroyed and re-instantiated from its state.
+    REQUIRE(rt.getLiveGraph() == graphRaw);
+
+    // And the tone, not the gain stage's 0.5, is what came out.
+    float peak = 0.0f;
+    for (int n = 0; n < buf.getNumSamples(); ++n)
+        peak = juce::jmax(peak, std::abs(buf.getReadPointer(0)[n]));
+    REQUIRE(peak > engine::TestTone::kAmplitude * 0.9f);
+    REQUIRE(peak <= engine::TestTone::kAmplitude + 1.0e-6f);
+}
+
+TEST_CASE("AudioGraphRuntime: switching the tone off returns the board's own output", "[engine][runtime][test-tone]")
+{
+    engine::AudioGraphRuntime rt;
+    rt.setPlayConfigDetails(2, 2, kDefaultSampleRate, kDefaultBlockSize);
+    rt.prepareToPlay(kDefaultSampleRate, kDefaultBlockSize);
+
+    auto built = buildGainGraph(2.0f);
+    built.graph->prepareToPlay(kDefaultSampleRate, kDefaultBlockSize);
+    auto* graphRaw = built.graph.get();
+    rt.swapPreparedGraph(std::move(built.graph));
+
+    auto buf = makeTestBuffer(2, kDefaultBlockSize);
+
+    rt.getTestTone().setEnabled(true);
+    for (int i = 0; i < 8; ++i)
+    {
+        fillDC(buf, 0.25f);
+        renderBlocks(rt, buf);
+    }
+
+    rt.getTestTone().setEnabled(false);
+    for (int i = 0; i < 8; ++i)
+    {
+        fillDC(buf, 0.25f);
+        renderBlocks(rt, buf);
+    }
+
+    // Straight back to gain-of-2 on 0.25, with no reload having happened.
+    REQUIRE(rt.getLiveGraph() == graphRaw);
+    for (int ch = 0; ch < buf.getNumChannels(); ++ch)
+        for (int n = 0; n < buf.getNumSamples(); ++n)
+            REQUIRE(buf.getReadPointer(ch)[n] == 0.5f);
+}
+
+TEST_CASE("AudioGraphRuntime: mute silences the test tone", "[engine][runtime][test-tone]")
+{
+    // The status bar shows TEST TONE and MUTED together and promises that
+    // muted means silent. That only holds if the mute runs after the tone,
+    // which is why the order in processBlock is sanitiser, tone, mute.
+    engine::AudioGraphRuntime rt;
+    rt.setPlayConfigDetails(2, 2, kDefaultSampleRate, kDefaultBlockSize);
+    rt.prepareToPlay(kDefaultSampleRate, kDefaultBlockSize);
+
+    rt.getTestTone().setEnabled(true);
+    rt.getMasterMute().setMuted(true);
+
+    auto buf = makeTestBuffer(2, kDefaultBlockSize);
+    for (int i = 0; i < 8; ++i)
+    {
+        fillDC(buf, 0.0f);
+        renderBlocks(rt, buf);
+    }
+
+    REQUIRE(isSilent(buf));
+}
+
+TEST_CASE("AudioGraphRuntime: the input meter reads the input, not the board", "[engine][runtime][peak-level]")
+{
+    // #117. With no graph at all the output is silence, but the input is
+    // still arriving -- and a meter that reads zero because the board is
+    // empty answers the wrong question.
+    engine::AudioGraphRuntime rt;
+    rt.setPlayConfigDetails(2, 2, kDefaultSampleRate, kDefaultBlockSize);
+    rt.prepareToPlay(kDefaultSampleRate, kDefaultBlockSize);
+
+    auto buf = makeTestBuffer(2, kDefaultBlockSize);
+    fillDC(buf, 0.6f);
+    renderBlocks(rt, buf);
+
+    REQUIRE(isSilent(buf)); // no graph: nothing comes out
+    REQUIRE(rt.getInputLevel().readAndClear() == 0.6f);
+}
+
+TEST_CASE("AudioGraphRuntime: the output meter reads what leaves, not what the graph made",
+          "[engine][runtime][peak-level]")
+{
+    // The output peak is taken after the sanitiser, the tone and the mute,
+    // which is the only place it can be taken and still be true. A gain of 2
+    // on 0.25 is 0.5 at the graph's last node; that is also what leaves here,
+    // and the two tests below are about the cases where they differ.
+    engine::AudioGraphRuntime rt;
+    rt.setPlayConfigDetails(2, 2, kDefaultSampleRate, kDefaultBlockSize);
+    rt.prepareToPlay(kDefaultSampleRate, kDefaultBlockSize);
+
+    auto built = buildGainGraph(2.0f);
+    built.graph->prepareToPlay(kDefaultSampleRate, kDefaultBlockSize);
+    rt.swapPreparedGraph(std::move(built.graph));
+
+    auto buf = makeTestBuffer(2, kDefaultBlockSize);
+    fillDC(buf, 0.25f);
+    renderBlocks(rt, buf);
+
+    REQUIRE(rt.getOutputLevel().readAndClear() == 0.5f);
+}
+
+TEST_CASE("AudioGraphRuntime: muting takes the output meter to silence with it", "[engine][runtime][peak-level]")
+{
+    // The point of metering after the mute. A meter taken at the graph's last
+    // node would sit at 0.5 while the room was silent, which is the single
+    // most misleading thing a level meter can do -- you would be hunting a
+    // dead cable with the evidence saying the signal is fine.
+    engine::AudioGraphRuntime rt;
+    rt.setPlayConfigDetails(2, 2, kDefaultSampleRate, kDefaultBlockSize);
+    rt.prepareToPlay(kDefaultSampleRate, kDefaultBlockSize);
+
+    auto built = buildGainGraph(2.0f);
+    built.graph->prepareToPlay(kDefaultSampleRate, kDefaultBlockSize);
+    rt.swapPreparedGraph(std::move(built.graph));
+
+    rt.getMasterMute().setMuted(true);
+
+    auto buf = makeTestBuffer(2, kDefaultBlockSize);
+    for (int i = 0; i < 8; ++i) // past the 15 ms mute ramp
+    {
+        fillDC(buf, 0.25f);
+        renderBlocks(rt, buf);
+    }
+    (void)rt.getOutputLevel().readAndClear(); // discard the ramp
+
+    fillDC(buf, 0.25f);
+    renderBlocks(rt, buf);
+
+    REQUIRE(rt.getOutputLevel().readAndClear() == 0.0f);
+    // And the input meter still shows the signal arriving, which is how you
+    // tell "muted" from "unplugged".
+    REQUIRE(rt.getInputLevel().readAndClear() == 0.25f);
+}
+
+TEST_CASE("AudioGraphRuntime: the test tone shows on the output meter with an empty board",
+          "[engine][runtime][peak-level][test-tone]")
+{
+    engine::AudioGraphRuntime rt;
+    rt.setPlayConfigDetails(2, 2, kDefaultSampleRate, kDefaultBlockSize);
+    rt.prepareToPlay(kDefaultSampleRate, kDefaultBlockSize);
+
+    rt.getTestTone().setEnabled(true);
+
+    auto buf = makeTestBuffer(2, kDefaultBlockSize);
+    for (int i = 0; i < 8; ++i)
+    {
+        fillDC(buf, 0.0f);
+        renderBlocks(rt, buf);
+    }
+
+    const float out = rt.getOutputLevel().readAndClear();
+    REQUIRE(out > engine::TestTone::kAmplitude * 0.9f);
+    REQUIRE(out <= engine::TestTone::kAmplitude + 1.0e-6f);
+}

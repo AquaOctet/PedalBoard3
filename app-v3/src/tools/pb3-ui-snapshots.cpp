@@ -61,6 +61,25 @@ namespace
 
 using namespace pedalboard3;
 
+// The Test Tone probe (#111): how much audio to push through the runtime to
+// decide whether the tone is actually reaching the output, and the floor it
+// has to clear.
+//
+// The settle blocks matter. The crossfade is 15 ms -- about a block and a
+// half at 48k/512 -- so a probe that measures from the first block after the
+// switch reads the fade, not the steady state. Measuring the fade-OUT is how
+// the first version of this check reported the tone still playing at 0.242
+// immediately after it had been switched off, which is a true measurement of
+// the wrong instant. Four blocks of settle is ~43 ms, comfortably past it.
+//
+// The floor sits well under the tone's 0.25 amplitude and well over the
+// silence the rig's board produces.
+constexpr double kToneProbeRate = 48000.0;
+constexpr int kToneProbeBlock = 512;
+constexpr int kToneSettleBlocks = 4;
+constexpr int kToneProbeBlocks = 4;
+constexpr float kToneAudibleFloor = 0.05f;
+
 // Everything the UI's constructors reach for, built as App builds it.
 struct Rig
 {
@@ -428,8 +447,6 @@ int main(int argc, char** argv)
         out.addMenu("menu-plugins", &pluginsMenu);
         const auto* addPlugin = findSubMenu(pluginsMenu, "Add Plugin");
         out.addMenu("menu-add-plugin", addPlugin, 1);
-        const auto patchMenu = bar.makePatchMenu();
-        out.addMenu("menu-patch", &patchMenu, 2);
         ui::BankSidebar sidebar(rig.context);
         const auto rowMenu = sidebar.makeRowMenu(2);
         out.addMenu("menu-bank-row", &rowMenu);
@@ -569,6 +586,145 @@ int main(int argc, char** argv)
             ui::RootComponent narrow(rig.context);
             shoot("window-narrow", narrow, 900, 640);
 
+            // How the top bar gives way as the window narrows (#116). The
+            // complaint was that it folded while slack sat unused between the
+            // patch strip and the activity lights, so the evidence has to be
+            // a measurement of exactly that, not a picture of one width.
+            //
+            // At each width: what the bar needs whole, how much room the
+            // patch strip got over its floor (the slack), and which of the
+            // optional parts are still showing.
+            {
+                auto& topBar = root.transportBar();
+                const int natural = topBar.naturalWidth();
+                std::printf("TOP BAR natural width %d (window minimum)\n", natural);
+                for (const int width : {natural + 400, natural + 120, natural, natural - 150, natural - 400})
+                {
+                    root.setSize(width, 800);
+                    const auto shown = [&](const juce::Component& c) { return c.isVisible() ? "y" : "-"; };
+                    std::printf("TOP BAR %5d  gap %4d  badge %3d @%4d  free %4d..%4d  centre %4d vs %4d  latency %s  "
+                                "cpu/mem %s  in/out %s  midi/osc %s\n",
+                                width,
+                                topBar.barSlack(),
+                                topBar.deviceBadgeWidth(),
+                                topBar.deviceBadgeX(),
+                                topBar.badgeFreeRegion().first,
+                                topBar.badgeFreeRegion().second,
+                                topBar.deviceBadgeX() + topBar.deviceBadgeWidth() / 2,
+                                width / 2,
+                                shown(topBar.latencyReadoutForTest()),
+                                shown(topBar.systemMetersForTest()),
+                                shown(topBar.ioMonitorForTest()),
+                                shown(topBar.activityLightsForTest()));
+                }
+                root.setSize(1280, 800);
+            }
+
+            // The Test Tone, driven through the real TransportBar (#111).
+            // A unit test can repeat the sequence valueChanged performs, but
+            // it cannot catch a bug that IS the sequence -- and here the bug
+            // turned out to be the design, not the sequence.
+            //
+            // So what this harness checks is now the opposite of what it
+            // checked before. The old tone replaced the patch, and the check
+            // asked whether the board came BACK. The tone is a master stage
+            // now, so the board must never LEAVE: same graph pointer, same
+            // node count, right through. Anything else is the thing the user
+            // reported, which was "the whole chain vanishes".
+            {
+                auto& toneBar = root.transportBar();
+                const int nodesBefore = static_cast<int>(rig.liveSession.getNodeSnapshots().size());
+                auto* runtime = rig.audioEngine.getRuntime();
+                auto* graphBefore = runtime != nullptr ? runtime->getLiveGraph() : nullptr;
+
+                // Drive the runtime by hand for the probe, with the device
+                // shut. Otherwise a dev box with a sound card has its audio
+                // thread calling processBlock at the same time we do, and
+                // the number we print is a race; a headless CI runner with
+                // no device would meanwhile never have had prepareToPlay
+                // called at all, leaving the tone's phase step at zero and
+                // the probe silent for a reason that has nothing to do with
+                // the tone. Closing it makes both machines agree.
+                rig.audioEngine.getDeviceManager()->closeAudioDevice();
+                if (runtime != nullptr)
+                {
+                    runtime->setPlayConfigDetails(2, 2, kToneProbeRate, kToneProbeBlock);
+                    runtime->prepareToPlay(kToneProbeRate, kToneProbeBlock);
+                }
+
+                // Push blocks through the runtime and report the loudest
+                // sample. The board in this rig is silent, so anything above
+                // the floor is the tone. Without this the harness would pass
+                // a tone that was switched on and never reached the output --
+                // which is the original complaint.
+                const auto outputPeak = [runtime]
+                {
+                    if (runtime == nullptr)
+                        return 0.0f;
+                    juce::AudioBuffer<float> block(2, kToneProbeBlock);
+                    juce::MidiBuffer midi;
+                    const auto pump = [&]
+                    {
+                        block.clear();
+                        midi.clear();
+                        runtime->processBlock(block, midi);
+                    };
+
+                    for (int i = 0; i < kToneSettleBlocks; ++i)
+                        pump(); // let the crossfade finish before measuring
+
+                    float peak = 0.0f;
+                    for (int i = 0; i < kToneProbeBlocks; ++i)
+                    {
+                        pump();
+                        peak = juce::jmax(peak, block.getMagnitude(0, block.getNumSamples()));
+                    }
+                    return peak;
+                };
+
+                toneBar.toggleTestTone();
+                settle(rig);
+                auto* graphDuring = runtime != nullptr ? runtime->getLiveGraph() : nullptr;
+                const int nodesDuring = static_cast<int>(rig.liveSession.getNodeSnapshots().size());
+                const float tonePeak = outputPeak();
+
+                // The switch says on, the engine agrees, the output is
+                // audible, and nothing about the board moved.
+                const bool boardIntact = graphDuring == graphBefore && nodesDuring == nodesBefore;
+                const bool audible = tonePeak > kToneAudibleFloor;
+                const bool tookOver = toneBar.isTestToneOn() && toneBar.isTestToneLive() && boardIntact && audible;
+                std::printf("TEST TONE on : switch=%s engine=%s board=%s nodes %d -> %d peak %.3f (%s)\n",
+                            toneBar.isTestToneOn() ? "on" : "OFF",
+                            toneBar.isTestToneLive() ? "on" : "OFF",
+                            graphDuring == graphBefore ? "intact" : "SWAPPED",
+                            nodesBefore,
+                            nodesDuring,
+                            static_cast<double>(tonePeak),
+                            audible ? "audible" : "SILENT");
+                shoot("window-test-tone", root, 1280, 800);
+
+                toneBar.toggleTestTone();
+                settle(rig);
+                auto* graphAfter = runtime != nullptr ? runtime->getLiveGraph() : nullptr;
+                const int nodesAfter = static_cast<int>(rig.liveSession.getNodeSnapshots().size());
+                const float afterPeak = outputPeak();
+                const bool wentQuiet = afterPeak <= kToneAudibleFloor;
+                const bool stillThere = !toneBar.isTestToneOn() && !toneBar.isTestToneLive() &&
+                                        nodesAfter == nodesBefore && graphAfter == graphBefore;
+                std::printf("TEST TONE off: switch=%s engine=%s board=%s nodes %d -> %d peak %.3f error=%s\n",
+                            toneBar.isTestToneOn() ? "ON" : "off",
+                            toneBar.isTestToneLive() ? "ON" : "off",
+                            graphAfter == graphBefore ? "intact" : "SWAPPED",
+                            nodesBefore,
+                            nodesAfter,
+                            static_cast<double>(afterPeak),
+                            rig.liveSession.getLastError().toRawUTF8());
+                if (!tookOver || !stillThere || !wentQuiet)
+                    std::printf("TEST TONE FAILED\n");
+                else
+                    std::printf("TEST TONE OK\n");
+            }
+
             // Muted (#106). The top bar's button goes red and swaps to
             // volume-x, and the status bar's dot and text go with it, so the
             // lit state is in the evidence rather than only in the code.
@@ -584,6 +740,98 @@ int main(int argc, char** argv)
             setMuted(true);
             shoot("window-muted", root, 1280, 800);
             setMuted(false);
+
+            // Every icon at the size it is actually drawn, and again at 4x
+            // (#125). The small row is the one to judge: a glyph that cannot
+            // be told from its neighbour there has failed however good it
+            // looks magnified. The big row is only for finding WHICH stroke
+            // is wrong once the small one looks off.
+            {
+                struct Glyph
+                {
+                    const char* name;
+                    juce::Path path;
+                    // The box this glyph is actually drawn in, which is not
+                    // the same for every member of a set: see R6. Rendering
+                    // the sheet at one uniform box would hide the very
+                    // optical correction it exists to check.
+                    int box;
+                };
+                const Glyph cardGlyphs[] = {{"power", ui::powerIcon(), 14},
+                                            {"faders", ui::slidersIcon(), 14},
+                                            {"plug", ui::plugIcon(), 14},
+                                            {"cross", ui::closeIcon(), 11},
+                                            {"note", ui::noteIcon(), 14}};
+                const Glyph barGlyphs[] = {{"folder", ui::folderIcon(), 16},
+                                           {"gear", ui::gearIcon(), 16},
+                                           {"plug", ui::plugIcon(), 16},
+                                           {"speaker", ui::speakerIcon(), 16},
+                                           {"muted", ui::volumeMutedIcon(), 16},
+                                           {"mic", ui::micIcon(), 13},
+                                           {"pulse", ui::activityIcon(), 13}};
+
+                const auto sheet = [&out](const juce::String& name, const Glyph* glyphs, int count)
+                {
+                    constexpr int kScale = 4;
+                    constexpr int kPad = 16;
+                    constexpr int kCell = 96;
+                    int box = 0;
+                    for (int i = 0; i < count; ++i)
+                        box = juce::jmax(box, glyphs[i].box);
+                    const int w = kPad * 2 + kCell * count;
+                    const int h = kPad * 3 + box + box * kScale + 18;
+
+                    juce::Image image(juce::Image::ARGB, w, h, true);
+                    // The Graphics must be dead before the image is read:
+                    // JUCE's renderer is free to hold state until it is
+                    // destroyed, and handing the image to out.add() with a
+                    // live Graphics on it wrote a fully transparent PNG.
+                    {
+                        juce::Graphics g(image);
+                        g.fillAll(ui::tokens::bgWindow);
+
+                        for (int i = 0; i < count; ++i)
+                        {
+                            const int cx = kPad + kCell * i + kCell / 2;
+
+                            // Real size, on the card's own background so the
+                            // contrast is the contrast it will actually have.
+                            const int thisBox = glyphs[i].box;
+                            const juce::Rectangle<float> small(static_cast<float>(cx - thisBox / 2),
+                                                               static_cast<float>(kPad + (box - thisBox) / 2),
+                                                               static_cast<float>(thisBox),
+                                                               static_cast<float>(thisBox));
+                            g.setColour(ui::tokens::bgSecondary);
+                            g.fillRoundedRectangle(small.expanded(4.0f), 3.0f);
+                            g.setColour(ui::tokens::fgPrimary);
+                            ui::strokeIcon(g, glyphs[i].path, small);
+
+                            const int bigSide = thisBox * kScale;
+                            const juce::Rectangle<float> big(static_cast<float>(cx - bigSide / 2),
+                                                             static_cast<float>(kPad * 2 + box),
+                                                             static_cast<float>(bigSide),
+                                                             static_cast<float>(bigSide));
+                            g.setColour(ui::tokens::bgSecondary);
+                            g.fillRoundedRectangle(big.expanded(4.0f), 4.0f);
+                            g.setColour(ui::tokens::fgPrimary);
+                            // Stroked at the SMALL box's weight, scaled up, so
+                            // the magnified view shows the real stroke ratio
+                            // rather than a fresh thin one.
+                            ui::strokeIcon(
+                                g, glyphs[i].path, big, ui::iconStrokeFor(static_cast<float>(thisBox)) * kScale);
+
+                            g.setColour(ui::tokens::fgMuted);
+                            g.setFont(juce::Font(juce::FontOptions(11.0f)));
+                            g.drawText(
+                                glyphs[i].name, cx - kCell / 2, h - kPad - 2, kCell, 14, juce::Justification::centred);
+                        }
+                    }
+                    out.add(name, image);
+                };
+
+                sheet("icons-card", cardGlyphs, 5);
+                sheet("icons-bar", barGlyphs, 7);
+            }
 
             // Wide enough that the device badge shows all three parts (#90):
             // the driver chip, the input with its mic and the output with its

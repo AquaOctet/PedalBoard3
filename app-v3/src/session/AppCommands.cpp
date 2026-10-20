@@ -49,7 +49,8 @@ bool invokeAppCommand(BankDocument& bank,
     }
     if (id == appcommands::kUndo || id == appcommands::kRedo)
     {
-        // Test Tone replaces the chain; the history's nodes aren't live then.
+        // With the live graph off the active slot, the history's nodes
+        // aren't live.
         if (history == nullptr || !bank.isLiveCaptureEnabled())
             return false;
         return id == appcommands::kUndo ? history->undo() : history->redo();

@@ -7,7 +7,9 @@
 #include "engine/PluginHost.h"
 #include "engine/processors/FilePlayerProcessor.h"
 #include "engine/processors/VuMeterProcessor.h"
+#include "Fonts.h"
 #include "PluginBrowser.h"
+#include "PortDot.h"
 #include "ProcessorControls.h"
 #include "session/BoardFiles.h"
 #include "session/ControlHub.h"
@@ -29,6 +31,8 @@ constexpr int kCardWidth = 170;
 constexpr int kCardHeight = PluginCard::kStandardHeight; // the mockup's compact card (UI refresh U7)
 constexpr int kCardSpacingX = 80;
 constexpr int kEndpointWidth = 86;
+// The title band at the top of an endpoint, above its ports (#123).
+constexpr int kEndpointTitleHeight = 30;
 constexpr int kCanvasMargin = 24;
 // Geometry for ui::canvas::layout (CanvasLayout.h).
 constexpr canvas::Metrics kMetrics{kCardWidth, kCardHeight, kEndpointWidth, kCardSpacingX, kCanvasMargin};
@@ -60,7 +64,7 @@ bool isInstrumentNode(const session::PatchNode& n) noexcept
 SignalCanvas::SignalCanvas(AppContext& ctx) : ctx_(ctx)
 {
     setOpaque(true);
-    setWantsKeyboardFocus(true); // for Delete-to-remove a selected cable (U4)
+    setWantsKeyboardFocus(true); // Delete removes the selected cable (U4) or card (#126)
     ctx_.session.addChangeListener(this);
 
     // Undo / redo remove nodes outside the canvas (undoing an add, redoing a
@@ -216,7 +220,17 @@ std::unique_ptr<PluginCard> SignalCanvas::makeCard(const PluginCard::NodeSnapsho
         [this](NodeId id) { onCardDragging(id); },
         [this](NodeId id, juce::Point<int> p) { onCardMoved(id, p); },
         [this](NodeId id) { openMappings(id); },
-        [this](NodeId id) { setSelectedNode(id); },
+        // The note goes through the edit history too: it is a thing you
+        // type, so it is a thing you can mistype (#124).
+        [this](NodeId id, juce::String note) { ctx_.editHistory.setNodeNote(id, std::move(note)); },
+        [this](NodeId id)
+        {
+            setSelectedNode(id);
+            // Selecting a card has to bring the keyboard with it, or Delete
+            // goes nowhere: the click landed on the card, a child, so the
+            // canvas never took focus of its own accord (#126).
+            grabKeyboardFocus();
+        },
         // In-place rename goes through the edit history, so it can be undone (U8).
         [this](NodeId id, juce::String name) { ctx_.editHistory.setNodeCustomName(id, std::move(name)); },
         [this](NodeId id) { onCardRearm(id); },
@@ -296,6 +310,32 @@ void SignalCanvas::layoutCards()
     repaint(); // cables are drawn per-cable in paint() from connections_ + live positions
 }
 
+bool SignalCanvas::boardUsesMidi() const
+{
+    // The endpoints' MIDI pins are real -- they are the device's MIDI in and
+    // out -- but showing them on a board where nothing reads MIDI is showing
+    // a road to nowhere. They appear when at least one node has a use for
+    // them (#123).
+    for (const auto& card : cards_)
+        if (card->snapshot().acceptsMidi || card->snapshot().producesMidi)
+            return true;
+    return false;
+}
+
+bool SignalCanvas::hasPortFor(NodeId id, int channel, bool asSource) const
+{
+    if (channel != kChannelMidi)
+        return true;
+    if (isGraphIO(id))
+        return boardUsesMidi();
+
+    const auto it = idToIndex_.find(id);
+    if (it == idToIndex_.end())
+        return false;
+    const auto& snap = cards_[it->second]->snapshot();
+    return asSource ? snap.producesMidi : snap.acceptsMidi;
+}
+
 juce::Point<int> SignalCanvas::portPositionFor(NodeId id, int channel, bool asSource) const
 {
     if (isGraphIO(id))
@@ -305,14 +345,17 @@ juce::Point<int> SignalCanvas::portPositionFor(NodeId id, int channel, bool asSo
         // destination, it terminates on the output endpoint card's
         // left edge.
         const auto& bounds = asSource ? inputCardBounds_ : outputCardBounds_;
-        const int x = asSource ? bounds.getRight() - 8 : bounds.getX() + 8;
-        const int rowSpan = bounds.getHeight() / 4;
-        int y = bounds.getY() + bounds.getHeight() / 2;
+        const int x = asSource ? bounds.getRight() - ports::kOutInset : bounds.getX() + ports::kInX;
+
+        // The SAME offsets from the top that a card uses (#123). They used to
+        // be quarters of the endpoint's height, which lined up with nothing,
+        // so every cable left the endpoint at a slight slope and the three of
+        // them read as a tangle instead of a bundle.
+        int y = bounds.getY() + ports::kPortYMidi;
         if (channel == kChannelL)
-            y = bounds.getY() + rowSpan;
+            y = bounds.getY() + ports::kPortYL;
         else if (channel == kChannelR)
-            y = bounds.getY() + 3 * rowSpan;
-        // MIDI: middle.
+            y = bounds.getY() + ports::kPortYR;
         return {x, y};
     }
 
@@ -359,16 +402,12 @@ void SignalCanvas::strokeCable(
         g.fillPath(dashed);
     };
 
-    if (midi)
-    {
-        g.setColour(bypassed ? tokens::accentInfo.withAlpha(0.7f) : tokens::accentInfo);
-        strokeIt();
-        return;
-    }
-
-    // Audio: amber -> teal gradient along the cable, the demo's signature look.
-    auto start = tokens::accentWarning;
-    auto end = tokens::accentPrimary;
+    // Audio runs purple into green, MIDI yellow into orange (#123). Two
+    // ramps rather than two flat colours, so a cable says which way it runs
+    // as well as what it carries; and two PAIRS, so the audio bundle and the
+    // MIDI one are never confusable with each other at a glance.
+    auto start = midi ? tokens::cableMidiFrom : tokens::cableAudioFrom;
+    auto end = midi ? tokens::cableMidiTo : tokens::cableAudioTo;
     if (bypassed)
     {
         start = start.withAlpha(0.7f);
@@ -417,20 +456,55 @@ void SignalCanvas::paint(juce::Graphics& g)
             juce::DropShadow(juce::Colours::black.withAlpha(0.35f), 12, {0, 3}).drawForPath(g, cardPath);
     }
 
-    // Endpoint card frames.
-    auto drawEndpoint = [&g](const juce::Rectangle<int>& r, const juce::String& label)
+    // Endpoint card frames, and their ports (#121).
+    //
+    // The ports are not decoration. Without them a cable began and ended in
+    // mid-air against a rounded rectangle, the two ends of the chain looked
+    // like a different kind of object from every card between them, and
+    // there was nothing to say where a cable could be dropped. They are
+    // drawn at exactly the points portPositionFor returns, so the dot is
+    // where the cable meets it rather than near it.
+    auto drawEndpoint = [this, &g](const juce::Rectangle<int>& r, const juce::String& label, bool isSource)
     {
         auto rf = r.toFloat().reduced(0.5f);
         g.setColour(tokens::bgCard.withMultipliedAlpha(0.85f));
         g.fillRoundedRectangle(rf, 6.0f);
         g.setColour(tokens::borderDefault);
         g.drawRoundedRectangle(rf, 6.0f, 1.0f);
+        // The title goes at the TOP, not the middle: the middle is where the
+        // L row is, and centring the word there put "Input" straight through
+        // its own port labels.
         g.setColour(tokens::fgMuted);
-        g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
-        g.drawText(label, r, juce::Justification::centred);
+        g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
+        g.drawText(label, r.withHeight(kEndpointTitleHeight), juce::Justification::centred);
+
+        // Input is a source, so its audio dots are the colour a cable
+        // LEAVES with; Output is a destination, so its are the colour one
+        // arrives in. The same run the eye already follows card to card.
+        const auto audio = isSource ? ports::audioOut() : ports::audioIn();
+        const auto midi = isSource ? ports::midiOut() : ports::midiIn();
+
+        // Labelled, because this is the one place on the canvas with room to
+        // say it, and saying it once is enough: every cable running parallel
+        // to these is the same channel (#123). The label sits on the inboard
+        // side of the dot, away from the cable.
+        g.setFont(fonts::ui(10.0f, fonts::Weight::SemiBold));
+        const auto labelledPort = [&](juce::Point<int> at, const juce::String& text, juce::Colour c)
+        {
+            ports::drawDot(g, at, c);
+            auto box = juce::Rectangle<int>(40, 12).withCentre(at);
+            box = isSource ? box.withRightX(at.x - ports::kRadius - 3) : box.withX(at.x + ports::kRadius + 3);
+            g.setColour(tokens::fgMuted);
+            g.drawText(text, box, isSource ? juce::Justification::centredRight : juce::Justification::centredLeft);
+        };
+
+        labelledPort(portPositionFor(session::graphIO, kChannelL, isSource), "L", audio);
+        labelledPort(portPositionFor(session::graphIO, kChannelR, isSource), "R", audio);
+        if (boardUsesMidi())
+            labelledPort(portPositionFor(session::graphIO, kChannelMidi, isSource), "MIDI", midi);
     };
-    drawEndpoint(inputCardBounds_, "Input");
-    drawEndpoint(outputCardBounds_, "Output");
+    drawEndpoint(inputCardBounds_, "Input", /*isSource*/ true);
+    drawEndpoint(outputCardBounds_, "Output", /*isSource*/ false);
 
     // Cables — one stroke per connection so each carries its own amber->teal
     // gradient (audio), cyan (MIDI), dashing (bypassed source), or selection
@@ -440,6 +514,12 @@ void SignalCanvas::paint(juce::Graphics& g)
         const auto from = portPositionFor(c.src, c.srcChannel, /*asSource*/ true);
         const auto to = portPositionFor(c.dst, c.dstChannel, /*asSource*/ false);
         if (from.isOrigin() || to.isOrigin())
+            continue;
+        // A cable needs a port at both ends to be worth drawing (#123). The
+        // auto-connect wires the MIDI pin between every pair of nodes; where
+        // neither end reads it, the connection exists in the patch and means
+        // nothing, and drawing it was the third cable nobody could explain.
+        if (!hasPortFor(c.src, c.srcChannel, /*asSource*/ true) || !hasPortFor(c.dst, c.dstChannel, /*asSource*/ false))
             continue;
         const bool midi = (c.srcChannel == kChannelMidi);
         const bool bypassed = (bypassedNodes_.find(c.src) != bypassedNodes_.end());
@@ -729,6 +809,22 @@ void SignalCanvas::mouseDown(const juce::MouseEvent& e)
     setSelectedNode(std::nullopt);
     selectedCable_ = cableAt(p);
     repaint();
+
+    // Right-click on bare canvas opens Add Plugin, placed where you clicked
+    // (#120). Only on bare canvas: a right-click that landed on a cable has
+    // just selected it, and a menu over the top of that would be answering a
+    // question nobody asked.
+    if (e.mods.isPopupMenu() && !selectedCable_.has_value() && onCanvasContextMenu)
+        onCanvasContextMenu(modelPositionFor(p));
+}
+
+juce::Point<float> SignalCanvas::modelPositionFor(juce::Point<int> canvasPoint) const
+{
+    // Same conversion the drag-and-drop paths make: undo the scroll offset,
+    // then centre the card on the pointer rather than hanging it off the
+    // bottom right of the cursor.
+    return (canvasPoint - viewOffset_.value_or(juce::Point<int>{}) - juce::Point<int>(kCardWidth / 2, kCardHeight / 2))
+        .toFloat();
 }
 
 void SignalCanvas::mouseDrag(const juce::MouseEvent& e)
@@ -761,11 +857,28 @@ void SignalCanvas::mouseUp(const juce::MouseEvent& e)
 
 bool SignalCanvas::keyPressed(const juce::KeyPress& key)
 {
-    if (selectedCable_.has_value() && (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey))
+    const bool deleting = key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey;
+    if (!deleting)
+        return false;
+
+    if (selectedCable_.has_value())
     {
         const auto c = *selectedCable_;
         selectedCable_.reset();
         ctx_.editHistory.removeConnection(c.src, c.srcChannel, c.dst, c.dstChannel);
+        return true;
+    }
+
+    // A selected card goes the same way its cable would (#126). This is
+    // half of what replaced the hover-X on the card header: the X sat in
+    // the path your hand already took to reach the other three buttons, so
+    // going for the editor put a delete under the cursor. Select and press
+    // Delete, or right-click -- both of them things you meant to do.
+    if (selectedNode_.has_value())
+    {
+        const auto id = *selectedNode_;
+        setSelectedNode(std::nullopt);
+        ctx_.editHistory.removeNode(id);
         return true;
     }
     return false;
@@ -821,8 +934,7 @@ void SignalCanvas::timerCallback()
 {
     // Per-plugin activity (a mapped control just moved it) and the VU Meter
     // cards' levels. Processors are read only while Session is idle: during a
-    // rebuild the cached pointers can dangle (Test Tone frees the graph right
-    // after clearPatch publishes Building).
+    // rebuild the cached pointers can dangle.
     const bool idle = ctx_.session.getState() == session::Session::State::Idle;
     const auto now = juce::Time::getMillisecondCounterHiRes();
 

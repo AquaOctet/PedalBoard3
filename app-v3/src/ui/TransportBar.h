@@ -2,16 +2,18 @@
 
 #include "ActivityLights.h"
 #include "AppContext.h"
-#include "CpuMeter.h"
 #include "DeviceBadge.h"
 #include "IconButton.h"
+#include "IoMonitor.h"
 #include "LatencyReadout.h"
-#include "PatchStrip.h"
+#include "SystemMeters.h"
 #include "TransportControls.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <memory>
+#include <optional>
+#include <utility>
 #include <vector>
 
 namespace pedalboard3::ui
@@ -30,26 +32,33 @@ class SignalCanvas;
 //           Patch Bank, App Mappings, About; the file actions are
 //           ui::FileActions. [Gear] is Audio Devices..., MIDI Settings...,
 //           OSC Settings... and the Test Tone switch (UI refresh U10).
-//           [Plug] is Add Plugin, Plugin List..., Rescan. Then [+], which
-//           opens the Add Plugin menu directly: KnownPluginList effects and
-//           built-in nodes, added through EditHistory (AC-UI-N; U1, #32).
-//   centre: the patch strip (roadmap M3 U5; one control since #109) —
-//           `‹ | 2/6 Verse Clean ▾ | ›`. The chevrons step the bank; the
-//           name opens the bank menu (new, duplicate, rename, remove, go to
-//           a patch) and carries a caret so you can tell. Every switch goes
-//           through BankDocument, which closes open editors first via
-//           beforeSwap (D1b / AC-UI-P).
+//           [Plug] is Add Plugin, Plugin List..., Rescan. There was a [+]
+//           beside it opening the same Add Plugin menu — two buttons for one
+//           action, neither of them where you were looking. Right-click the
+//           board instead (#120): the plugin lands where you clicked, which
+//           the bar button could never do.
+//   centre: nothing. The patch strip lived here until #120 took it out: the
+//           bank sidebar names the playing patch, lists the others and
+//           switches between them, and a second copy of that on the bar was
+//           spending the window's widest real estate on a duplicate. The
+//           menu itself is still built here (makePatchMenu) for the macOS
+//           menu bar and the bank sidebar's own rows.
 //   then:   the transport pill (M6 U4, optional-features U4), only while
 //           Tempo / BPM is available: Play / Pause, Return to Zero, the tempo
 //           (its popover has Tap and the time signature), the position and
 //           the Metronome's click button. On a narrow window the position
 //           folds away, then the click button.
-//   right:  the MIDI / OSC activity lights, the round-trip latency, the CPU
-//           meter and the master mute (UI refresh U3 / U2; latency is #90,
-//           mute is #106). The latency folds away first on a narrow window:
-//           the lights and the meter move second by second and it only moves
-//           when the device does. The mute never folds away — it is the
-//           control you reach for when something is already wrong.
+//   right:  the MIDI / OSC activity lights, the IN / OUT level meters, the
+//           round-trip latency, the CPU and MEM meters and the master mute
+//           (UI refresh U3 / U2; latency is #90, mute is #106, IN / OUT is
+//           #117, MEM is #118). The latency folds away first on a narrow
+//           window: the meters move second by second and it only moves when
+//           the device does. The mute never folds away — it is the control
+//           you reach for when something is already wrong.
+//
+// Nothing folds while there is slack between the patch strip and the right
+// cluster (#116): the bar prices itself against the window and walks a fold
+// ladder only as far as the shortfall needs.
 //
 // Between [+] and the patch strip sits the audio-device badge (#90): the
 // driver and rate as a chip, then the input and output devices with a mic and
@@ -67,6 +76,31 @@ public:
 
     void paint(juce::Graphics&) override;
     void resized() override;
+
+    // What the bar needs with nothing folded away and the patch strip at its
+    // floor (#116). MainWindow makes this the window's minimum width, so the
+    // bar's slack is spent before anything is taken off it, and the point
+    // where the slack runs out is as narrow as the window goes.
+    int naturalWidth() const;
+
+    // naturalWidth() changed -- a device with a longer name, a feature
+    // switched on. MainWindow re-applies its resize limits.
+    std::function<void()> onNaturalWidthChanged;
+
+    // What the fold ladder actually did, for the snapshot tool. The bug
+    // this replaced was "it collapses things while there is white space
+    // sitting there", so the evidence has to be a measurement of the space
+    // and of what is still showing, not a picture at one width.
+    // The unclaimed run between the left cluster and whatever is right of
+    // it: the "white space" the fold ladder is required to spend first.
+    int barSlack() const noexcept { return slack_; }
+    int deviceBadgeWidth() const { return deviceBadge_.isVisible() ? deviceBadge_.getWidth() : 0; }
+    int deviceBadgeX() const { return deviceBadge_.getX(); }
+    std::pair<int, int> badgeFreeRegion() const { return freeRegion_; }
+    const juce::Component& latencyReadoutForTest() const { return latencyReadout_; }
+    const juce::Component& systemMetersForTest() const { return systemMeters_; }
+    const juce::Component& ioMonitorForTest() const { return ioMonitor_; }
+    const juce::Component& activityLightsForTest() const { return activityLights_; }
 
     // Settings > App Mappings... (M4 U5). MainWindow owns the window and the key
     // mappings it edits, so it installs this.
@@ -91,6 +125,26 @@ public:
     void promptRenamePatch();
     void confirmRemovePatch();
 
+    // Open the Add Plugin menu at `position` (model coordinates), for the
+    // canvas's right-click (#120).
+    void openAddPluginMenuAt(juce::Point<float> position);
+
+    // Switch the Test Tone (Settings > Test Tone, and the Audio Devices
+    // dialog's toggle). Public so the UI snapshot tool can drive the real
+    // thing end to end rather than a reimplementation of it (#111): the tone
+    // is the one control whose bug was in the sequencing, which a test that
+    // repeats the sequence by hand cannot catch.
+    void toggleTestTone();
+    bool isTestToneOn() const noexcept { return toneActive_; }
+    // Where the tone actually is, as opposed to what the switch says. The
+    // two can only differ if something bypasses the bar, so the snapshot
+    // tool checks them against each other.
+    bool isTestToneLive() const noexcept;
+
+    // The tone switched. RootComponent uses this to re-read the status bar,
+    // which is where the user is told (#111).
+    std::function<void()> onTestToneChanged;
+
     // Plugins > Rescan Plugins: the out-of-process scan and its summary. The
     // prompt after a settings reset runs it too (M5 U7).
     void rescanPlugins();
@@ -104,18 +158,15 @@ public:
     juce::PopupMenu makeFileMenu(juce::ApplicationCommandManager* menuBarCommands = nullptr);
     juce::PopupMenu makeSettingsMenu();
     juce::PopupMenu makePluginsMenu();
-    // The patch strip's menu: new, duplicate, rename, remove, go to a patch,
-    // and the board's feature switches.
-    juce::PopupMenu makePatchMenu();
 
 private:
     void changeListenerCallback(juce::ChangeBroadcaster*) override;
 
-    void openAddPluginMenu();
-    // The Add Plugin menu, shared by [+] and Plugins > Add Plugin; each item
-    // carries its own action.
-    juce::PopupMenu makeAddPluginMenu();
-    bool canAddPlugin() const; // Session Idle and Test Tone off
+    // The Add Plugin menu, shared by Plugins > Add Plugin and the canvas's
+    // right-click; each item carries its own action. `position` is where the
+    // card goes, or nothing for the end of the chain.
+    juce::PopupMenu makeAddPluginMenu(std::optional<juce::Point<float>> position = std::nullopt);
+    bool canAddPlugin() const; // Session Idle
     void openFileMenu();
     void openPluginList();
     // The Test Tone switch changed (the Settings menu or the Audio Devices
@@ -126,9 +177,6 @@ private:
     void refreshMuteButton();
     void openPluginsMenu();
 
-    // Patch strip (M3 U5, reworked for #109).
-    void openPatchMenu();
-
     AppContext& ctx_;
     SignalCanvas& canvas_;
     FileActions& files_;
@@ -136,22 +184,35 @@ private:
     // The three menus are icons, not words (#90). Their tooltips carry the
     // name, and on macOS the menu bar still spells them out.
     IconButton fileButton_{folderIcon(), "File"};
-    juce::TextButton addPluginButton_{"+"};
     IconButton settingsButton_{gearIcon(), "Settings"};
     IconButton pluginsButton_{plugIcon(), "Plugins"};
     DeviceBadge deviceBadge_;
     ActivityLights activityLights_;
+    IoMonitor ioMonitor_;
     LatencyReadout latencyReadout_;
-    CpuMeter cpuMeter_;
+    SystemMeters systemMeters_;
     IconButton muteButton_{speakerIcon(), "Master mute"};
     TransportControls transportControls_;
 
     // The Test Tone switch: the Settings menu's tick and the Audio Devices
-    // dialog's toggle share it; valueChanged() starts or stops the tone.
+    // dialog's toggle share it; valueChanged() asks the engine to start or
+    // stop the tone.
+    //
+    // There is nothing else here any more. The tone used to be a graph that
+    // replaced the patch, so the bar had to clear the board, wait for that
+    // clear to actually commit on Session's worker, remember which patch
+    // generation it had asked at, stash the board in the bank slot, suspend
+    // live capture, close every open editor, and reload the lot on the way
+    // back. All of it existed to make a diagnostic that deleted your rig
+    // survivable. The tone is a master stage in the runtime now (#111): the
+    // board is untouched, so the bar just forwards the switch.
     juce::Value testTone_{false};
     bool toneActive_{false}; // what is actually playing
 
-    PatchStrip patchStrip_;
+    // The unclaimed width left in the middle after the last resized().
+    int slack_{0};
+    // Where the badge was allowed to sit, for the snapshot tool's report.
+    std::pair<int, int> freeRegion_{0, 0};
 
     // Where the group dividers go, filled in by resized() and drawn by
     // paint(). The bar has six groups and had nothing between them (#109).

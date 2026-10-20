@@ -1,7 +1,9 @@
 #pragma once
 
 #include "MasterMute.h"
+#include "PeakLevel.h"
 #include "processors/OutputSanitiser.h"
+#include "TestTone.h"
 #include "Transport.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -24,11 +26,22 @@ namespace pedalboard3::engine
 // has done all that, then takes ownership of the outgoing graph for
 // deferred deletion.
 //
-// Every processBlock ends with a final `OutputSanitiser` pass so no
-// NaN/Inf/|x|>1.5 ever reaches the audio device regardless of graph state,
-// and then the master mute (#106), in that order: muting is a multiply by
-// zero and `NaN * 0.0f` is NaN, so sanitising second would let a muted NaN
-// out. Sanitise, then mute, and silence is exactly 0.
+// Every processBlock ends with the master stage, in this order and for
+// these reasons:
+//   OutputSanitiser  — no NaN/Inf/|x|>1.5 ever reaches the audio device,
+//                      whatever the graph is doing.
+//   TestTone (#111)  — after the sanitiser, so a chain producing NaN cannot
+//                      poison the one signal being used to prove the path is
+//                      clean.
+//   MasterMute (#106)— last. Muting is a multiply by zero and `NaN * 0.0f`
+//                      is NaN, so sanitising second would let a muted NaN
+//                      out; and the tone has to be mutable, because the
+//                      status bar promises that muted means silent.
+//
+// The two metering points sit at the two ends (#117): the input peak at
+// the very top, before the graph runs, so the meter reads the cable rather
+// than the board; the output peak at the very bottom, after the mute, so
+// it reads what is leaving rather than what the graph produced.
 //
 // The runtime also owns the transport (M6 U1): it is the live graph's play
 // head, which JUCE's graph hands to every node each block, and it advances
@@ -128,6 +141,17 @@ public:
     // works on an empty board and survives a patch change untouched.
     MasterMute& getMasterMute() noexcept { return masterMute_; }
 
+    // The test tone (#111). Here for the same reasons as the mute, plus the
+    // one that matters most: as a master stage it does not touch the board,
+    // so switching it on no longer empties the canvas and switching it off
+    // no longer re-instantiates every plugin.
+    TestTone& getTestTone() noexcept { return testTone_; }
+
+    // What is arriving at the audio input, before the board sees it, and
+    // what is leaving after everything has had its say (#117).
+    PeakLevel& getInputLevel() noexcept { return inputLevel_; }
+    PeakLevel& getOutputLevel() noexcept { return outputLevel_; }
+
 private:
     // Audio-thread helper: runs 16ch × {allSoundOff, allNotesOff,
     // resetAllControllers} into a silenced scratch buffer on the outgoing
@@ -139,7 +163,10 @@ private:
     std::atomic<juce::AudioProcessorGraph*> pending_{nullptr};
     std::atomic<std::uint64_t> generationAckedByAudio_{0};
     processors::OutputSanitiser sanitiser_;
+    TestTone testTone_;
     MasterMute masterMute_;
+    PeakLevel inputLevel_;
+    PeakLevel outputLevel_;
     Transport transport_;
 
     // Pre-built MIDI flush template + per-call scratch (plugins that

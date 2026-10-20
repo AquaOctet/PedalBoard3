@@ -57,17 +57,20 @@ add_library(pb3_app_core STATIC
     ui/BodyLayout.h
     ui/BrowserModel.h
     ui/CanvasLayout.h
+    ui/ChromeMetrics.h
     ui/CardText.h
     ui/ColourScheme.h
-    ui/CpuMeter.cpp
-    ui/CpuMeter.h
+    ui/SystemMeters.cpp
+    ui/SystemMeters.h
     ui/DeviceBadge.cpp
     ui/DeviceBadge.h
     ui/IconButton.h
+    ui/IoMonitor.cpp
+    ui/MeterRow.cpp
     ui/LatencyReadout.cpp
+    ui/IoMonitor.h
+    ui/MeterRow.h
     ui/LatencyReadout.h
-    ui/PatchStrip.cpp
-    ui/PatchStrip.h
     ui/Alert.cpp
     ui/Alert.h
     ui/AudioSettingsModel.h
@@ -105,6 +108,7 @@ add_library(pb3_app_core STATIC
     ui/PluginBrowser.h
     ui/PluginCard.cpp
     ui/PluginCard.h
+    ui/PortDot.h
     ui/ProcessorControls.cpp
     ui/ProcessorControls.h
     ui/RecorderWindow.cpp
@@ -166,10 +170,11 @@ pb3_apply_strict_warnings(pb3_app_core
     ui/AppMappingsWindow.cpp
     ui/BankSidebar.cpp
     ui/BoardMappingsPanel.cpp
-    ui/CpuMeter.cpp
+    ui/SystemMeters.cpp
     ui/DeviceBadge.cpp
+    ui/IoMonitor.cpp
+    ui/MeterRow.cpp
     ui/LatencyReadout.cpp
-    ui/PatchStrip.cpp
     ui/Alert.cpp
     ui/AudioSettingsPanel.cpp
     ui/DialogFrame.cpp

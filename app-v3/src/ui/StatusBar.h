@@ -53,6 +53,15 @@ public:
     std::function<void()> onTogglePluginBrowser;
     std::function<bool()> isPluginBrowserShown;
 
+    // Whether the Test Tone is playing (#111). TransportBar owns the switch,
+    // so RootComponent installs this the way it installs the panel toggles.
+    // The tone is a master stage, so the board behind it is untouched — but
+    // what you are hearing still is not your board, and the bar says so.
+    std::function<bool()> isTestToneOn;
+
+    // The tone went on or off; re-read it.
+    void refreshTestTone() { refresh(); }
+
     // Re-read which panels are showing and re-light the toggles. RootComponent
     // calls this from its resized(), which every path that opens or closes a
     // panel ends in — including a window resize that crosses the fold width

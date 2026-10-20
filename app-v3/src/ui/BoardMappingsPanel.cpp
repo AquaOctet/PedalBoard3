@@ -1,4 +1,5 @@
 #include "BoardMappingsPanel.h"
+#include "ChromeMetrics.h"
 
 #include "Icons.h"
 #include "MappingRowEditors.h"
@@ -435,7 +436,10 @@ void BoardMappingsPanel::resized()
 {
     auto area = getLocalBounds();
     auto header = area.removeFromTop(kHeaderHeight).reduced(kPad, 5);
-    toggle_.setBounds(header.removeFromLeft(18).withSizeKeepingCentre(18, 18)); // top-left, like the bank's
+    // Top-left, on the same vertical line as the bank's toggle and the
+    // top bar's File button (#120).
+    toggle_.setBounds(
+        header.removeFromLeft(chrome::kIconButtonSize).withSizeKeepingCentre(chrome::kIconSize, chrome::kIconSize));
     header.removeFromLeft(10);
     titleArea_ = header.removeFromLeft(76);
     midiTab_.setBounds(header.removeFromLeft(70));

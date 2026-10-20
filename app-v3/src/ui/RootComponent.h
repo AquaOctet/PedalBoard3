@@ -102,6 +102,10 @@ public:
         mappingsPanel_.onOpenDialog = [this](session::NodeId id) { canvas_.openMappings(id); };
         mappingsPanel_.onSelectNode = [this](session::NodeId id) { canvas_.selectNode(id); };
         canvas_.onSelectionChanged = [this](std::optional<session::NodeId> id) { mappingsPanel_.setSelectedNode(id); };
+        // Right-click the board to add a plugin, where you clicked (#120).
+        // This replaced the top bar's [+], which could only ever append to
+        // the end of the chain.
+        canvas_.onCanvasContextMenu = [this](juce::Point<float> at) { transportBar_.openAddPluginMenuAt(at); };
         transportBar_.onToggleMappingsPanel = [this] { toggleMappingsPanel(); };
         transportBar_.isMappingsPanelShown = [this] { return mappingsOpen_; };
 
@@ -114,6 +118,8 @@ public:
         statusBar_.isMappingsPanelShown = [this] { return mappingsOpen_; };
         statusBar_.onTogglePluginBrowser = [this] { togglePluginBrowser(); };
         statusBar_.isPluginBrowserShown = [this] { return pluginBrowser_.isVisible(); };
+        statusBar_.isTestToneOn = [this] { return transportBar_.isTestToneOn(); };
+        transportBar_.onTestToneChanged = [this] { statusBar_.refreshTestTone(); };
 
         // A click on the canvas closes a slid-open panel.
         viewport_.addMouseListener(this, true);
@@ -124,6 +130,7 @@ public:
     ~RootComponent() override
     {
         canvas_.onSelectionChanged = nullptr; // the panel is destroyed first
+        canvas_.onCanvasContextMenu = nullptr;
         viewport_.removeMouseListener(this);
     }
 
@@ -228,10 +235,11 @@ public:
     }
 
     // Undo and Redo grey out with nothing to undo or redo (#96). EditHistory
-    // has said so since it was written and nothing asked. The Test Tone check
-    // is the same one invokeAppCommand makes: the tone replaces the chain, so
-    // the history's nodes are not live and the command would refuse anyway —
-    // a menu item that does nothing when you pick it is worse than a grey one.
+    // has said so since it was written and nothing asked. The live-capture
+    // check is the same one invokeAppCommand makes: with the live graph off
+    // the active slot the history's nodes are not live and the command would
+    // refuse anyway — a menu item that does nothing when you pick it is
+    // worse than a grey one.
     bool canEdit() const { return ctx_.bankDocument.isLiveCaptureEnabled() && ctx_.editHistory.canUndo(); }
     bool canRedo() const { return ctx_.bankDocument.isLiveCaptureEnabled() && ctx_.editHistory.canRedo(); }
 

@@ -302,7 +302,7 @@ TEST_CASE("BankDocument: live capture can be suspended and a swap re-enables it"
     f.doc.loadBank(threeBank());
     f.settle();
 
-    // Simulate Test Tone: capture, suspend, then the live graph becomes empty.
+    // Capture, suspend, then let the live graph become empty.
     f.doc.storeActive();
     f.doc.setLiveCaptureEnabled(false);
     f.s.clearPatch();
@@ -506,6 +506,60 @@ TEST_CASE("BankDocument: file.save runs the save handler the UI installs", "[ses
     f.doc.onSaveRequested = [&saves] { ++saves; };
     REQUIRE(session::invokeAppCommand(f.doc, session::appcommands::kSave));
     REQUIRE(saves == 1);
+}
+
+TEST_CASE("BankDocument: suspend, swap a foreign graph in, and reloadActive puts the board back", "[session][bank]")
+{
+    // Capture the slot, stop live capture, clear, drop a graph Session did
+    // not build into the engine, then reloadActive.
+    //
+    // The Test Tone used to do exactly this, which is where the sequence
+    // came from and why it was worth pinning. It does not any more -- the
+    // tone is a master stage and never touches the board (#111) -- but
+    // nothing else in BankDocument guarantees this path stays sound, and a
+    // future out-of-band swap would want it to be.
+    Fixture f;
+    f.doc.loadBank(threeBank(), tempBankFile("tone.pdl"));
+    f.settle();
+
+    // Give the active patch a node so there is a chain to lose.
+    f.s.replacePatch(session::Patch{});
+    f.settle();
+    const auto before = f.doc.bank().patches[static_cast<size_t>(f.doc.activeIndex())];
+    const auto nodesBefore = f.s.getNodeCount();
+
+    auto* runtime = f.eng.getRuntime();
+    REQUIRE(runtime != nullptr);
+
+    // ---- tone ON
+    const auto versionAtRequest = f.s.getStateVersion();
+    f.doc.storeActive();
+    f.doc.setLiveCaptureEnabled(false);
+    f.s.clearPatch();
+    f.settle();
+    REQUIRE(f.s.getStateVersion() > versionAtRequest); // the clear landed
+
+    auto tone = std::make_unique<juce::AudioProcessorGraph>();
+    tone->setPlayConfigDetails(2, 2, 48000.0, 512);
+    tone->prepareToPlay(48000.0, 512);
+    auto* toneRaw = tone.get();
+    f.eng.loadGraph(std::move(tone));
+    f.settle();
+    REQUIRE(runtime->getLiveGraph() == toneRaw); // the tone is what is playing
+
+    // ---- tone OFF
+    f.doc.reloadActive();
+    f.settle();
+
+    // The board is back: the engine is driving Session's graph again, not the
+    // tone, and the active slot is unchanged.
+    REQUIRE(runtime->getLiveGraph() != toneRaw);
+    REQUIRE(f.s.getState() == session::Session::State::Idle);
+    REQUIRE(f.s.getLastError().isEmpty());
+    REQUIRE(f.s.getNodeCount() == nodesBefore);
+    REQUIRE(f.doc.bank().patches[static_cast<size_t>(f.doc.activeIndex())].name == before.name);
+    // Live capture is back on, or the next save would write the empty patch.
+    REQUIRE(f.doc.isLiveCaptureEnabled());
 }
 
 TEST_CASE("audio.toggleMute mutes without touching the board", "[session][bank][app-commands][mute]")

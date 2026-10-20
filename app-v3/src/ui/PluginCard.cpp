@@ -1,6 +1,8 @@
 #include "PluginCard.h"
 
 #include "CardText.h"
+#include "Pb3LookAndFeel.h"
+#include "PortDot.h"
 #include "ProcessorControls.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -19,14 +21,19 @@ constexpr int kHeaderHeight = 32;
 constexpr int kStripHeight = 3;
 constexpr int kGripWidth = 14;
 constexpr int kButtonGap = 3;
+constexpr int kIconButtonWidth = 22;
+constexpr int kChipPadding = 6;
+// Between the title and the first button, so a long name that ellipsises
+// does not finish hard against the bypass icon.
+constexpr int kNameButtonGap = 6;
 
 // Ports sit at the card's edges, clear of the body text.
-constexpr int kPortRadius = 5;
-constexpr int kInPortX = 12;
-constexpr int kOutPortInset = 10;
-constexpr int kPortYL = 46;
-constexpr int kPortYR = 60;
-constexpr int kPortYMidi = 76;
+constexpr int kPortRadius = ports::kRadius;
+constexpr int kInPortX = ports::kInX;
+constexpr int kOutPortInset = ports::kOutInset;
+constexpr int kPortYL = ports::kPortYL;
+constexpr int kPortYR = ports::kPortYR;
+constexpr int kPortYMidi = ports::kPortYMidi;
 
 constexpr int kTextLeft = 24;
 constexpr int kTextRightInset = 20;
@@ -47,19 +54,15 @@ juce::Font monoFont(float height)
 PluginCard::PluginCard(NodeSnapshot initialSnapshot, Callbacks callbacks)
     : snapshot_(std::move(initialSnapshot)), callbacks_(std::move(callbacks))
 {
-    for (auto* button : {&bypassButton_, &mappingsButton_, &editButton_, &removeButton_})
+    for (auto* button : {&bypassButton_, &mappingsButton_, &editButton_})
     {
         button->setColour(juce::TextButton::buttonColourId, tokens::bgSecondary);
         button->setColour(juce::TextButton::textColourOffId, tokens::fgPrimary);
         addAndMakeVisible(button);
     }
-    removeButton_.setColour(juce::TextButton::textColourOffId, tokens::accentDestructive);
-    removeButton_.setVisible(false); // shown on hover
-
-    bypassButton_.setTooltip("Bypass");
+    bypassButton_.setTooltip("Bypass this plugin");
     mappingsButton_.setTooltip("MIDI / OSC mappings");
-    editButton_.setTooltip("Open the plugin's editor");
-    removeButton_.setTooltip("Remove the plugin (Ctrl+Z brings it back)");
+    editButton_.setTooltip("Open the plugin's own interface");
 
     bypassButton_.onClick = [this]
     {
@@ -76,12 +79,6 @@ PluginCard::PluginCard(NodeSnapshot initialSnapshot, Callbacks callbacks)
         if (callbacks_.onEdit)
             callbacks_.onEdit(snapshot_.id);
     };
-    removeButton_.onClick = [this]
-    {
-        if (callbacks_.onRemove)
-            callbacks_.onRemove(snapshot_.id);
-    };
-
     addMouseListener(&hoverWatcher_, /*wantsEventsForAllNestedChildComponents*/ true);
     refreshButtons();
 }
@@ -166,7 +163,6 @@ void PluginCard::refreshButtons()
     editButton_.setVisible(!snapshot_.isMissing() && !snapshot_.isDead() &&
                            (!snapshot_.builtIn || hasProcessorEditor(snapshot_.internalType)));
     mappingsButton_.setVisible(!isVuMeter());
-    removeButton_.setVisible(hovered_);
 }
 
 void PluginCard::updateHover()
@@ -175,8 +171,6 @@ void PluginCard::updateHover()
     if (over == hovered_)
         return;
     hovered_ = over;
-    removeButton_.setVisible(hovered_);
-    resized();
     repaint();
 }
 
@@ -279,33 +273,55 @@ void PluginCard::paint(juce::Graphics& g)
     }
     else
     {
+        // The kind as a chip, not as a grey word (#124). Two lines of
+        // differently-sized grey text under a bold title is three
+        // typographic weights fighting in 40 pixels; a filled chip is one
+        // shape that reads instantly and leaves the line below it to say
+        // something worth reading.
         const auto lines = card::linesFor(snapshot_, mappingCount_);
-        g.setFont(juce::Font(juce::FontOptions(12.0f)));
-        g.setColour(tokens::fgMuted);
-        g.drawText(lines.kind, kTextLeft, 37, textWidth, 16, juce::Justification::centredLeft, true);
-        g.setFont(monoFont(10.0f));
-        g.setColour(tokens::fgMuted.withAlpha(0.8f));
-        g.drawText(lines.meta, kTextLeft, 54, textWidth, 14, juce::Justification::centredLeft, true);
+        const auto chipFont = juce::Font(juce::FontOptions(10.0f, juce::Font::bold));
+        const int chipTextWidth = juce::GlyphArrangement::getStringWidthInt(chipFont, lines.kind);
+        const juce::Rectangle<float> chip(static_cast<float>(kTextLeft),
+                                          38.0f,
+                                          static_cast<float>(juce::jmin(chipTextWidth + kChipPadding * 2, textWidth)),
+                                          15.0f);
+        g.setColour(snapshot_.bypassed ? tokens::bgMuted : accent_.withAlpha(0.18f));
+        g.fillRoundedRectangle(chip, 3.0f);
+        g.setFont(chipFont);
+        g.setColour(snapshot_.bypassed ? tokens::fgSubtle : accent_);
+        g.drawText(lines.kind, chip.toNearestInt(), juce::Justification::centred, true);
+
+        // The second line: the player's note in a readable face, or the
+        // format and vendor in mono as before. A note is prose and should
+        // not be set in a monospace font.
+        if (lines.meta.isNotEmpty())
+        {
+            g.setFont(lines.metaIsNote ? juce::Font(juce::FontOptions(11.0f, juce::Font::italic)) : monoFont(10.0f));
+            g.setColour(lines.metaIsNote ? tokens::fgMuted : tokens::fgSubtle);
+            g.drawText(lines.meta, kTextLeft, 56, textWidth, 14, juce::Justification::centredLeft, true);
+        }
     }
 
-    // Ports: audio in teal, audio out amber, MIDI cyan, each ringed so it reads
-    // against the card.
-    const auto drawPort = [&g](int cx, int cy, juce::Colour c)
-    {
-        const auto box = juce::Rectangle<float>(0.0f, 0.0f, kPortRadius * 2.0f, kPortRadius * 2.0f)
-                             .withCentre({static_cast<float>(cx), static_cast<float>(cy)});
-        g.setColour(c);
-        g.fillEllipse(box);
-        g.setColour(tokens::bgWindow);
-        g.drawEllipse(box, 1.5f);
-    };
+    // Ports: audio in teal, audio out amber, MIDI cyan. Shared with the
+    // canvas's Input and Output endpoints so both ends of a cable are the
+    // same circle (#121).
+    const auto drawPort = [&g](int cx, int cy, juce::Colour c) { ports::drawDot(g, {cx, cy}, c); };
     const int outX = getWidth() - kOutPortInset;
-    drawPort(kInPortX, kPortYL, tokens::accentPrimary);
-    drawPort(kInPortX, kPortYR, tokens::accentPrimary);
-    drawPort(kInPortX, kPortYMidi, tokens::accentInfo);
-    drawPort(outX, kPortYL, tokens::accentWarning);
-    drawPort(outX, kPortYR, tokens::accentWarning);
-    drawPort(outX, kPortYMidi, tokens::accentInfo);
+    drawPort(kInPortX, kPortYL, ports::audioIn());
+    drawPort(kInPortX, kPortYR, ports::audioIn());
+    drawPort(outX, kPortYL, ports::audioOut());
+    drawPort(outX, kPortYR, ports::audioOut());
+
+    // MIDI only where MIDI actually goes (#123). The auto-connect wires the
+    // MIDI pin between every pair of nodes whether or not either end has any
+    // use for it, so an effects rack -- which is all v3.0 hosts, instruments
+    // are out of scope -- drew a third cable the length of the board that
+    // could never carry anything. "I am not sure what the three cables are"
+    // was the right question to ask about it.
+    if (snapshot_.acceptsMidi)
+        drawPort(kInPortX, kPortYMidi, ports::midiIn());
+    if (snapshot_.producesMidi)
+        drawPort(outX, kPortYMidi, ports::midiOut());
 
     // The edge: the "chosen" accent when selected, brighter on hover. Selected
     // is pink rather than the running cyan-green on purpose (#105): on this
@@ -322,7 +338,13 @@ void PluginCard::resized()
 {
     auto header = getLocalBounds().removeFromTop(kHeaderHeight).withTrimmedLeft(kAccentInset).reduced(6, 5);
 
-    // From the right: Remove (on hover), ED, M, BYP; the name takes the rest.
+    // From the right: editor, mappings, bypass; the name takes the rest.
+    //
+    // There is no remove button. It appeared on hover, in the position your
+    // hand was already travelling to for the other three, so reaching for
+    // the editor put a delete under the cursor (#126). Removing is a
+    // deliberate act and lives where deliberate acts live: right-click, or
+    // select the card and press Delete.
     const auto place = [&header](juce::Button& button, int width)
     {
         if (!button.isVisible())
@@ -330,11 +352,12 @@ void PluginCard::resized()
         button.setBounds(header.removeFromRight(width));
         header.removeFromRight(kButtonGap);
     };
-    place(removeButton_, 22);
-    place(editButton_, 26);
-    place(mappingsButton_, 22);
-    place(bypassButton_, 32);
-    nameArea_ = header.withTrimmedLeft(kGripWidth);
+    // All the same width now that they are icons. BYP needed 32 px and M
+    // needed 22, which is why the row never looked deliberate.
+    place(editButton_, kIconButtonWidth);
+    place(mappingsButton_, kIconButtonWidth);
+    place(bypassButton_, kIconButtonWidth);
+    nameArea_ = header.withTrimmedLeft(kGripWidth).withTrimmedRight(kNameButtonGap);
 
     if (renameEditor_ != nullptr)
         renameEditor_->setBounds(nameArea_.expanded(2, 1));
@@ -363,8 +386,85 @@ bool PluginCard::hitTest(int x, int y)
 
 void PluginCard::mouseDown(const juce::MouseEvent& e)
 {
+    // Right-click is a menu, not the start of a drag.
+    if (e.mods.isPopupMenu())
+    {
+        didDrag_ = false;
+        showCardMenu();
+        return;
+    }
     didDrag_ = false;
     dragger_.startDraggingComponent(this, e);
+}
+
+void PluginCard::showCardMenu()
+{
+    // The note needs somewhere to be typed, and once there is a menu the
+    // things that were only reachable as a double-click on exactly the right
+    // few pixels of the title belong in it too (#124).
+    juce::PopupMenu menu;
+    menu.addItem("Rename...", [this] { beginRename(); });
+    menu.addItem(snapshot_.note.isEmpty() ? "Add a note..." : "Edit note...", [this] { promptForNote(); });
+    if (snapshot_.note.isNotEmpty())
+        menu.addItem("Clear note",
+                     [this]
+                     {
+                         if (callbacks_.onSetNote)
+                             callbacks_.onSetNote(snapshot_.id, {});
+                     });
+    menu.addSeparator();
+    menu.addItem("Bypass",
+                 true,
+                 snapshot_.bypassed,
+                 [this]
+                 {
+                     if (callbacks_.onBypassToggle)
+                         callbacks_.onBypassToggle(snapshot_.id);
+                 });
+    menu.addItem("Mappings...",
+                 [this]
+                 {
+                     if (callbacks_.onOpenMappings)
+                         callbacks_.onOpenMappings(snapshot_.id);
+                 });
+    menu.addSeparator();
+    {
+        // Spell the key out, so the menu teaches the shortcut that replaced
+        // the hover-X rather than leaving it to be discovered (#126).
+        juce::PopupMenu::Item remove("Remove");
+        remove.shortcutKeyDescription = "Del";
+        remove.setAction(
+            [this]
+            {
+                if (callbacks_.onRemove)
+                    callbacks_.onRemove(snapshot_.id);
+            });
+        menu.addItem(std::move(remove));
+    }
+    menu.showMenuAsync(juce::PopupMenu::Options{}.withMinimumWidth(Pb3LookAndFeel::kMenuMinimumWidth));
+}
+
+void PluginCard::promptForNote()
+{
+    auto* window = new juce::AlertWindow(
+        "Note", "A note to yourself about " + card::titleFor(snapshot_) + ".", juce::MessageBoxIconType::NoIcon);
+    window->addTextEditor("note", snapshot_.note, {});
+    window->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    window->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+
+    juce::Component::SafePointer<PluginCard> safeThis(this);
+    window->enterModalState(true,
+                            juce::ModalCallbackFunction::create(
+                                [safeThis, window](int result)
+                                {
+                                    const auto text = window->getTextEditorContents("note").trim();
+                                    delete window;
+                                    if (result != 1 || safeThis == nullptr)
+                                        return;
+                                    if (safeThis->callbacks_.onSetNote)
+                                        safeThis->callbacks_.onSetNote(safeThis->snapshot_.id, text);
+                                }),
+                            false);
 }
 
 void PluginCard::mouseDrag(const juce::MouseEvent& e)

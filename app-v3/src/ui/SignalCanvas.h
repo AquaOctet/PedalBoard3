@@ -77,10 +77,9 @@ public:
     explicit SignalCanvas(AppContext& ctx);
     ~SignalCanvas() override;
 
-    // Public API the TransportBar calls before invoking any Session
-    // mutator that destroys plugin instances (e.g. clearPatch from
-    // Test Tone). Closes every EditorWindow synchronously, on the
-    // message thread, BEFORE the caller calls into Session.
+    // Public API for callers about to invoke a Session mutator that
+    // destroys plugin instances. Closes every EditorWindow synchronously,
+    // on the message thread, BEFORE the caller calls into Session.
     void closeAllEditors();
 
     void paint(juce::Graphics&) override;
@@ -90,6 +89,14 @@ public:
     // Port drag-to-connect / cable selection live on the canvas (cards delegate
     // their port pixels here via hitTest).
     void mouseDown(const juce::MouseEvent&) override;
+
+    // Whether anything on the board has a use for the MIDI pins, and
+    // whether a given end of a cable has a port to attach to (#123).
+    bool boardUsesMidi() const;
+    bool hasPortFor(NodeId id, int channel, bool asSource) const;
+
+    // A point on the canvas in the coordinates nodes save.
+    juce::Point<float> modelPositionFor(juce::Point<int> canvasPoint) const;
     void mouseDrag(const juce::MouseEvent&) override;
     void mouseUp(const juce::MouseEvent&) override;
     bool keyPressed(const juce::KeyPress&) override;
@@ -109,6 +116,17 @@ public:
     // either side.
     void selectNode(std::optional<NodeId> id) { setSelectedNode(id); }
     std::function<void(std::optional<NodeId>)> onSelectionChanged;
+
+    // Right-click on empty canvas: the owner opens the Add Plugin menu, and
+    // the plugin lands where the click was (#120). The top bar used to carry
+    // a [+] for this, beside a Plugins menu that already had Add Plugin in
+    // it -- two buttons for one action, and neither of them where you were
+    // looking. You are looking at the board.
+    //
+    // `modelPosition` is where the card goes, in the coordinates nodes save,
+    // already adjusted for the scroll offset and for centring the card on
+    // the pointer.
+    std::function<void(juce::Point<float> modelPosition)> onCanvasContextMenu;
 
     // The per-plugin mappings dialog (M4 U4): at most one open; opening another
     // node's replaces it. The board mappings panel's Learn... opens it too.
