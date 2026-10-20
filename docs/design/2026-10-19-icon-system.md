@@ -139,8 +139,8 @@ Authored on the 24-unit grid, origin top-left, with a nominal 2-unit stroke.
 |---|---|---|---|
 | **power** | Bypass | ring open at the top, vertical stem through the gap | 2 |
 | **faders** | Mappings | two horizontal tracks, one square handle each, offset | 2 |
-| **window** | Open the editor | rounded rect with a title rule across the top | 2 |
-| **cross** | Remove | two diagonals, in an 11 px box (R6) | 1 |
+| **plug** | Open the plugin's own interface | two prongs, a body, a cord | 3 |
+| **cross** | Remove | two diagonals, in an 11 px box (R6) — **not on the card**, see below | 1 |
 
 **Power** is the convention for bypass on hardware and in every DAW, so it
 needs no learning. The ring is drawn from 300° round to 240° — a 60° gap,
@@ -152,8 +152,20 @@ corners at 2.3 px where a 4-unit circle renders as a smudge (R4). Two
 handles at different positions is what says "these are controls that move",
 which is what a mapping is.
 
-**Window** is the plugin's own editor, so it is a window. The title rule is
-4 units from the top, not 2, so the frame and the rule do not merge (R4).
+**Plug** opens the plugin's own interface. It was a window — a rounded rect
+with a title rule — and it read as a folder: at 14 px the rule is one pixel
+and what is left is a rectangle with a lighter top edge. A plug has an
+unmistakable silhouette at any size (R7) and says "plugin" without reading
+as anything else. It is the same glyph the top bar uses for the Plugins
+menu, which is a feature: both mean "a plugin".
+
+**The cross is no longer on the card.** It appeared on hover, in the exact
+position your hand was already travelling to for the other three buttons,
+so reaching for the editor put a delete under the cursor. Removing is a
+deliberate act: it lives in the right-click menu (with "Del" spelled out
+beside it) and on the Delete key with the card selected. The glyph stays in
+the set because it is still the right drawing if a cross is ever needed
+again.
 
 **Cross** is the one glyph with its own box size, for the optical reason in
 R6. Its source extent is irrelevant.
@@ -167,6 +179,7 @@ R6. Its source extent is irrelevant.
 | a MIDI DIN for mappings | mappings are MIDI *or* OSC; a DIN says only one of them |
 | a pencil for the editor | implies renaming, which is a different action on the same card |
 | a bin for remove | heavier than a cross and says "deleted forever", when Ctrl+Z brings it back |
+| a window for the editor | at 14 px the title rule is one pixel and the frame reads as a folder |
 
 ---
 

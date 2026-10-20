@@ -64,7 +64,7 @@ bool isInstrumentNode(const session::PatchNode& n) noexcept
 SignalCanvas::SignalCanvas(AppContext& ctx) : ctx_(ctx)
 {
     setOpaque(true);
-    setWantsKeyboardFocus(true); // for Delete-to-remove a selected cable (U4)
+    setWantsKeyboardFocus(true); // Delete removes the selected cable (U4) or card (#126)
     ctx_.session.addChangeListener(this);
 
     // Undo / redo remove nodes outside the canvas (undoing an add, redoing a
@@ -223,7 +223,14 @@ std::unique_ptr<PluginCard> SignalCanvas::makeCard(const PluginCard::NodeSnapsho
         // The note goes through the edit history too: it is a thing you
         // type, so it is a thing you can mistype (#124).
         [this](NodeId id, juce::String note) { ctx_.editHistory.setNodeNote(id, std::move(note)); },
-        [this](NodeId id) { setSelectedNode(id); },
+        [this](NodeId id)
+        {
+            setSelectedNode(id);
+            // Selecting a card has to bring the keyboard with it, or Delete
+            // goes nowhere: the click landed on the card, a child, so the
+            // canvas never took focus of its own accord (#126).
+            grabKeyboardFocus();
+        },
         // In-place rename goes through the edit history, so it can be undone (U8).
         [this](NodeId id, juce::String name) { ctx_.editHistory.setNodeCustomName(id, std::move(name)); },
         [this](NodeId id) { onCardRearm(id); },
@@ -850,11 +857,28 @@ void SignalCanvas::mouseUp(const juce::MouseEvent& e)
 
 bool SignalCanvas::keyPressed(const juce::KeyPress& key)
 {
-    if (selectedCable_.has_value() && (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey))
+    const bool deleting = key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey;
+    if (!deleting)
+        return false;
+
+    if (selectedCable_.has_value())
     {
         const auto c = *selectedCable_;
         selectedCable_.reset();
         ctx_.editHistory.removeConnection(c.src, c.srcChannel, c.dst, c.dstChannel);
+        return true;
+    }
+
+    // A selected card goes the same way its cable would (#126). This is
+    // half of what replaced the hover-X on the card header: the X sat in
+    // the path your hand already took to reach the other three buttons, so
+    // going for the editor put a delete under the cursor. Select and press
+    // Delete, or right-click -- both of them things you meant to do.
+    if (selectedNode_.has_value())
+    {
+        const auto id = *selectedNode_;
+        setSelectedNode(std::nullopt);
+        ctx_.editHistory.removeNode(id);
         return true;
     }
     return false;

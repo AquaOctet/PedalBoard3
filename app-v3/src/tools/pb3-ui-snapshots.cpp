@@ -759,7 +759,7 @@ int main(int argc, char** argv)
                 };
                 const Glyph cardGlyphs[] = {{"power", ui::powerIcon(), 14},
                                             {"faders", ui::slidersIcon(), 14},
-                                            {"window", ui::editorWindowIcon(), 14},
+                                            {"plug", ui::plugIcon(), 14},
                                             {"cross", ui::closeIcon(), 11},
                                             {"note", ui::noteIcon(), 14}};
                 const Glyph barGlyphs[] = {{"folder", ui::folderIcon(), 16},

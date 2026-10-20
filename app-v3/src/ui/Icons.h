@@ -294,18 +294,6 @@ inline juce::Path slidersIcon()
     return scaledToIconBox(p);
 }
 
-// Open the plugin's own editor, so: a window. Frame plus a title rule, and
-// the rule sits 5 units down rather than 2 so the two do not merge into a
-// thick top edge at 14 px.
-inline juce::Path editorWindowIcon()
-{
-    juce::Path p;
-    p.addRoundedRectangle(3.5f, 4.5f, 17.0f, 15.0f, 2.5f);
-    p.startNewSubPath(3.5f, 9.5f);
-    p.lineTo(20.5f, 9.5f);
-    return scaledToIconBox(p);
-}
-
 // Remove. One feature, so it survives any size.
 //
 // The extent here is cosmetic: strokeIcon scales a glyph's own bounding box

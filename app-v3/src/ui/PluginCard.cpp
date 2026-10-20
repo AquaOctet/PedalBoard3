@@ -54,19 +54,15 @@ juce::Font monoFont(float height)
 PluginCard::PluginCard(NodeSnapshot initialSnapshot, Callbacks callbacks)
     : snapshot_(std::move(initialSnapshot)), callbacks_(std::move(callbacks))
 {
-    for (auto* button : {&bypassButton_, &mappingsButton_, &editButton_, &removeButton_})
+    for (auto* button : {&bypassButton_, &mappingsButton_, &editButton_})
     {
         button->setColour(juce::TextButton::buttonColourId, tokens::bgSecondary);
         button->setColour(juce::TextButton::textColourOffId, tokens::fgPrimary);
         addAndMakeVisible(button);
     }
-    removeButton_.setColour(juce::TextButton::textColourOffId, tokens::accentDestructive);
-    removeButton_.setVisible(false); // shown on hover
-
     bypassButton_.setTooltip("Bypass this plugin");
     mappingsButton_.setTooltip("MIDI / OSC mappings");
-    editButton_.setTooltip("Open the plugin's editor");
-    removeButton_.setTooltip("Remove the plugin (Ctrl+Z brings it back)");
+    editButton_.setTooltip("Open the plugin's own interface");
 
     bypassButton_.onClick = [this]
     {
@@ -83,12 +79,6 @@ PluginCard::PluginCard(NodeSnapshot initialSnapshot, Callbacks callbacks)
         if (callbacks_.onEdit)
             callbacks_.onEdit(snapshot_.id);
     };
-    removeButton_.onClick = [this]
-    {
-        if (callbacks_.onRemove)
-            callbacks_.onRemove(snapshot_.id);
-    };
-
     addMouseListener(&hoverWatcher_, /*wantsEventsForAllNestedChildComponents*/ true);
     refreshButtons();
 }
@@ -173,7 +163,6 @@ void PluginCard::refreshButtons()
     editButton_.setVisible(!snapshot_.isMissing() && !snapshot_.isDead() &&
                            (!snapshot_.builtIn || hasProcessorEditor(snapshot_.internalType)));
     mappingsButton_.setVisible(!isVuMeter());
-    removeButton_.setVisible(hovered_);
 }
 
 void PluginCard::updateHover()
@@ -182,8 +171,6 @@ void PluginCard::updateHover()
     if (over == hovered_)
         return;
     hovered_ = over;
-    removeButton_.setVisible(hovered_);
-    resized();
     repaint();
 }
 
@@ -351,7 +338,13 @@ void PluginCard::resized()
 {
     auto header = getLocalBounds().removeFromTop(kHeaderHeight).withTrimmedLeft(kAccentInset).reduced(6, 5);
 
-    // From the right: Remove (on hover), ED, M, BYP; the name takes the rest.
+    // From the right: editor, mappings, bypass; the name takes the rest.
+    //
+    // There is no remove button. It appeared on hover, in the position your
+    // hand was already travelling to for the other three, so reaching for
+    // the editor put a delete under the cursor (#126). Removing is a
+    // deliberate act and lives where deliberate acts live: right-click, or
+    // select the card and press Delete.
     const auto place = [&header](juce::Button& button, int width)
     {
         if (!button.isVisible())
@@ -361,7 +354,6 @@ void PluginCard::resized()
     };
     // All the same width now that they are icons. BYP needed 32 px and M
     // needed 22, which is why the row never looked deliberate.
-    place(removeButton_, kIconButtonWidth);
     place(editButton_, kIconButtonWidth);
     place(mappingsButton_, kIconButtonWidth);
     place(bypassButton_, kIconButtonWidth);
@@ -436,12 +428,19 @@ void PluginCard::showCardMenu()
                          callbacks_.onOpenMappings(snapshot_.id);
                  });
     menu.addSeparator();
-    menu.addItem("Remove",
-                 [this]
-                 {
-                     if (callbacks_.onRemove)
-                         callbacks_.onRemove(snapshot_.id);
-                 });
+    {
+        // Spell the key out, so the menu teaches the shortcut that replaced
+        // the hover-X rather than leaving it to be discovered (#126).
+        juce::PopupMenu::Item remove("Remove");
+        remove.shortcutKeyDescription = "Del";
+        remove.setAction(
+            [this]
+            {
+                if (callbacks_.onRemove)
+                    callbacks_.onRemove(snapshot_.id);
+            });
+        menu.addItem(std::move(remove));
+    }
     menu.showMenuAsync(juce::PopupMenu::Options{}.withMinimumWidth(Pb3LookAndFeel::kMenuMinimumWidth));
 }
 

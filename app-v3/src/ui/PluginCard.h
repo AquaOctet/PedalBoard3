@@ -153,11 +153,9 @@ private:
     // drawing grew.
     IconButton bypassButton_{powerIcon(), "Bypass", 4.0f};
     IconButton mappingsButton_{slidersIcon(), "Mappings", 4.0f};
-    IconButton editButton_{editorWindowIcon(), "Editor", 4.0f};
-    // A bigger inset for the cross: see R6. Its diagonals reach the corners
-    // of their box where the others reach only the edges, so at the same
-    // inset it reads as the largest thing in the row.
-    IconButton removeButton_{closeIcon(), "Remove", 5.5f};
+    // A plug, not a window: this opens the PLUGIN's own interface, and the
+    // framed rectangle read as a folder (#126).
+    IconButton editButton_{plugIcon(), "Editor", 4.0f};
     std::unique_ptr<juce::TextEditor> renameEditor_;
     // The last rename editor, kept alive until its own key or focus callback
     // has returned; freed on the next rename or with the card.
