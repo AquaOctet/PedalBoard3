@@ -48,11 +48,6 @@ inline void drawDot(juce::Graphics& g, juce::Point<int> centre, juce::Colour col
     g.drawEllipse(box, 1.5f);
 }
 
-// What a port's colour says, used by both: teal takes signal in, amber sends
-// it out, cyan is MIDI either way. The endpoints follow the same rule rather
-// than inventing one, so Input's dots are amber (it is a source) and
-// Output's are teal (it is a destination) — the same amber-to-teal run the
-// eye already follows from card to card.
 // A dot takes the colour of the cable END it belongs to, so a dot and the
 // cable leaving it are the same colour and the eye follows one into the
 // other: purple out of a source, green into a destination, and the same for

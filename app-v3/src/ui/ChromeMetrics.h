@@ -13,13 +13,12 @@ namespace pedalboard3::ui::chrome
 // adjacent and did not line up, and neither did the file button and the bank
 // sidebar's toggle on the other side.
 //
-// One number for the lot. A panel toggle takes kIconButtonSize of width and
-// centres its icon in it, exactly as the bar does, so every icon in the
-// window's corners sits on the same two vertical lines.
-// The cell an icon is centred in. The bar's buttons fill theirs (they have
-// a hover background); the panels' toggles only borrow its width, so their
-// icon lands on the same line without growing to fill a header that is
-// shorter than 36 px.
+// One number for the lot: kIconButtonSize is the cell an icon is centred
+// in, so every icon in the window's corners sits on the same two vertical
+// lines. The bar's buttons fill that cell, because they have a hover
+// background to draw; the panels' toggles only borrow its width and keep
+// their own kIconSize glyph, so they land on the line without growing to
+// fill a header that is shorter than 36 px.
 inline constexpr int kIconButtonSize = 36;
 inline constexpr int kIconSize = 18;
 inline constexpr int kEdgePadding = 12;
