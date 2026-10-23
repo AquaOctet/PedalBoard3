@@ -14,7 +14,7 @@ namespace pedalboard3::engine
 
 PluginHost::PluginHost()
 {
-    formats_.addDefaultFormats();
+    juce::addDefaultFormatsToManager(formats_);
 }
 
 PluginHost::~PluginHost() = default;

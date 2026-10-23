@@ -91,7 +91,7 @@ if(NOT PB3_LINT_ONLY)
     CPMAddPackage(
         NAME        JUCE
         GITHUB_REPOSITORY juce-framework/JUCE
-        GIT_TAG     8.0.4
+        GIT_TAG     8.0.16-security
         OPTIONS
             "JUCE_BUILD_EXTRAS OFF"
             "JUCE_BUILD_EXAMPLES OFF"
@@ -314,27 +314,33 @@ if(PB3_ENABLE_VST2 AND NOT PB3_LINT_ONLY)
 endif()
 
 # -----------------------------------------------------------------------------
-# Windows: ASIO low-latency driver support (opt-in, SDK-gated)
+# Windows: ASIO low-latency driver support
 # -----------------------------------------------------------------------------
-# JUCE only exposes ASIO when built with JUCE_ASIO=1 AND the Steinberg ASIO SDK
-# on the include path. The SDK can't be redistributed, so vendor it yourself at
-# app-v3/asio_sdk/ (any layout — we locate the dir containing iasiodrv.h) and
-# reconfigure; ASIO then appears in Audio Settings. Without the SDK this is a
-# no-op, so CI and non-ASIO builds configure unchanged. ASIO relicensed to
-# GPLv3 (Oct 2025), compatible with this project. See issue #9 / master plan
-# §4.2.E. Untestable on the Linux dev box — verify on Windows hardware.
+# JUCE 8.0.9 bundles the Steinberg ASIO headers
+# (modules/juce_audio_devices/native/asio/), so JUCE_ASIO=1 is now all it takes
+# and ASIO shows up in Audio Settings on every Windows build. This used to be
+# gated on a vendored SDK at app-v3/asio_sdk/ -- with CI fetching one from the
+# project's package registry -- because the headers could not be redistributed.
+# JUCE ships them now, so both the gate and the fetch are gone. ASIO relicensed
+# to GPLv3 (Oct 2025), compatible with this project. See issue #9 / master plan
+# 4.2.E.
+#
+# A vendored SDK still wins when one is there, which is what
+# JUCE_ASIO_USE_EXTERNAL_SDK is for: drop a particular version of iasiodrv.h at
+# app-v3/asio_sdk/ (any layout) and reconfigure.
 if(WIN32 AND NOT PB3_LINT_ONLY)
+    target_compile_definitions(pb3_juce_config INTERFACE JUCE_ASIO=1)
+
     file(GLOB_RECURSE _pb3_asio_iface "${CMAKE_CURRENT_SOURCE_DIR}/asio_sdk/*/iasiodrv.h"
                                       "${CMAKE_CURRENT_SOURCE_DIR}/asio_sdk/iasiodrv.h")
     if(_pb3_asio_iface)
         list(GET _pb3_asio_iface 0 _pb3_asio_header)
         get_filename_component(_pb3_asio_dir "${_pb3_asio_header}" DIRECTORY)
-        message(STATUS "Pedalboard 3: ASIO SDK found at ${_pb3_asio_dir} — enabling JUCE_ASIO=1")
-        target_compile_definitions(pb3_juce_config INTERFACE JUCE_ASIO=1)
+        message(STATUS "Pedalboard 3: ASIO SDK found at ${_pb3_asio_dir} — using it instead of JUCE's bundled headers")
+        target_compile_definitions(pb3_juce_config INTERFACE JUCE_ASIO_USE_EXTERNAL_SDK=1)
         target_include_directories(pb3_juce_config INTERFACE "${_pb3_asio_dir}")
     else()
-        message(STATUS "Pedalboard 3: no ASIO SDK at app-v3/asio_sdk/ — ASIO disabled "
-                       "(WASAPI/DirectSound only). Drop the Steinberg ASIO SDK there to enable it.")
+        message(STATUS "Pedalboard 3: ASIO enabled with JUCE's bundled headers.")
     endif()
 endif()
 

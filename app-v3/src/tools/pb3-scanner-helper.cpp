@@ -79,7 +79,7 @@ int main(int argc, char** argv)
 #endif
 
         juce::AudioPluginFormatManager formats;
-        formats.addDefaultFormats();
+        juce::addDefaultFormatsToManager(formats);
 
         // findAllTypesForFile is the call that may crash inside the plugin's
         // own constructor (Current.vst3's MKURequestManager pure-virtual call,

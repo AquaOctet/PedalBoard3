@@ -254,7 +254,7 @@ std::vector<PluginScanner::ScanResult> PluginScanner::scanAllDefaultPaths(Progre
     // Enumerate every (format, path) pair, then dedupe by path so a
     // plugin under more than one search path only gets scanned once.
     juce::AudioPluginFormatManager formats;
-    formats.addDefaultFormats();
+    juce::addDefaultFormatsToManager(formats);
 
     juce::StringArray uniquePaths;
     std::unordered_set<std::string> seen;
