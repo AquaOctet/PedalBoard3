@@ -9,7 +9,7 @@ a choice of licences, the one Pedalboard 3 takes is stated.
 
 ## Compiled into the released app
 
-### JUCE 8.0.4 — AGPLv3 **or** commercial
+### JUCE 8.0.16 — AGPLv3 **or** commercial
 
 > "The JUCE Framework modules are dual-licensed under the AGPLv3 and the
 > commercial JUCE licence." — JUCE's `LICENSE.md`
@@ -24,21 +24,18 @@ Independent JPEG Group), FLAC and Ogg Vorbis (BSD), HarfBuzz (Old MIT),
 SheenBidi (Apache 2.0), CHOC including QuickJS (ISC / MIT), pslextensions
 (public domain), and the two plugin-format SDKs below.
 
-### VST3 SDK (bundled in JUCE) — Steinberg VST3 License **or** GPLv3
+### VST3 SDK (bundled in JUCE) — MIT
 
-Pedalboard 3 takes the **GPLv3** option, which an AGPLv3 work may do: GPLv3 §13
-expressly permits the combination.
+JUCE 8.0.16 bundles **VST3 SDK 3.8.0 under the MIT License** ((c) 2025 Steinberg
+Media Technologies GmbH), and JUCE's own `LICENSE.md` lists it that way. The
+same MIT text covers the SDK root and each of its parts (`base/`,
+`pluginterfaces/`, `public.sdk/`).
 
-**This is not the MIT-licensed VST3 SDK.** Steinberg relicensed the SDK under MIT
-with version 3.8, but JUCE 8.0.4 bundles the 2024 SDK, whose `LICENSE.txt` reads:
-
-> "This Software Development Kit is licensed under the terms of the Steinberg VST3
-> License, or alternatively under the terms of the General Public License (GPL)
-> Version 3."
-
-So VST3 hosting is one of the things that keeps the shipped app copyleft. A closed
-build would need either a newer, MIT-licensed SDK or a signed agreement with
-Steinberg — see "If a build is ever closed" below.
+This changed with the bump. Up to JUCE 8.0.4 the bundled SDK was the 2024 one,
+offered as the proprietary Steinberg VST3 License **or** GPLv3, and Pedalboard 3
+took the GPLv3 option — so VST3 hosting was one of the things holding the
+shipped app copyleft. Under MIT it no longer is: VST3 imposes nothing beyond
+attribution. The app stays AGPLv3 because **JUCE** is taken under AGPLv3.
 
 ### LV2 SDK (bundled in JUCE) — ISC
 
@@ -52,25 +49,27 @@ Barlow Condensed and Barlow Semi Condensed (Jeremy Tribby) and JetBrains Mono
 `.ttf` files in `app-v3/resources/fonts/`, and the packaging scripts copy all
 three into `licences/` inside every release archive.
 
-### ASIO SDK — Steinberg ASIO License **or** GPLv3
+### ASIO SDK (bundled in JUCE) — Steinberg ASIO License **or** GPLv3
 
-Low-latency Windows audio, **in the released Windows builds**. Pedalboard 3 takes the
-**GPLv3** option, which is why the Windows binary is as copyleft as the rest.
+Low-latency Windows audio, **in every released Windows build**. Pedalboard 3
+takes the **GPLv3** option, which is why the Windows binary is as copyleft as
+the rest.
 
-The SDK is not in this repository — `app-v3/asio_sdk/` is gitignored — but that is a
-source-tree policy rather than a statement about the binary: the `build:windows` and
-`release:windows` jobs fetch it from the project's GitLab generic package registry
-before configure, and `app-v3/CMakeLists.txt` then defines `JUCE_ASIO=1`. The fetch is
-best-effort, so a build without the package (a fork, say) simply has WASAPI and
-DirectSound and no ASIO. The job log says which happened:
-`Pedalboard 3: ASIO SDK found … — enabling JUCE_ASIO=1`.
+Since JUCE 8.0.9 the three ASIO headers ship inside JUCE itself
+(`modules/juce_audio_devices/native/asio/`), so `app-v3/CMakeLists.txt` defines
+`JUCE_ASIO=1` unconditionally on Windows and nothing has to be vendored or
+fetched. Before the 8.0.16 bump the SDK was kept out of this repository and
+`build:windows` pulled it from the project's package registry; that gate and
+that fetch are gone.
 
-Its `LICENSE.txt` ((c) 2025 Steinberg Media Technologies GmbH) offers the same
-proprietary-or-GPLv3 choice as VST3, and the proprietary option requires a License
-Agreement signed by Steinberg. Some individual helper files in the SDK carry their
-own BSD 3-Clause header instead.
+The bundled `LICENSE.txt` ((c) 2025 Steinberg Media Technologies GmbH) offers
+the proprietary-or-GPLv3 choice, and the proprietary option requires a License
+Agreement signed by Steinberg. Some individual helper files in the full SDK
+carry their own BSD 3-Clause header instead.
 
-A developer building locally provides their own copy and is bound by the same terms.
+A developer may still pin their own copy of `iasiodrv.h` under
+`app-v3/asio_sdk/` (gitignored), which switches the build to
+`JUCE_ASIO_USE_EXTERNAL_SDK=1`; the same terms apply to it.
 
 ## Build and test only — not in the released app
 
@@ -104,11 +103,13 @@ Pedalboard 3 is AGPLv3 and is meant to stay that way. Anything sold on top has t
 be licensed separately, and each of these would have to be settled first:
 
 - **JUCE** — a commercial JUCE licence instead of the AGPLv3 option.
-- **VST3** — a VST3 SDK 3.8 or newer under MIT, or a signed Steinberg agreement.
-  The SDK that JUCE 8.0.4 bundles cannot go into a closed binary.
-- **ASIO** — a License Agreement signed by Steinberg, for the same reason. The
-  Windows build uses the GPLv3 option today, so ASIO support cannot simply be
+- **VST3** — nothing to settle any more. JUCE 8.0.16 bundles SDK 3.8.0 under
+  MIT, which a closed binary may use with attribution. Up to 8.0.4 this was a
+  blocker, and the decision on #47 was taken while it was one.
+- **ASIO** — still a blocker: a License Agreement signed by Steinberg, because
+  the Windows build takes the GPLv3 option. ASIO support cannot simply be
   carried over into a closed build.
 
-This is why the paid work is planned as a separate process rather than as code
-inside the AGPLv3 application.
+So one of the two SDK obstacles is gone and one remains. JUCE's own licence is
+the load-bearing reason the application is AGPLv3, and the paid work is still
+planned as a separate process rather than as code inside it.
