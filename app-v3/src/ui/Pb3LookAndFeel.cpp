@@ -111,8 +111,11 @@ Pb3LookAndFeel::Pb3LookAndFeel()
     setColour(juce::Slider::textBoxOutlineColourId, tokens::borderDefault);
 
     // ----- ScrollBar (Viewport scrollbars on long chains) ------------------
+    // borderMuted, not borderDefault: the canvas's horizontal bar runs a few
+    // pixels above the footer's top edge, and in the border colour the two
+    // read as one doubled line rather than as a scrollbar.
     setColour(juce::ScrollBar::backgroundColourId, tokens::bgWindow);
-    setColour(juce::ScrollBar::thumbColourId, tokens::borderDefault);
+    setColour(juce::ScrollBar::thumbColourId, tokens::borderMuted);
     setColour(juce::ScrollBar::trackColourId, tokens::bgSecondary);
 
     // ----- TableHeader (PluginListComponent) -------------------------------
@@ -532,6 +535,32 @@ void Pb3LookAndFeel::drawTickBox(juce::Graphics& g,
     }
 }
 
+void Pb3LookAndFeel::drawScrollbar(juce::Graphics& g,
+                                   juce::ScrollBar& bar,
+                                   int x,
+                                   int y,
+                                   int width,
+                                   int height,
+                                   bool isScrollbarVertical,
+                                   int thumbStartPosition,
+                                   int thumbSize,
+                                   bool isMouseOver,
+                                   bool isMouseDown)
+{
+    if (thumbSize <= 0)
+        return;
+
+    // Thin and rounded, with no track; a little wider under the mouse.
+    const float thickness = (isMouseOver || isMouseDown) ? 6.0f : 4.0f;
+    auto thumb = isScrollbarVertical ? juce::Rectangle<int>(x, thumbStartPosition, width, thumbSize).toFloat()
+                                     : juce::Rectangle<int>(thumbStartPosition, y, thumbSize, height).toFloat();
+    thumb = isScrollbarVertical ? thumb.withSizeKeepingCentre(thickness, thumb.getHeight() - 4.0f)
+                                : thumb.withSizeKeepingCentre(thumb.getWidth() - 4.0f, thickness);
+    const auto colour = bar.findColour(juce::ScrollBar::thumbColourId);
+    g.setColour((isMouseOver || isMouseDown) ? colour.brighter(0.3f) : colour);
+    g.fillRoundedRectangle(thumb, thickness * 0.5f);
+}
+
 // ---- Pb3DialogLookAndFeel (UI chrome U4) ------------------------------------
 
 namespace
@@ -742,31 +771,6 @@ void Pb3DialogLookAndFeel::drawLinearSlider(juce::Graphics& g,
     g.fillRoundedRectangle(track.withRight(value), kFieldRadius);
     g.setColour(tokens::accentPrimary.withMultipliedAlpha(alpha));
     g.fillRect(juce::Rectangle<float>(value - 1.0f, track.getY(), 2.0f, track.getHeight()));
-}
-
-void Pb3DialogLookAndFeel::drawScrollbar(juce::Graphics& g,
-                                         juce::ScrollBar& bar,
-                                         int x,
-                                         int y,
-                                         int width,
-                                         int height,
-                                         bool isScrollbarVertical,
-                                         int thumbStartPosition,
-                                         int thumbSize,
-                                         bool isMouseOver,
-                                         bool isMouseDown)
-{
-    if (thumbSize <= 0)
-        return;
-
-    // Thin and rounded, with no track; a little wider under the mouse.
-    const float thickness = (isMouseOver || isMouseDown) ? 6.0f : 4.0f;
-    auto thumb = isScrollbarVertical ? juce::Rectangle<int>(x, thumbStartPosition, width, thumbSize).toFloat()
-                                     : juce::Rectangle<int>(thumbStartPosition, y, thumbSize, height).toFloat();
-    thumb = isScrollbarVertical ? thumb.withSizeKeepingCentre(thickness, thumb.getHeight() - 4.0f)
-                                : thumb.withSizeKeepingCentre(thumb.getWidth() - 4.0f, thickness);
-    g.setColour(bar.findColour(juce::ScrollBar::thumbColourId));
-    g.fillRoundedRectangle(thumb, thickness * 0.5f);
 }
 
 int Pb3DialogLookAndFeel::getTabButtonBestWidth(juce::TabBarButton& button, int /*tabDepth*/)

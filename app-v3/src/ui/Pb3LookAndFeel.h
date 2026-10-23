@@ -145,6 +145,22 @@ public:
     // Popovers (the tempo pill's): the menu panel's colours and edge.
     void drawCallOutBoxBackground(juce::CallOutBox&, juce::Graphics&, const juce::Path&, juce::Image&) override;
 
+    // Scrollbars, everywhere there is one: a thin rounded thumb and no track.
+    // V4 draws a 6 px bar the width of the viewport in whatever the thumb
+    // colour is, which above the footer reads as a second border rather than
+    // as something you can drag.
+    void drawScrollbar(juce::Graphics&,
+                       juce::ScrollBar&,
+                       int x,
+                       int y,
+                       int width,
+                       int height,
+                       bool isScrollbarVertical,
+                       int thumbStartPosition,
+                       int thumbSize,
+                       bool isMouseOver,
+                       bool isMouseDown) override;
+
     // The mockup's embedded fonts stand in for JUCE's default sans-serif and
     // monospaced fonts (UI chrome plan U2, KD1), so plain juce::FontOptions text
     // and stock JUCE components follow them. Bold is Barlow's SemiBold.
@@ -156,8 +172,8 @@ public:
 // The controls inside a dialog, as the mockup draws them (UI chrome U4):
 // 28 px fields (combo boxes and text) with radius 5 and no border; 6 px-radius
 // buttons, filled bgSecondary or ghost (the kOutlineButton property); toggles
-// as fields, tinted teal when on; a value bar for horizontal sliders; a thin
-// scrollbar; and tabs as uppercase captions with a teal underline. DialogFrame
+// as fields, tinted teal when on; a value bar for horizontal sliders; and tabs
+// as uppercase captions with a teal underline. DialogFrame
 // installs it on itself, so the main window's controls don't change.
 class Pb3DialogLookAndFeel : public Pb3LookAndFeel
 {
@@ -200,18 +216,6 @@ public:
                           float maxSliderPos,
                           juce::Slider::SliderStyle,
                           juce::Slider&) override;
-    void drawScrollbar(juce::Graphics&,
-                       juce::ScrollBar&,
-                       int x,
-                       int y,
-                       int width,
-                       int height,
-                       bool isScrollbarVertical,
-                       int thumbStartPosition,
-                       int thumbSize,
-                       bool isMouseOver,
-                       bool isMouseDown) override;
-
     int getTabButtonBestWidth(juce::TabBarButton&, int tabDepth) override;
     void drawTabButton(juce::TabBarButton&, juce::Graphics&, bool isMouseOver, bool isMouseDown) override;
     void drawTabbedButtonBarBackground(juce::TabbedButtonBar&, juce::Graphics&) override;
