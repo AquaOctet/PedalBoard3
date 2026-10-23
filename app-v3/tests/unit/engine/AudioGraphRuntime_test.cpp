@@ -107,11 +107,29 @@ TEST_CASE("AudioGraphRuntime: swapped-in graph runs and audio flows", "[engine][
             REQUIRE(buf.getReadPointer(ch)[n] == 0.5f);
 }
 
-TEST_CASE("AudioGraphRuntime: swapping returns the previously-live graph", "[engine][runtime]")
+TEST_CASE("AudioGraphRuntime: an acked swap returns the previously-live graph", "[engine][runtime]")
 {
     engine::AudioGraphRuntime rt;
     rt.setPlayConfigDetails(2, 2, kDefaultSampleRate, kDefaultBlockSize);
     rt.prepareToPlay(kDefaultSampleRate, kDefaultBlockSize);
+
+    // A pump, because only an acknowledged swap hands the outgoing graph
+    // back: without one both swaps below time out and the graph is parked
+    // instead (the test after this one). That is the whole point of the
+    // return value -- it means "the audio thread has provably left this,
+    // you may destroy it".
+    std::atomic<bool> stop{false};
+    std::thread pump(
+        [&]
+        {
+            auto pumpBuf = makeTestBuffer(2, kDefaultBlockSize);
+            juce::MidiBuffer pumpMidi;
+            while (!stop.load(std::memory_order_acquire))
+            {
+                rt.processBlock(pumpBuf, pumpMidi);
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+        });
 
     auto a = buildGainGraph(2.0f);
     a.graph->prepareToPlay(kDefaultSampleRate, kDefaultBlockSize);
@@ -126,11 +144,54 @@ TEST_CASE("AudioGraphRuntime: swapping returns the previously-live graph", "[eng
 
     REQUIRE(outA.get() == aRaw);
     REQUIRE(rt.getLiveGraph() == bRaw);
+    REQUIRE(rt.getRetiredGraphCount() == 0); // handed back, not parked
+
+    stop.store(true, std::memory_order_release);
+    pump.join();
 
     // Clean up the returned graph on the message thread (we are the
     // message thread for testing purposes). The runtime dtor will dispose
     // of `b` when `rt` goes out of scope.
     outA.reset();
+}
+
+TEST_CASE("AudioGraphRuntime: an unacked swap parks the outgoing graph rather than freeing it", "[engine][runtime]")
+{
+    engine::AudioGraphRuntime rt;
+    rt.setPlayConfigDetails(2, 2, kDefaultSampleRate, kDefaultBlockSize);
+    rt.prepareToPlay(kDefaultSampleRate, kDefaultBlockSize); // prepared, but nothing is pumping
+
+    auto a = buildGainGraph(2.0f);
+    a.graph->prepareToPlay(kDefaultSampleRate, kDefaultBlockSize);
+    REQUIRE(rt.swapPreparedGraph(std::move(a.graph)) == nullptr); // nothing was live to return
+    REQUIRE(rt.getRetiredGraphCount() == 0);
+
+    auto b = buildGainGraph(3.0f);
+    b.graph->prepareToPlay(kDefaultSampleRate, kDefaultBlockSize);
+    auto* bRaw = b.graph.get();
+
+    // Nobody is acknowledging blocks, so this swap times out. `a` is out
+    // of live_ now, but a silent audio thread is exactly the case where
+    // "stalled" and "one block behind" are indistinguishable -- so it is
+    // parked, and the caller gets nothing it could destroy (#127).
+    REQUIRE(rt.swapPreparedGraph(std::move(b.graph)) == nullptr);
+    REQUIRE(rt.getLiveGraph() == bRaw);
+    REQUIRE(rt.getRetiredGraphCount() == 1);
+
+    // It stays parked while the generation has not moved. A thread that
+    // never ticks again never proves anything, and holding the memory is
+    // the right answer until the destructor.
+    REQUIRE(rt.reclaimRetiredGraphs() == 0);
+    REQUIRE(rt.getRetiredGraphCount() == 1);
+
+    // Two acknowledged blocks: one for a block that could have been inside
+    // `a`, one as margin. Now it is provably idle and goes.
+    auto buf = makeTestBuffer(2, kDefaultBlockSize);
+    juce::MidiBuffer midi;
+    rt.processBlock(buf, midi);
+    rt.processBlock(buf, midi);
+    REQUIRE(rt.reclaimRetiredGraphs() == 1);
+    REQUIRE(rt.getRetiredGraphCount() == 0);
 }
 
 TEST_CASE("AudioGraphRuntime: generation counter advances with each processed block", "[engine][runtime]")

@@ -11,6 +11,7 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 namespace pedalboard3::engine
 {
@@ -53,9 +54,10 @@ namespace pedalboard3::engine
 //     invariant 3).
 //   - Pre-built flush MidiBuffer + 4× block silence scratch in
 //     `prepareToPlay` to keep `processBlock` allocation-free.
-//   - 2-second hard ceiling on the ack-wait; on timeout, fall back to a
+//   - A hard ceiling on the ack-wait; on timeout, fall back to a
 //     synchronous message-thread swap with no flush (graceful degradation
-//     for a stalled or stopped audio device).
+//     for a stalled or stopped audio device). The outgoing graph is then
+//     parked rather than freed — see RetiredGraph (#127).
 //
 // RT contract: processBlock does not allocate or lock. Both `live_` and
 // `pending_` are atomic. Memory ordering:
@@ -111,15 +113,31 @@ public:
     //     observes it on its next block, flushes all-notes-off on the
     //     outgoing graph using a pre-built MidiBuffer + silence scratch,
     //     then commits the swap by storing into `live_`.
-    //   - Blocks the caller for up to 2 s waiting for an ack; on ack-timeout
-    //     falls back to a synchronous message-thread swap (best-effort).
-    //   - Calls `releaseResources()` on the outgoing graph and returns it
-    //     wrapped in unique_ptr so the caller can destruct it on the
-    //     message thread (plugin dtors often require it).
+    //   - Blocks the caller for ten blocks' worth of time (50 ms floor,
+    //     2 s ceiling — 100 ms at 512 frames / 48 kHz) waiting for the ack;
+    //     on ack-timeout falls back to a synchronous message-thread swap
+    //     (best-effort).
+    //   - On the acked path, calls `releaseResources()` on the outgoing
+    //     graph and returns it wrapped in unique_ptr so the caller can
+    //     destruct it on the message thread (plugin dtors often require it).
     //
-    // Returns nullptr if no graph was previously live. `next` may be null
-    // (clears the runtime).
+    // Returns nullptr if no graph was previously live, if `next` was
+    // rejected, or if the ack timed out — see RetiredGraph below, which is
+    // where the outgoing graph goes in that last case. The caller must not
+    // assume a non-null return means a swap happened; use getLiveGraph().
+    // `next` may be null (clears the runtime).
     std::unique_ptr<juce::AudioProcessorGraph> swapPreparedGraph(std::unique_ptr<juce::AudioProcessorGraph> next);
+
+    // Free any graph the ack-timeout path parked whose idleness the audio
+    // thread has since proven. Message thread only. Returns how many were
+    // freed. Called at the top of every swapPreparedGraph and from the
+    // destructor; public so a caller with a message-thread heartbeat can
+    // reclaim sooner, and so tests can drive it.
+    int reclaimRetiredGraphs();
+
+    // How many graphs are waiting in the holding pen. Zero in every normal
+    // session; non-zero means at least one swap timed out. Diagnostics.
+    int getRetiredGraphCount() const noexcept { return static_cast<int>(retired_.size()); }
 
     // Snapshot of the currently-active graph pointer. Null iff the runtime
     // has no patch loaded. Provided for test + diagnostic inspection;
@@ -158,6 +176,38 @@ private:
     // graph so synths don't hang notes through the swap. Allocation-free
     // — buffers are sized in prepareToPlay.
     void flushMidiReceivers(juce::AudioProcessorGraph* outgoing) noexcept;
+
+    // The holding pen for a graph that stopped being live on the
+    // ack-timeout path (#127).
+    //
+    // The normal path proves the outgoing graph is idle before handing it
+    // back: it waits for the audio thread to acknowledge two blocks, one
+    // for the swap itself and one as margin. The timeout path has no such
+    // proof. It is reached precisely because the audio thread did not
+    // answer, and from the message thread a stalled callback and a merely
+    // late one look identical — so freeing the graph there, or even
+    // calling releaseResources() on it, can land inside a processBlock
+    // that is still running.
+    //
+    // Nothing is freed on timeout, then. The graph is parked here with the
+    // generation it must outlive, and reclaimed once the audio thread has
+    // acknowledged two more blocks — which proves any block it was inside
+    // has finished, the same margin and the same reasoning as the normal
+    // path. A thread that never ticks again never satisfies that, and the
+    // graph waits for the destructor, where JUCE guarantees the callback
+    // is stopped. Memory held is bounded by the number of swaps that timed
+    // out, which in a healthy session is none.
+    //
+    // Message thread only: swapPreparedGraph and the destructor are the
+    // only writers, and both are message-thread by contract.
+    struct RetiredGraph
+    {
+        std::unique_ptr<juce::AudioProcessorGraph> graph;
+        std::uint64_t idleAtGeneration;
+    };
+    std::vector<RetiredGraph> retired_;
+
+    void retireGraph(juce::AudioProcessorGraph* graph);
 
     std::atomic<juce::AudioProcessorGraph*> live_{nullptr};
     std::atomic<juce::AudioProcessorGraph*> pending_{nullptr};

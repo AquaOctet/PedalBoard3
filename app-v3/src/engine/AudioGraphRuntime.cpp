@@ -8,7 +8,13 @@ namespace pedalboard3::engine
 
 namespace
 {
-constexpr int kMaxAckWaitMs = 2000;  // hard ceiling per AC-1.D.2-R
+constexpr int kMaxAckWaitMs = 2000; // hard ceiling per AC-1.D.2-R
+
+// How many acknowledged blocks prove the audio thread has left a graph:
+// one for a block that may already be inside it, one as margin. The
+// normal swap path waits for this; the holding pen measures against it.
+constexpr std::uint64_t kAcksProveIdle = 2;
+
 constexpr int kFlushChannelsMin = 2; // stereo at minimum for the silence scratch
 constexpr int kSilenceScratchMinFrames = 4096;
 constexpr int kFlushBytesPerEvent = 12; // conservative per-event byte budget for ensureSize
@@ -35,6 +41,45 @@ AudioGraphRuntime::~AudioGraphRuntime()
         delete p;
     if (auto* g = live_.exchange(nullptr, std::memory_order_acq_rel))
         delete g;
+
+    // Anything still in the holding pen goes with the member, whatever
+    // generation it was waiting for: by the same guarantee the two
+    // deletes above rely on, the callback is stopped, so there is no
+    // audio thread left to be inside it. That is the backstop for a
+    // device that stalled and never recovered — without it a parked graph
+    // would be held for the life of the process.
+}
+
+void AudioGraphRuntime::retireGraph(juce::AudioProcessorGraph* graph)
+{
+    if (graph == nullptr)
+        return;
+    const auto idleAt = generationAckedByAudio_.load(std::memory_order_acquire) + kAcksProveIdle;
+    retired_.push_back({std::unique_ptr<juce::AudioProcessorGraph>(graph), idleAt});
+}
+
+int AudioGraphRuntime::reclaimRetiredGraphs()
+{
+    if (retired_.empty())
+        return 0;
+
+    const auto now = generationAckedByAudio_.load(std::memory_order_acquire);
+    int freed = 0;
+    for (auto it = retired_.begin(); it != retired_.end();)
+    {
+        if (now < it->idleAtGeneration)
+        {
+            ++it;
+            continue;
+        }
+        // Safe now, and in this order: releaseResources() while the audio
+        // thread could still be in the graph is the same hazard as freeing
+        // it, which is why neither happened at retirement time.
+        it->graph->releaseResources();
+        it = retired_.erase(it); // the unique_ptr frees it here, on this thread
+        ++freed;
+    }
+    return freed;
 }
 
 void AudioGraphRuntime::prepareToPlay(double sampleRate, int samplesPerBlock)
@@ -193,6 +238,11 @@ std::unique_ptr<juce::AudioProcessorGraph> AudioGraphRuntime::swapPreparedGraph(
     // but catches misuse in debug.
     jassert(juce::MessageManager::existsAndIsCurrentThread() || !juce::MessageManager::getInstanceWithoutCreating());
 
+    // A patch change is the natural moment to clear out anything an
+    // earlier timeout parked: we are on the message thread, and the audio
+    // thread has had every block since to prove itself.
+    reclaimRetiredGraphs();
+
     auto* rawNext = next.release(); // nullptr allowed — clears the runtime
 
     // Synchronous fast path #1: if we haven't been prepared (no audio
@@ -223,6 +273,11 @@ std::unique_ptr<juce::AudioProcessorGraph> AudioGraphRuntime::swapPreparedGraph(
         {
             // Stuck pending_ — audio thread isn't pumping. Force-clear
             // and fall through to the synchronous fallback below.
+            //
+            // Deleted outright, not retired: the audio thread consumes
+            // pending_ with an exchange, so getting a non-null back here
+            // proves it never took this graph. It was prepared and never
+            // processed, and nothing can be inside it.
             if (auto* stuck = pending_.exchange(nullptr, std::memory_order_acq_rel))
                 delete stuck;
             break;
@@ -242,7 +297,7 @@ std::unique_ptr<juce::AudioProcessorGraph> AudioGraphRuntime::swapPreparedGraph(
     // block on the new graph. Two acks: one for the swap block, one
     // safety margin so the outgoing graph is no longer being processed.
     const auto startGen = generationAckedByAudio_.load(std::memory_order_acquire);
-    const auto targetGen = startGen + 2;
+    const auto targetGen = startGen + kAcksProveIdle;
     const auto blockMs = static_cast<int>(1000.0 * currentBlockSize_ / currentSampleRate_);
     const auto budgetMs = juce::jmin(kMaxAckWaitMs, juce::jmax(50, blockMs * 10));
     const auto ackDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(budgetMs);
@@ -260,20 +315,27 @@ std::unique_ptr<juce::AudioProcessorGraph> AudioGraphRuntime::swapPreparedGraph(
 
     if (!acked)
     {
-        // Timeout — audio thread didn't consume our pending_. Fall back
-        // to a synchronous message-thread swap (no flush). Snatch
-        // pending_ back so we don't leave it dangling.
+        // Timeout — the audio thread has not answered, so we know nothing
+        // about where it is. Both branches below therefore park the
+        // outgoing graph instead of returning it: see RetiredGraph on the
+        // class for why handing it to the caller here was a
+        // use-after-free waiting for a late callback (#127).
         auto* stuck = pending_.exchange(nullptr, std::memory_order_acq_rel);
         if (stuck == rawNext)
         {
             // Still ours; force the swap synchronously.
             auto* oldLive = live_.exchange(rawNext, std::memory_order_acq_rel);
-            if (oldLive != nullptr)
-                oldLive->releaseResources();
-            return std::unique_ptr<juce::AudioProcessorGraph>(oldLive);
+            retireGraph(oldLive);
+            return nullptr;
         }
-        // Audio thread snatched it concurrently; live_ already holds
-        // rawNext. Fall through and treat prev as the outgoing.
+
+        // The audio thread snatched it concurrently, so live_ already
+        // holds rawNext and `prev` is the outgoing graph. The same doubt
+        // applies, and a little more sharply: the block that took our
+        // pending_ runs the all-notes-off flush on `prev` before it
+        // commits the swap, so it may be inside `prev` at this instant.
+        retireGraph(prev);
+        return nullptr;
     }
 
     if (prev != nullptr)
