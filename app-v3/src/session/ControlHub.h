@@ -66,6 +66,18 @@ public:
 
     // Input entry points — the seam for the device / socket layer.
     void handleMidi(const juce::MidiMessage& msg);
+
+    // Runs the OSC mappings, and — when the message reads as MIDI bytes
+    // (control::midiFromOsc) — the MIDI path too, with the same mappings, the
+    // same latches and the same learn capture a DIN cable would get (#97,
+    // AC-IO-6). Both, not one or the other: see the comment on the definition.
+    //
+    // Two MIDI behaviours are deliberately NOT reached this way, because they
+    // belong to session::PatchSwitcher, which sits on the MIDI *device* drain
+    // rather than here: MIDI Machine Control, and the default rule that a
+    // Program Change selects the bank slot of that number. An explicit
+    // PatchSelect or AppCommand mapping does work over OSC, because that runs
+    // through the mapping tables.
     void handleOsc(const juce::OSCMessage& msg);
 
     // MIDI learn (delegates to the surface flow). OSC has no learn/suppression

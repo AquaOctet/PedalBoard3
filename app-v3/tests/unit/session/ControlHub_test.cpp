@@ -16,6 +16,7 @@
 #include <cmath>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -521,4 +522,111 @@ TEST_CASE("ControlHub: node activity counts parameters actually set, and clears 
 
     h.hub.setMidiMappings({m}); // a re-feed (e.g. after a whole-patch swap)
     REQUIRE(h.hub.nodeActivity(1) == 0);
+}
+
+// -----------------------------------------------------------------------
+// MIDI over OSC (#97, AC-IO-6)
+// -----------------------------------------------------------------------
+
+TEST_CASE("ControlHub: an OSC message shaped like MIDI drives a MIDI mapping", "[session][control][midi-over-osc]")
+{
+    Harness h;
+    h.setMidiMappings({ccMap(1, 7, 1, 0)});
+
+    // 0xB0 = CC on channel 1, controller 7. No OSC mapping exists for this
+    // address: the MIDI table is doing the work.
+    h.hub.handleOsc(juce::OSCMessage("/midi", 176, 7, 127));
+    REQUIRE(h.gainA() == Approx(1.0f));
+    h.hub.handleOsc(juce::OSCMessage("/midi", 176, 7, 0));
+    REQUIRE(h.gainA() == Approx(0.0f));
+
+    // The blob form reaches the same mapping.
+    juce::OSCMessage blob("/midi");
+    const juce::uint8 bytes[3] = {176, 7, 127};
+    blob.addBlob(juce::MemoryBlock(bytes, 3));
+    h.hub.handleOsc(blob);
+    REQUIRE(h.gainA() == Approx(1.0f));
+}
+
+TEST_CASE("ControlHub: an ordinary OSC message never reaches the MIDI path", "[session][control][midi-over-osc]")
+{
+    Harness h;
+    h.setMidiMappings({ccMap(1, 7, 1, 0)});
+    h.setOscMappings({oscMap("/pb3/gain", 1, 0)});
+
+    h.hub.handleOsc(juce::OSCMessage("/pb3/gain", 0.5f)); // one argument
+    REQUIRE(h.gainA() == Approx(0.5f));
+    REQUIRE(h.hub.midiActivity() == 0);
+
+    // Two normalized floats off an XY pad are numbers, not MIDI bytes.
+    h.hub.handleOsc(juce::OSCMessage("/pb3/xy", 0.3f, 0.7f));
+    REQUIRE(h.hub.midiActivity() == 0);
+    REQUIRE(h.gainA() == Approx(0.5f)); // nothing moved
+}
+
+TEST_CASE("ControlHub: a MIDI-shaped message still runs its OSC mapping", "[session][control][midi-over-osc]")
+{
+    // The two paths are additive. An OSC mapping on an address whose arguments
+    // happen to read as MIDI keeps working — which is the reason handleOsc
+    // does both rather than stopping at the first one that matches.
+    Harness h(/*twoNodes*/ true);
+
+    // The OSC mapping reads argument 2 — the MIDI value byte — and inverts it,
+    // so the two paths move their nodes in opposite directions off the one
+    // message. Either path going missing is then visible on its own node.
+    auto oscToA = oscMap("/both", 1, 0);
+    oscToA.argumentIndex = 2;
+    oscToA.inverted = true;
+    h.setOscMappings({oscToA});
+    h.setMidiMappings({ccMap(1, 7, 2, 0)});
+
+    h.hub.handleOsc(juce::OSCMessage("/both", 176, 7, 127));
+    REQUIRE(h.gainA() == Approx(0.0f)); // OSC: argument 2 clamped to 1, inverted
+    REQUIRE(h.gainB() == Approx(1.0f)); // MIDI: CC 7 value 127
+
+    h.hub.handleOsc(juce::OSCMessage("/both", 176, 7, 0));
+    REQUIRE(h.gainA() == Approx(1.0f));
+    REQUIRE(h.gainB() == Approx(0.0f));
+
+    REQUIRE(h.hub.midiActivity() == 2);
+    REQUIRE(h.hub.oscActivity() == 2);
+}
+
+TEST_CASE("ControlHub: a PatchSelect mapping fires over OSC-carried MIDI", "[session][control][midi-over-osc]")
+{
+    Harness h;
+    auto patchMap = ccMap(1, 7, 1, 0);
+    patchMap.target.kind = control::MidiTargetKind::PatchSelect;
+    patchMap.target.patchIndex = 3;
+    h.setMidiMappings({patchMap});
+
+    int unhandledCount = 0;
+    control::MidiTarget seen;
+    h.hub.setUnhandledTargetSink(
+        [&](const control::ParameterUpdate& u)
+        {
+            seen = u.target;
+            ++unhandledCount;
+        });
+
+    h.hub.handleOsc(juce::OSCMessage("/midi", 176, 7, 127));
+    REQUIRE(unhandledCount == 1);
+    REQUIRE(seen.kind == control::MidiTargetKind::PatchSelect);
+    REQUIRE(seen.patchIndex == 3);
+}
+
+TEST_CASE("ControlHub: MIDI learn captures an OSC-carried MIDI message", "[session][control][midi-over-osc]")
+{
+    // The MIDI path means the whole MIDI path, learn included: a controller
+    // that reaches the app over a socket can be learned like any other.
+    Harness h;
+    std::optional<control::MidiSource> learned;
+    h.hub.armMidiLearn([&](const control::MidiSource& s) { learned = s; });
+
+    h.hub.handleOsc(juce::OSCMessage("/midi", 176, 20, 127));
+    REQUIRE(learned.has_value());
+    REQUIRE(learned->kind == control::MidiSourceKind::ControlChange);
+    REQUIRE(learned->channel == 1);
+    REQUIRE(learned->controller == 20);
+    REQUIRE_FALSE(h.hub.isLearning());
 }

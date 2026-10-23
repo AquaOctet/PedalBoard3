@@ -50,9 +50,23 @@ void ControlHub::handleMidi(const juce::MidiMessage& msg)
 
 void ControlHub::handleOsc(const juce::OSCMessage& msg)
 {
+    ++oscActivity_;
+
+    // MIDI over OSC (#97, AC-IO-6): a message shaped like MIDI bytes goes down
+    // the MIDI path as well, so one mapping table serves a controller whether
+    // it reaches us over a DIN cable or a socket. midiFromOsc is strict — the
+    // first byte has to be a channel-voice status — so an ordinary OSC message
+    // is not mistaken for MIDI.
+    //
+    // As well as, not instead of: the OSC router still sees every message.
+    // Making this exclusive would mean a three-argument OSC message whose
+    // first argument happened to land in 0x80..0xEF silently stopped driving
+    // the OSC mapping it was written for.
+    if (const auto midi = control::midiFromOsc(msg))
+        handleMidi(*midi);
+
     // OSC has no learn flow; every matching mapping routes immediately, even
     // while MIDI learn is armed (the two surfaces are independent).
-    ++oscActivity_;
     for (const auto& update : oscRouter_.process(msg))
         applyUpdate(update);
 }
