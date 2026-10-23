@@ -92,7 +92,7 @@ The full build instructions are in [`README.md`](README.md). The short version:
 ./build.ps1 test
 
 # Linux and macOS
-cmake --preset linux-debug && ctest --preset linux-debug
+just test
 ```
 
 A merge request needs the test suite passing and `clang-format` clean. CI runs

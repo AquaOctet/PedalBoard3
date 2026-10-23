@@ -29,15 +29,12 @@ and `.pdl` format only; do not edit.
     gate.
   - On main a pipeline runs only when someone starts it by hand (Build >
     Pipelines > Run pipeline). It holds the release jobs, each a manual
-    click: the platform builds, then release:gitlab, which tags the commit
-    and publishes (`docs/releases/README.md`). A merge starts no pipeline,
-    and neither does a pushed tag: releases are made by hand, from main only.
+    click: the platform builds, then release:gitlab, which tags and publishes
+    (`docs/releases/README.md`). Neither a merge nor a pushed tag starts one.
   - Linux runs on shared runners inside the silkOps factory image
-    (`ci-cd/juce-linux`). Windows and macOS run on GitLab SaaS runners.
-    **Every job is required** (#33, 2026-10-14): nothing in `.gitlab-ci.yml`
-    is `allow_failure`, and the project will not let a merge request merge on
-    a pipeline that is not green. The SaaS runners are the slow ones, so an
-    MR now waits on them.
+    (`ci-cd/juce-linux`); Windows and macOS on GitLab SaaS runners, which are
+    the slow ones. **Every job is required** (#33): nothing is
+    `allow_failure` and an MR cannot merge on a pipeline that is not green.
 
 ## Build
 
@@ -123,19 +120,17 @@ prefer `build.ps1` there.
 
 ### Windows: ASIO (optional low-latency drivers, SDK-gated)
 
-ASIO is auto-detected and gated on the Steinberg ASIO SDK. The SDK is dual-licensed
-(the proprietary Steinberg ASIO License, or GPLv3) and **kept out of git** by policy, so you
-provide it — `app-v3/CMakeLists.txt` finds the directory containing
-`iasiodrv.h` anywhere under `app-v3/asio_sdk/` and then defines `JUCE_ASIO=1`.
-Without the SDK, Windows builds use WASAPI/DirectSound only (no error).
+The SDK is dual-licensed (proprietary Steinberg, or GPLv3) and **kept out of
+git** by policy, so you provide it. `app-v3/CMakeLists.txt` looks for
+`iasiodrv.h` anywhere under `app-v3/asio_sdk/` and defines `JUCE_ASIO=1` if it
+finds one. Without it, Windows builds are WASAPI/DirectSound only — no error.
 
-- **Local dev:** download the ASIO SDK from Steinberg and extract it under
-  `app-v3/asio_sdk/` (any internal layout), then reconfigure (`./build.ps1
-  build`). ASIO then appears in Audio Settings.
-- **CI:** the `build:windows` / `release:windows` jobs fetch the SDK from the
-  project's GitLab generic package registry before configure (best-effort — a
-  missing package leaves ASIO off and the pipeline green). A maintainer uploads
-  it once (pin `<ver>` to the actual SDK version, matching the CI URL):
+- **Local dev:** extract Steinberg's SDK under `app-v3/asio_sdk/` (any
+  internal layout) and reconfigure. ASIO then appears in Audio Settings.
+- **CI:** `build:windows` / `release:windows` fetch the SDK from the project's
+  generic package registry before configure. Best-effort: a missing package
+  leaves ASIO off and the pipeline green. A maintainer uploads it once (pin
+  `<ver>` to the SDK version, matching the CI URL):
 
   ```bash
   curl --header "PRIVATE-TOKEN: <token>" \
@@ -162,11 +157,9 @@ doesn't move between machines, so the rules live here.
   labels and starting pipelines.
 - **Ship through `ship-mr`** (see `CLAUDE.md`): push the feature branch, open
   or update the MR, then watch its pipeline.
-- **Report every CI job.** List every job, retried ones included, before
-  saying CI passed. Since #33 nothing is `allow_failure`, so a green pipeline
-  no longer hides a red Windows or macOS job — but the habit stays, because
-  the list is also how you spot a job that never ran. Manual release jobs on
-  main are expected, not errors.
+- **Report every CI job**, retried ones included, before saying CI passed.
+  Since #33 nothing is `allow_failure`, but the list is still how you spot a
+  job that never ran. Manual release jobs on main are expected, not errors.
 - **Releases are made by hand, from main only.** Merge requests have no
   release jobs and there are no tag pipelines. Starting a main pipeline or
   clicking a release job needs the maintainer's say-so
@@ -221,11 +214,10 @@ person at a Windows PC:
 | Code style (clang-format) | — | The installer on a clean PC; code signing (#40) |
 | `just build` + `just test` end-to-end | `just build` + `just test` + `just run` end-to-end | — |
 
-**macOS is a first-class dev-QA target.** CoreAudio, AudioUnit, and VST3 all
-auto-register via `juce::AudioPluginFormatManager::addDefaultFormats()`. A
-local Mac can exercise the full Pedalboard 3 stack short of Windows-specific
-audio drivers and the Windows crash guard (structured exception handling,
-`app-v3/src/platform/CrashGuard_windows.cpp`).
+**macOS is a first-class dev-QA target.** CoreAudio, AudioUnit and VST3 all
+auto-register via `juce::AudioPluginFormatManager::addDefaultFormats()`, so a
+Mac exercises the whole stack short of Windows audio drivers and the Windows
+crash guard (`app-v3/src/platform/CrashGuard_windows.cpp`).
 
 ## Conventions
 
@@ -272,73 +264,39 @@ round:
 - **JUCE writes the Windows version resource once.** `COMPANY_NAME` and
   `COMPANY_COPYRIGHT` are baked into
   `build/<preset>/src/<target>_artefacts/JuceLibraryCode/<target>_resources.rc`
-  the first time a target is built, and changing them in CMake does **not**
-  regenerate it: the exe relinks, keeps the old company in its file
-  properties, and nothing warns. Delete that `.rc` and build again. CI never
-  sees this, because it caches only `.cpm-cache/` and `.ccache/` and builds
-  the tree from scratch — which makes it purely a local trap, and the worst
-  kind: a locally packaged installer can carry the wrong publisher while CI's
-  is right. Check with
-  `(Get-Item '…\Pedalboard 3.exe').VersionInfo` before trusting a local
-  package (hit 2026-10-13: an installer built with `AquaOctet` and no
-  copyright, from a `.rc` generated in July).
+  on the first build of a target. Changing them in CMake does **not**
+  regenerate it — the exe relinks, keeps the old company, and nothing warns.
+  Delete that `.rc` and build again. CI builds from scratch and never sees
+  it, so a local package can carry the wrong publisher while CI's is right
+  (hit 2026-10-13). Check `(Get-Item '…\Pedalboard 3.exe').VersionInfo`
+  before trusting a local package.
 
-## Repo layout (current)
+## Repo layout
+
+`README.md` has the top level. Inside `app-v3/src/`:
 
 ```
-.
-├── AGENTS.md                # this file
-├── CLAUDE.md                # points here, plus the shipping rules (ship-mr)
-├── README.md
-├── .clang-format
-├── .gitignore
-├── .gitlab-ci.yml
-├── docs/
-│   ├── plans/               # /ce-plan output
-│   ├── releases/            # release notes, and how to cut a release
-│   ├── reviews/
-│   └── status/              # dated handoff and status notes
-├── source code/             # READ-ONLY: original Pedalboard2 v2
-├── legacy/                  # Pedalboard2 end-user docs, readme, to-do
-├── vercel-ui-demo/          # UI mockup (design source)
-├── app-v3/                  # the v3 code
-│   ├── CMakeLists.txt
-│   ├── CMakePresets.json
-│   ├── cmake/               # CPM.cmake (dependency fetching)
-│   ├── resources/fonts/     # embedded UI fonts (SIL OFL)
-│   ├── src/
-│   │   ├── main.cpp
-│   │   ├── App.h / App.cpp
-│   │   ├── engine/          # graph runtime, plugin host and scanner, transport
-│   │   ├── engine/processors/  # built-in processors
-│   │   ├── session/         # patches, banks, Session, .pdl files, Preferences
-│   │   ├── session/v2_import/  # Pedalboard2 .pdl import
-│   │   ├── control/         # MIDI / OSC mappings and input devices
-│   │   ├── ui/
-│   │   ├── platform/        # the crash guard, per OS
-│   │   └── tools/           # pb3-scanner-helper, pb3-ui-snapshots
-│   └── tests/
-│       ├── unit/            # mirrors src/
-│       └── support/         # shared test helpers
-├── installer/windows/       # the Inno Setup script for the Windows installer
-├── tools/                   # packaging scripts (package.ps1, package.sh)
-├── build.ps1                # Windows build / test / run / snapshots / package
-└── justfile, Makefile       # build wrappers (the Linux CI image recipe lives in ci-cd)
+engine/              graph runtime, plugin host and scanner, transport
+engine/processors/   built-in processors
+session/             patches, banks, Session, .pdl files, Preferences
+session/v2_import/   Pedalboard2 .pdl import
+control/             MIDI / OSC mappings and input devices
+ui/
+platform/            the crash guard, per OS
+tools/               pb3-scanner-helper, pb3-ui-snapshots
 ```
 
-## Current state: road to v1.0.0
+`app-v3/tests/unit/` mirrors `src/`; `tests/support/` holds shared helpers.
 
-The milestones in `docs/plans/2026-07-02-001-feat-road-to-1-0-release-plan.md`
-up to M6 have merged: stability (M1), live MIDI/OSC control (M2), multi-patch
-banks (M3), the mappings UI (M4), hardening (M5) and the parity tail (M6). So
-have the finish pass, the UI refresh and the UI chrome pass. Next is the first
-public beta, 1.0.0-beta.1 (M7), then the signed v1.0.0 release (M8). The
-GitLab milestones and issues track what's open.
+## Current state
 
-From 2026-09-14 development continues on a MacBook.
+M1–M6 have merged, plus the finish pass, the UI refresh and the UI chrome
+pass. Next is 1.0.0-beta.1 (M7), then the signed v1.0.0 (M8). Development
+continues on a MacBook from 2026-09-14.
+
+The GitLab board is the source of truth for open work (M7, M8, 1.x);
 `docs/status/2026-09-14-handoff.md` has the state, the next steps in order
-and the open decisions. The GitLab board is the source of truth for open
-work: milestones M7 (public beta), M8 (v1.0.0) and 1.x.
+and the open decisions.
 
 ### Linux dev server toolchain
 

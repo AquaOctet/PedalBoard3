@@ -151,8 +151,13 @@ AudioSettingsPanel::AudioSettingsPanel(juce::AudioDeviceManager& devices, juce::
     addAndMakeVisible(error_);
 
     toneButton_.getToggleStateValue().referTo(testTone); // shared with the Settings menu
-    toneButton_.setTooltip("Play a 440 Hz tone straight to the output, bypassing the chain");
-    toneHint_.setText("Checks the output device without the board. Switching patch turns it off.",
+    toneButton_.setTooltip("Play a 440 Hz tone to the output in place of the board");
+    // Both halves of this used to be wrong. The tone was a graph that
+    // replaced the patch, so the old copy said it ran "without the board"
+    // and that "switching patch turns it off" -- true then, false since
+    // #111 made it a master stage: the board keeps running underneath and
+    // nothing but this switch turns it off.
+    toneHint_.setText("Checks the output device. The board keeps running underneath and stays loaded.",
                       juce::dontSendNotification);
     toneHint_.setFont(fonts::ui(12.0f));
     toneHint_.setColour(juce::Label::textColourId, tokens::fgMuted);
