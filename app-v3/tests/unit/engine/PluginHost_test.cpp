@@ -1,8 +1,8 @@
 // Tests for pedalboard3::engine::PluginHost -- the thin facade over
-// juce::AudioPluginFormatManager + KnownPluginList: registration, the empty
-// list, synchronous directory scans, the instance-creation error path, format
-// introspection (getFormatNames) and the OS-default plugin paths. The app's
-// out-of-process scan is engine::PluginScanner's.
+// juce::AudioPluginFormatManager + KnownPluginList: registration, the known
+// list and its snapshots, the instance-creation error path, the restore
+// gates, the built-in node factory and the crash list. PluginHost does not
+// scan; the app's scan is engine::PluginScanner's, out of process.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -18,64 +18,16 @@ TEST_CASE("PluginHost: default formats are registered at construction", "[engine
     // JUCE 8 registers at least VST3 + LV2 on Linux, VST3 + AU on macOS,
     // VST3 (+ optional VST2) on Windows. We only assert "at least one"
     // because the CI runner's exact format set depends on compile-time
-    // module configuration.
-    REQUIRE(host.getNumFormats() > 0);
+    // module configuration. Read through the format manager: PluginHost's
+    // own format getters existed only for the in-process scan UI that was
+    // never built (#97).
+    REQUIRE(host.getFormatManager().getNumFormats() > 0);
 }
 
 TEST_CASE("PluginHost: known plugin list starts empty", "[engine][plugin-host]")
 {
     engine::PluginHost host;
     REQUIRE(host.getKnownPlugins().isEmpty());
-}
-
-TEST_CASE("PluginHost: scanning a non-existent directory adds nothing and does not crash", "[engine][plugin-host]")
-{
-    engine::PluginHost host;
-
-    juce::FileSearchPath path;
-    path.add(juce::File("/tmp/pedalboard3-nonexistent-dir-for-test-42"));
-    // Scope to VST3 only. AU's scanner ignores the FileSearchPath and would
-    // enumerate every installed AudioComponent on the runner -- fine on a
-    // bare CI runner, fatal on a dev Mac with a buggy AU plugin installed.
-    const int added = host.scanDirectory(path, juce::StringArray{"VST3"});
-
-    REQUIRE(added == 0);
-    REQUIRE(host.getKnownPlugins().isEmpty());
-}
-
-TEST_CASE("PluginHost: scanning an empty directory adds nothing", "[engine][plugin-host]")
-{
-    engine::PluginHost host;
-
-    // Create a short-lived empty directory under the OS temp root.
-    auto tempDir = juce::File::getSpecialLocation(juce::File::tempDirectory)
-                       .getChildFile("pb3-plugin-host-scan-test-" + juce::String(juce::Time::currentTimeMillis()));
-    REQUIRE(tempDir.createDirectory().wasOk());
-
-    juce::FileSearchPath path;
-    path.add(tempDir);
-    const int added = host.scanDirectory(path, juce::StringArray{"VST3"});
-
-    REQUIRE(added == 0);
-
-    tempDir.deleteRecursively();
-}
-
-TEST_CASE("PluginHost: clearKnownPlugins is safe on an already-empty list", "[engine][plugin-host]")
-{
-    engine::PluginHost host;
-    host.clearKnownPlugins();
-    REQUIRE(host.getKnownPlugins().isEmpty());
-}
-
-TEST_CASE("PluginHost: getKnownPlugins returns a snapshot independent of the live list", "[engine][plugin-host]")
-{
-    engine::PluginHost host;
-    auto before = host.getKnownPlugins();
-    host.clearKnownPlugins();
-    auto after = host.getKnownPlugins();
-    REQUIRE(before.size() == 0);
-    REQUIRE(after.size() == 0);
 }
 
 TEST_CASE("PluginHost: createInstance with a bogus description returns nullptr + error message",
@@ -93,85 +45,6 @@ TEST_CASE("PluginHost: createInstance with a bogus description returns nullptr +
 
     REQUIRE(instance == nullptr);
     REQUIRE(errorOut.isNotEmpty());
-}
-
-// -----------------------------------------------------------------------
-// Phase 1.C.5 -- format introspection + default-path enumeration
-// -----------------------------------------------------------------------
-
-TEST_CASE("PluginHost: getFormatNames reports at least as many entries as getNumFormats",
-          "[engine][plugin-host][paths]")
-{
-    engine::PluginHost host;
-    const auto names = host.getFormatNames();
-    REQUIRE(names.size() == host.getNumFormats());
-    REQUIRE(names.size() > 0);
-
-    // Every reported name must be non-empty -- a blank format name would
-    // mean a UI list couldn't distinguish registered formats from each other.
-    for (const auto& n : names)
-        REQUIRE(n.isNotEmpty());
-}
-
-TEST_CASE("PluginHost: getDefaultSearchPathForFormat returns a non-empty path for a real format",
-          "[engine][plugin-host][paths]")
-{
-    engine::PluginHost host;
-    const auto names = host.getFormatNames();
-    REQUIRE(names.size() > 0);
-
-    // At least one registered format must expose default search paths so a
-    // first-run "scan everywhere" UI has something to walk. JUCE 8's default
-    // format order on macOS puts AudioUnit first (juce_AudioPluginFormatManager.cpp),
-    // and AU's getDefaultLocationsToSearch() returns {} because AU plugins
-    // are registry-based. So we iterate, not assume names[0].
-    bool sawNonEmpty = false;
-    for (const auto& name : names)
-    {
-        if (host.getDefaultSearchPathForFormat(name).getNumPaths() > 0)
-        {
-            sawNonEmpty = true;
-            break;
-        }
-    }
-    REQUIRE(sawNonEmpty);
-}
-
-TEST_CASE("PluginHost: getDefaultSearchPathForFormat returns empty for an unknown format name",
-          "[engine][plugin-host][paths]")
-{
-    engine::PluginHost host;
-    const auto path = host.getDefaultSearchPathForFormat("FakeFormatThatDoesNotExist");
-    REQUIRE(path.getNumPaths() == 0);
-}
-
-TEST_CASE("PluginHost: scanDefaultPaths runs without crashing on a bare runner", "[engine][plugin-host][paths]")
-{
-    engine::PluginHost host;
-
-    // We can only verify non-crash + sane-state semantics when the
-    // filesystem actually IS bare. On a developer machine with installed
-    // VST3 / LV2 plugins, JUCE's PluginDirectoryScanner instantiates each
-    // plugin to introspect its metadata -- and a single buggy plugin in
-    // that set will SIGABRT the test process. This scan runs in-process (the
-    // app's out-of-process scan is PluginScanner's), so skip when any default
-    // path contains a plugin candidate.
-    for (const auto& name : host.getFormatNames())
-    {
-        const auto path = host.getDefaultSearchPathForFormat(name);
-        for (int i = 0; i < path.getNumPaths(); ++i)
-        {
-            if (!path[i].isDirectory())
-                continue;
-            const auto children = path[i].findChildFiles(juce::File::findFilesAndDirectories, /*recursive*/ false);
-            if (!children.isEmpty())
-                SKIP("default plugin path is populated; an in-process scan could crash on a real plugin");
-        }
-    }
-
-    const int added = host.scanDefaultPaths();
-    REQUIRE(added >= 0);
-    REQUIRE(host.getKnownPlugins().size() == added);
 }
 
 // -----------------------------------------------------------------------
@@ -200,6 +73,21 @@ TEST_CASE("PluginHost: getKnownEffects returns empty when the list is empty", "[
 {
     engine::PluginHost host;
     REQUIRE(host.getKnownEffects().isEmpty());
+}
+
+TEST_CASE("PluginHost: getKnownPlugins returns a snapshot independent of the live list", "[engine][plugin-host]")
+{
+    engine::PluginHost host;
+    host.getKnownPluginList().addType(makeFakePluginDesc("FakeEQ", /*isInstrument*/ false));
+
+    const auto snapshot = host.getKnownPlugins();
+    REQUIRE(snapshot.size() == 1);
+
+    // The scanner adds to the live list while a caller is iterating its copy;
+    // the copy must not grow underneath it.
+    host.getKnownPluginList().addType(makeFakePluginDesc("FakeVerb", /*isInstrument*/ false));
+    REQUIRE(snapshot.size() == 1);
+    REQUIRE(host.getKnownPlugins().size() == 2);
 }
 
 TEST_CASE("PluginHost: isDescriptorSafeForChain gates instruments and blacklisted files",
@@ -336,16 +224,18 @@ TEST_CASE("PluginHost: applyKnownProblemBlacklist returns false on a bare runner
 {
     engine::PluginHost host;
 
-    // Same precaution as scanDefaultPaths above: skip on a dev box with
-    // populated plugin dirs. Here we only need *known-problem* basenames
-    // (Current.vst3 / Kontakt.vst3 / Kontakt 7.vst3) -- but we can't tell
-    // those apart from arbitrary VSTs without reading the OS plugin
-    // dirs, and reading them is what we're testing. Skip if any default
-    // path is populated; that keeps CI green on a bare runner where the
-    // floor list legitimately matches nothing.
-    for (const auto& name : host.getFormatNames())
+    // Skip on a dev box with populated plugin dirs. Here we only need
+    // *known-problem* basenames (Current.vst3 / Kontakt.vst3 / Kontakt
+    // 7.vst3) -- but we can't tell those apart from arbitrary VSTs without
+    // reading the OS plugin dirs, and reading them is what we're testing.
+    // Skip if any default path is populated; that keeps CI green on a bare
+    // runner where the floor list legitimately matches nothing. This walks
+    // the format manager directly because applyKnownProblemBlacklist does
+    // too; PluginHost no longer has format getters of its own (#97).
+    auto& formats = host.getFormatManager();
+    for (int f = 0; f < formats.getNumFormats(); ++f)
     {
-        const auto path = host.getDefaultSearchPathForFormat(name);
+        const auto path = formats.getFormat(f)->getDefaultLocationsToSearch();
         for (int i = 0; i < path.getNumPaths(); ++i)
         {
             if (!path[i].isDirectory())
