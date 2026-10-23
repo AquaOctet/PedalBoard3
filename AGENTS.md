@@ -121,29 +121,23 @@ prefer `build.ps1` there.
   `build/macos-dev/src/pb3-ui-snapshots_artefacts/Debug/pb3-ui-snapshots build/ui-snapshots`.
 - **The macOS package:** `just release`, then `tools/package.sh build/macos-universal`.
 
-### Windows: ASIO (optional low-latency drivers, SDK-gated)
+### Windows: ASIO (low-latency drivers)
 
-The SDK is dual-licensed (proprietary Steinberg, or GPLv3) and **kept out of
-git** by policy, so you provide it. `app-v3/CMakeLists.txt` looks for
-`iasiodrv.h` anywhere under `app-v3/asio_sdk/` and defines `JUCE_ASIO=1` if it
-finds one. Without it, Windows builds are WASAPI/DirectSound only — no error.
+ASIO is on in every Windows build and needs nothing from you. JUCE 8.0.9
+started bundling the Steinberg headers, so `app-v3/CMakeLists.txt` just defines
+`JUCE_ASIO=1` and ASIO appears in Audio Settings. Configure prints
+`Pedalboard 3: ASIO enabled with JUCE's bundled headers.`
 
-- **Local dev:** extract Steinberg's SDK under `app-v3/asio_sdk/` (any
-  internal layout) and reconfigure. ASIO then appears in Audio Settings.
-- **CI:** `build:windows` / `release:windows` fetch the SDK from the project's
-  generic package registry before configure. Best-effort: a missing package
-  leaves ASIO off and the pipeline green. A maintainer uploads it once (pin
-  `<ver>` to the SDK version, matching the CI URL):
+Until the 8.0.16 bump this was gated on an SDK you had to supply, and
+`build:windows` fetched one from the project's generic package registry before
+configure. Both are gone. The package can stay where it is; nothing reads it.
 
-  ```bash
-  curl --header "PRIVATE-TOKEN: <token>" \
-    --upload-file ASIO-SDK_2.3.4_2025-10-15.zip \
-    "https://gitlab.com/api/v4/projects/${CI_PROJECT_ID}/packages/generic/asio-sdk/2.3.4/ASIO-SDK_2.3.4_2025-10-15.zip"
-  ```
-
-  The `build:windows` job's fetch URL must match this package path/version. Verify
-  it took: the next `build:windows` log prints
-  `Pedalboard 3: ASIO SDK found … — enabling JUCE_ASIO=1`.
+To pin a particular version of `iasiodrv.h` instead of JUCE's, put it anywhere
+under `app-v3/asio_sdk/` and reconfigure: CMake then switches to
+`JUCE_ASIO_USE_EXTERNAL_SDK=1` and says
+`Pedalboard 3: ASIO SDK found ... - using it instead of JUCE's bundled headers`.
+The SDK is dual-licensed (proprietary Steinberg, or GPLv3 - we take GPLv3) and
+stays out of git either way.
 
 ## Working agreement
 
