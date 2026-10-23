@@ -151,6 +151,9 @@ target_link_libraries(pb3_app_core
         pb3_session_core
         pb3_control_core
         pb3_ui_fonts
+        # juce_animation (JUCE 8): the top bar's folds are eased rather than
+        # snapped (#115). Header-and-cpp only, no extra system dependency.
+        juce::juce_animation
         juce::juce_gui_extra
         juce::juce_audio_utils
         juce::juce_audio_processors

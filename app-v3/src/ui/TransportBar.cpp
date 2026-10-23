@@ -44,6 +44,11 @@ constexpr int kButtonGap = 6;
 // text and CPU / MEM is a block of meters, and at kButtonGap they ran
 // together into one unreadable strip.
 constexpr int kDelayMetersGap = 18;
+
+// How long a fold step takes to reveal or conceal (#115). Long enough to
+// read as movement rather than a jump, short enough that dragging a window
+// edge never feels like the bar is lagging behind it.
+constexpr double kRevealMs = 200.0;
 constexpr int kMenuButtonWidth = 36; // the square folder / gear / plug
 constexpr int kActivityWidth = 104;  // MIDI and OSC lights
 constexpr int kSystemMetersWidth = 168;
@@ -294,13 +299,13 @@ int TransportBar::naturalWidth() const
     return w;
 }
 
-void TransportBar::resized()
+// Where the ladder says each part should end up at this width. Pure: it
+// reads only full widths, never the animated ones (see Reveal).
+TransportBar::Reveal TransportBar::foldTargetsFor(int width) const
 {
-    dividerX_.clear();
-
     // How much we are over, if at all. Everything below is about spending
     // that number down; with it at or below zero the bar lays out whole.
-    const int deficit = naturalWidth() - getWidth();
+    const int deficit = naturalWidth() - width;
 
     // Walk the ladder only as far as covering the shortfall needs, taking
     // each step's saving off what is left. A step that saves little is still
@@ -347,17 +352,107 @@ void TransportBar::resized()
 
     const auto applied = [folded](Fold step) { return folded > static_cast<int>(step); };
 
-    // Spend the folds we decided on.
-    const bool latencyOn = !applied(Fold::LatencyAway);
-    const bool cpuOn = !applied(Fold::CpuAway);
-    const bool ioMetersOn = !applied(Fold::IoMetersAway);
-    const bool badgeOn = !applied(Fold::BadgeAway);
-    const bool activityOn = !applied(Fold::ActivityAway);
     const int badgeFold = applied(Fold::BadgeInput)    ? 3
                           : applied(Fold::BadgeOutput) ? 2
                           : applied(Fold::BadgePairs)  ? 1
                                                        : 0;
     const int transportFold = applied(Fold::TransportClick) ? 2 : applied(Fold::TransportPos) ? 1 : 0;
+
+    Reveal out;
+    out.badgeFold = badgeFold;
+    out.transportFold = transportFold;
+    out.latency = applied(Fold::LatencyAway) ? 0.0f : 1.0f;
+    out.cpu = applied(Fold::CpuAway) ? 0.0f : 1.0f;
+    out.io = applied(Fold::IoMetersAway) ? 0.0f : 1.0f;
+    out.activity = applied(Fold::ActivityAway) ? 0.0f : 1.0f;
+    out.badgeWidth = applied(Fold::BadgeAway) ? 0.0f : static_cast<float>(deviceBadge_.widthAtFold(badgeFold));
+    out.transportWidth = ctx_.features.isAvailable(session::Feature::Tempo)
+                             ? static_cast<float>(transportControls_.widthAtFold(transportFold))
+                             : 0.0f;
+    return out;
+}
+
+void TransportBar::startReveal()
+{
+    revealFrom_ = shown_;
+    // The levels switch at once; only the boxes ease. See Reveal.
+    shown_.badgeFold = target_.badgeFold;
+    shown_.transportFold = target_.transportFold;
+
+    // A retarget mid-flight starts fresh from wherever we got to, so the
+    // old animation comes off the updater first. resized() is re-entrant
+    // from DeviceBadge, LatencyReadout and TransportControls, so this
+    // happens whenever a device or a latency changes while folding.
+    if (revealAnimator_.has_value())
+        animatorUpdater_.removeAnimator(*revealAnimator_);
+
+    revealAnimator_ =
+        juce::ValueAnimatorBuilder{}
+            .withDurationMs(kRevealMs)
+            .withEasing(juce::Easings::createEaseOut())
+            .withValueChangedCallback(
+                [this](float progress)
+                {
+                    const auto mix = [progress](float from, float to) { return from + (to - from) * progress; };
+                    shown_.latency = mix(revealFrom_.latency, target_.latency);
+                    shown_.cpu = mix(revealFrom_.cpu, target_.cpu);
+                    shown_.io = mix(revealFrom_.io, target_.io);
+                    shown_.activity = mix(revealFrom_.activity, target_.activity);
+                    shown_.badgeWidth = mix(revealFrom_.badgeWidth, target_.badgeWidth);
+                    shown_.transportWidth = mix(revealFrom_.transportWidth, target_.transportWidth);
+                    applyLayout(shown_);
+                    repaint(); // the dividers are painted, not components
+                })
+            .withOnCompleteCallback(
+                [this]
+                {
+                    shown_ = target_;
+                    applyLayout(shown_);
+                    repaint();
+                })
+            .build();
+    animatorUpdater_.addAnimator(*revealAnimator_);
+    revealAnimator_->start();
+}
+
+void TransportBar::resized()
+{
+    const auto targets = foldTargetsFor(getWidth());
+
+    // Snap, don't ease, when nobody can see it: the first layout, and the
+    // snapshot rig, which renders offscreen and measures the result in the
+    // same breath. An animation there would be measured at frame zero.
+    const bool settleNow = !everLaidOut_ || !isShowing();
+    everLaidOut_ = true;
+
+    if (targets != target_)
+    {
+        target_ = targets;
+        if (settleNow)
+            shown_ = targets;
+        else
+            startReveal();
+    }
+    else if (settleNow)
+    {
+        shown_ = targets;
+    }
+
+    // Always lay out for the current width, animating or not: the bar has
+    // to track the window edge while it is dragged. Only the fold steps are
+    // eased, and they are eased by `shown_`, not by withholding the layout.
+    applyLayout(shown_);
+}
+
+void TransportBar::applyLayout(const Reveal& reveal)
+{
+    dividerX_.clear();
+
+    const bool latencyOn = reveal.latency > 0.0f;
+    const bool cpuOn = reveal.cpu > 0.0f;
+    const bool ioMetersOn = reveal.io > 0.0f;
+    const bool activityOn = reveal.activity > 0.0f;
+    const bool badgeOn = reveal.badgeWidth > 0.0f;
 
     auto bounds = getLocalBounds().reduced(kBarPadding, 6);
 
@@ -380,39 +475,54 @@ void TransportBar::resized()
     ioMonitor_.setVisible(ioMetersOn);
     activityLights_.setVisible(activityOn);
 
-    const int activityWidth = activityOn ? kActivityWidth : 0;
-    const int inputWidth = ioMetersOn ? kIoMonitorWidth + kButtonGap : 0;
-    const int latencyWidth = latencyOn ? latencyReadout_.preferredWidth() + kButtonGap * 2 : 0;
-    const int cpuWidth = cpuOn ? kSystemMetersWidth + kDelayMetersGap : 0;
+    // A part at presence p is p of its width and p of its opacity, so it
+    // narrows and fades together while its neighbours slide into the room
+    // it gives up. At p == 1 every number below is the whole width it
+    // always was, which is what keeps the settled layout identical.
+    const auto scaled = [](int full, float presence) { return juce::roundToInt(static_cast<float>(full) * presence); };
+
+    const int activityWidth = scaled(kActivityWidth, reveal.activity);
+    const int inputWidth = scaled(kIoMonitorWidth + kButtonGap, reveal.io);
+    const int latencyWidth = scaled(latencyReadout_.preferredWidth() + kButtonGap * 2, reveal.latency);
+    const int cpuWidth = scaled(kSystemMetersWidth + kDelayMetersGap, reveal.cpu);
     auto right = bounds.removeFromRight(activityWidth + inputWidth + latencyWidth + cpuWidth);
     if (activityOn)
-        activityLights_.setBounds(right.removeFromLeft(kActivityWidth));
+    {
+        activityLights_.setAlpha(reveal.activity);
+        activityLights_.setBounds(right.removeFromLeft(activityWidth));
+    }
     if (ioMetersOn)
     {
-        right.removeFromLeft(kButtonGap);
-        ioMonitor_.setBounds(right.removeFromLeft(kIoMonitorWidth));
+        auto cell = right.removeFromLeft(inputWidth);
+        cell.removeFromLeft(scaled(kButtonGap, reveal.io));
+        ioMonitor_.setAlpha(reveal.io);
+        ioMonitor_.setBounds(cell);
     }
     if (latencyOn)
     {
-        right.removeFromLeft(kButtonGap * 2);
-        latencyReadout_.setBounds(right.removeFromLeft(latencyReadout_.preferredWidth()));
+        auto cell = right.removeFromLeft(latencyWidth);
+        cell.removeFromLeft(scaled(kButtonGap * 2, reveal.latency));
+        latencyReadout_.setAlpha(reveal.latency);
+        latencyReadout_.setBounds(cell);
     }
     if (cpuOn)
     {
-        right.removeFromLeft(kDelayMetersGap);
-        systemMeters_.setBounds(right.removeFromLeft(kSystemMetersWidth));
+        auto cell = right.removeFromLeft(cpuWidth);
+        cell.removeFromLeft(scaled(kDelayMetersGap, reveal.cpu));
+        systemMeters_.setAlpha(reveal.cpu);
+        systemMeters_.setBounds(cell);
     }
 
     divideRight();
 
     // The transport pill, left of the lights (M6 U4, optional-features U4),
     // only while Tempo / BPM is available.
-    const bool tempoOn = ctx_.features.isAvailable(session::Feature::Tempo);
-    transportControls_.setVisible(tempoOn);
-    if (tempoOn)
+    const int transportWidth = juce::roundToInt(reveal.transportWidth);
+    transportControls_.setVisible(transportWidth > 0);
+    if (transportWidth > 0)
     {
-        transportControls_.setFoldLevel(transportFold);
-        transportControls_.setBounds(bounds.removeFromRight(transportControls_.preferredWidth()));
+        transportControls_.setFoldLevel(reveal.transportFold);
+        transportControls_.setBounds(bounds.removeFromRight(transportWidth));
         divideRight();
     }
 
@@ -447,8 +557,12 @@ void TransportBar::resized()
     deviceBadge_.setVisible(badgeOn);
     if (badgeOn)
     {
-        deviceBadge_.setFoldLevel(badgeFold);
-        const int want = deviceBadge_.preferredWidth();
+        deviceBadge_.setFoldLevel(reveal.badgeFold);
+        const int want = juce::roundToInt(reveal.badgeWidth);
+        // Opaque at every real fold level; it only fades over the last
+        // stretch, on its way out past its narrowest one.
+        const auto narrowest = static_cast<float>(juce::jmax(1, deviceBadge_.widthAtFold(3)));
+        deviceBadge_.setAlpha(juce::jlimit(0.0f, 1.0f, reveal.badgeWidth / narrowest));
         freeRegion_ = {bounds.getX(), bounds.getRight()};
         auto cell = bounds.withSizeKeepingCentre(juce::jmin(want, bounds.getWidth()), bounds.getHeight());
         deviceBadge_.setBounds(cell);
