@@ -686,6 +686,22 @@ Patch Session::getActivePatchWithState() const
     std::lock_guard<std::mutex> lk(statusMutex_);
     Patch snapshot = activePatch_;
 
+    // The wrappers in nodes_ live inside the graph Session committed. After
+    // an out-of-band swap they dangle, and everything below — suspending
+    // them, waiting on them, reading state through them — would run against
+    // freed memory. The seven sibling accessors all open with this check;
+    // this one did not, and it is the call that runs on save (#129).
+    //
+    // It returns the patch rather than refusing, which is the one way it
+    // differs from the siblings. They are mutations and can simply decline;
+    // this is a save, the caller is a file dialog with nothing to retry,
+    // and a .pdl carrying slightly stale knob positions is a far better
+    // outcome than a save that fails. The node list, wiring, tempo and the
+    // bytes each plugin last loaded with are all in `snapshot` already — it
+    // is only the live capture that is skipped.
+    if (auto* current = currentRuntimeGraph(); current == nullptr || current != liveGraph_)
+        return snapshot;
+
     // Quiesce the audio path before reading plugin state (crash-hunt #7):
     // getStateInformation on a live instance races the audio thread's
     // processBlock. Suspend each wrapper — the graph's render op checks
@@ -1301,27 +1317,33 @@ void Session::commitAddPlugin(AddPluginResult&& result)
     {
         std::lock_guard<std::mutex> lk(statusMutex_);
 
-        // Refresh liveGraph_ from the runtime's authoritative atomic
-        // pointer. The cached field can become stale when anything
-        // outside Session calls AudioEngine::loadGraph with a graph
-        // Session did not build, which leaves liveGraph_ pointing at
-        // freed memory once that graph goes.
-        // Adopting the runtime's graph is only safe while Session holds
-        // no committed nodes — with nodes present, their graphNode
-        // pointers belong to the old graph and applyConnections below
-        // would dereference them against the foreign one (crash-hunt #7).
+        // The runtime must still be holding the graph Session committed.
+        // The cached field goes stale when anything outside Session calls
+        // AudioEngine::loadGraph with a graph Session did not build, which
+        // leaves liveGraph_ pointing at freed memory once that graph goes.
+        //
+        // This used to adopt the runtime's graph whenever nodes_ happened
+        // to be empty (#128). The memory-safety argument for the hatch was
+        // sound — with no committed nodes there are no cached graphNode
+        // pointers for applyConnections to dereference against a foreign
+        // graph — but it is the wrong conclusion. Adopting makes a graph
+        // somebody else owns into liveGraph_ and then adds a node to it,
+        // and every one of the seven sibling call sites (removeNode,
+        // setNodeBypass, rearmNode, getNodeWithState, getHostedPlugin,
+        // stopListeningToLiveNodes, applyConnectionsToLiveGraph) refuses
+        // in the same situation. Refuse here too; the next whole-patch
+        // commit re-syncs. If adoption is ever genuinely wanted it should
+        // be a named call of its own, not a side effect of an add.
         auto* current = currentRuntimeGraph();
-        if (current != liveGraph_ && !nodes_.empty())
+        if (current == nullptr)
         {
-            lastError_ = "addPlugin: live graph changed outside Session";
+            lastError_ = "addPlugin: no live graph";
             publishStateChange(State::Idle);
             return;
         }
-        liveGraph_ = current;
-
-        if (liveGraph_ == nullptr)
+        if (current != liveGraph_)
         {
-            lastError_ = "addPlugin: no live graph";
+            lastError_ = "addPlugin: live graph changed outside Session";
             publishStateChange(State::Idle);
             return;
         }
