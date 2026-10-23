@@ -505,6 +505,34 @@ int main(int argc, char** argv)
         const auto appMappings = ui::makeAppMappingsContent(rig.context, *commands.getKeyMappings());
         out.addDialog("dialog-app-mappings", "App Mappings", *appMappings);
 
+        // The second tab, with a row of each kind. The Select Patch target is
+        // #97: PatchSelect has been in the file format since M3 and no editor
+        // could produce one, so this surface is where "an editor can now" is
+        // visible. The rows are seeded here rather than in seed() so the
+        // Keyboard-tab surface above keeps photographing an untouched table.
+        control::MidiMapping toPatch;
+        toPatch.source.kind = control::MidiSourceKind::ControlChange;
+        toPatch.source.channel = 1;
+        toPatch.source.controller = 80;
+        toPatch.target.kind = control::MidiTargetKind::PatchSelect;
+        toPatch.target.patchIndex = 3; // "Chorus Wide", the fourth of the set
+        control::MidiMapping nextPatch;
+        nextPatch.source.kind = control::MidiSourceKind::ControlChange;
+        nextPatch.source.channel = 0;
+        nextPatch.source.controller = 64;
+        nextPatch.target.kind = control::MidiTargetKind::AppCommand;
+        nextPatch.target.commandId = session::appcommands::kNextPatch;
+        rig.appMappings.setMidi({nextPatch, toPatch});
+
+        control::OscMapping oscToPatch;
+        oscToPatch.address = "/pb3/patch/solo";
+        oscToPatch.target.kind = control::MidiTargetKind::PatchSelect;
+        oscToPatch.target.patchIndex = 5; // "Solo Lead"
+        rig.appMappings.setOsc({oscToPatch});
+
+        const auto triggers = ui::makeAppMappingsContent(rig.context, *commands.getKeyMappings(), /*tab*/ 1);
+        out.addDialog("dialog-app-mappings-triggers", "App Mappings: MIDI / OSC", *triggers);
+
         // Alerts, as the app raises them (UI chrome U5).
         using ui::alert::Role;
         const auto unsaved = ui::alert::makePanel(
