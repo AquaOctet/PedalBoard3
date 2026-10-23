@@ -9,6 +9,7 @@
 #include "SystemMeters.h"
 #include "TransportControls.h"
 
+#include <juce_animation/juce_animation.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <memory>
@@ -208,6 +209,53 @@ private:
     // board is untouched, so the bar just forwards the switch.
     juce::Value testTone_{false};
     bool toneActive_{false}; // what is actually playing
+
+    // How much of each foldable part is currently showing (#115).
+    //
+    // The bar used to compute a fold level and apply it in the same
+    // resized() pass, so every child jumped to its final rectangle in one
+    // frame. There was no "where it is now" for anything to move from.
+    // These numbers are that missing state: the ladder sets targets, one
+    // eased clock walks these towards them, and the layout is recomputed
+    // from them every frame.
+    //
+    // Presences are 0..1 and multiply a part's full width; the two parts
+    // that fold by degrees carry a width in pixels instead, because their
+    // levels are not evenly spaced and interpolating the level number would
+    // move them at the wrong speed.
+    //
+    // Deliberately NOT fed back into the ladder: the ladder always prices
+    // parts whole. A half-folded part that made the deficit look smaller
+    // would re-decide the fold mid-animation and oscillate.
+    struct Reveal
+    {
+        float latency{1.0f};
+        float cpu{1.0f};
+        float io{1.0f};
+        float activity{1.0f};
+        float badgeWidth{-1.0f};     // px across the badge's four levels; 0 = gone
+        float transportWidth{-1.0f}; // px across the transport pill's three
+
+        // Carried, not interpolated. What a part draws inside its box
+        // switches at once; it is the box that eases. Interpolating a level
+        // number would move the two by-degrees parts at the wrong speed,
+        // because their levels are not evenly spaced.
+        int badgeFold{0};
+        int transportFold{0};
+
+        bool operator==(const Reveal&) const = default;
+    };
+
+    Reveal foldTargetsFor(int width) const; // the ladder, in full widths
+    void applyLayout(const Reveal&);        // place everything for one frame
+    void startReveal();
+
+    Reveal target_;     // where the ladder says we are going
+    Reveal shown_;      // where we are
+    Reveal revealFrom_; // where this animation started
+    bool everLaidOut_{false};
+    juce::VBlankAnimatorUpdater animatorUpdater_{this};
+    std::optional<juce::Animator> revealAnimator_; // juce::Animator has no default ctor
 
     // The unclaimed width left in the middle after the last resized().
     int slack_{0};
