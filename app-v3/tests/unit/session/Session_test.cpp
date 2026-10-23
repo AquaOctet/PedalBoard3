@@ -771,6 +771,33 @@ TEST_CASE("Session: commitAddPlugin refuses to add into a graph swapped outside 
     REQUIRE(f.s.getLastError().isNotEmpty());
 }
 
+TEST_CASE("Session: commitAddPlugin refuses a foreign graph with an empty chain too", "[session][crash-hunt]")
+{
+    engine::AudioEngine eng;
+    eng.initialise();
+    engine::PluginHost host;
+    FakeBuilder builder;
+    session::Session s(eng, host, builder.fn());
+    REQUIRE(s.getNodeCount() == 0);
+
+    // The empty chain used to be an escape hatch (#128): with no committed
+    // nodes there are no cached graphNode pointers to dangle, so the old
+    // code adopted whatever graph the runtime held and added into it. That
+    // is memory-safe and still wrong — the graph belongs to whoever
+    // installed it, and from that point Session believes it owns one it did
+    // not build. The empty case now refuses exactly like the populated one
+    // above.
+    auto foreign = buildExternalPassthroughGraph(48000.0, 512);
+    auto previousWarmupGraph = eng.loadGraph(std::move(foreign));
+
+    s.addInternalNode("LevelProcessor");
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    pumpUntilIdle(s);
+
+    REQUIRE(s.getNodeCount() == 0); // refused, not adopted
+    REQUIRE(s.getLastError().isNotEmpty());
+}
+
 TEST_CASE("Session: a newer LoadPatch supersedes a queued add result (coalescing drop)", "[session][crash-hunt]")
 {
     engine::AudioEngine eng;
@@ -851,6 +878,47 @@ control::MidiMapping ccTo(session::NodeId node, int cc)
 }
 
 } // namespace
+
+// Sits here rather than beside the other save tests because it needs
+// WrappingBuilder: only a real BypassableInstance makes the live state
+// capture happen at all, which is the thing the guard has to skip.
+TEST_CASE("Session: saving on a foreign graph keeps the loaded state instead of reading through it",
+          "[session][crash-hunt]")
+{
+    engine::AudioEngine eng;
+    eng.initialise();
+    engine::PluginHost host;
+    WrappingBuilder builder;
+    session::Session s(eng, host, builder.fn());
+
+    // Two nodes carrying the bytes they "loaded with", so we can tell a
+    // skipped capture from a performed one: TestGainProcessor writes
+    // nothing, so a capture would replace these with an empty block.
+    session::Patch p = makeTwoNodePatch();
+    for (auto& node : p.nodes)
+        node.state.append("LOADED", 6);
+    s.replacePatch(p);
+    pumpUntilIdle(s);
+    REQUIRE(s.getNodeCount() == 2);
+
+    // Sanity: with Session's own graph live, the capture does run and the
+    // loaded bytes are replaced by the plugin's current (empty) state.
+    REQUIRE(s.getActivePatchWithState().nodes.front().state.getSize() == 0);
+
+    // Now take the graph out from under Session. The wrappers in nodes_
+    // belong to the graph that comes back, which the test keeps alive so
+    // this never depends on the guard for its own memory safety — without
+    // the guard the capture reads through them and succeeds, which is
+    // exactly what must stop happening (#129). activePatch_ still holds the
+    // loaded bytes: the capture above worked on a copy.
+    auto foreign = buildExternalPassthroughGraph(48000.0, 512);
+    auto previousChainGraph = eng.loadGraph(std::move(foreign));
+
+    const auto saved = s.getActivePatchWithState();
+    REQUIRE(saved.nodes.size() == 2); // the save still produces a whole patch
+    for (const auto& node : saved.nodes)
+        REQUIRE(node.state.toString() == "LOADED"); // capture skipped, bytes kept
+}
 
 TEST_CASE("Session: setNodeMappings replaces only that node's parameter mappings", "[session][mappings]")
 {

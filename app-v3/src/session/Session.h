@@ -299,6 +299,11 @@ public:
     // state blob (getStateInformation) into PatchNode.state — the snapshot
     // used when saving to a .pdl so a later load restores knob settings.
     // Message-thread only; calls getStateInformation under the status lock.
+    //
+    // Always returns the patch. If the runtime is holding a graph Session
+    // did not build, the live capture is skipped and the nodes come back
+    // with the bytes they last loaded with (#129): a save is not something
+    // the caller can retry, so stale state beats no file.
     Patch getActivePatchWithState() const;
 
     std::vector<NodeId> getNodeIdsInOrder() const; // cheap polling
