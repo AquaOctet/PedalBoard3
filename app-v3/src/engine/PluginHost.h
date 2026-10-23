@@ -25,53 +25,24 @@ struct InternalNodeType
 //     macOS and LV2 on macOS and Linux.
 //   - Owns a KnownPluginList with reader/writer synchronisation so the
 //     UI thread and worker thread can read + mutate it safely.
-//   - Exposes synchronous directory scanning, single-instance creation and
-//     the built-in processors.
-// The scan that runs each plugin in its own process, so a crashing plugin
-// can't take the host down, is engine::PluginScanner, with pb3-scanner-helper.
+//   - Exposes single-instance creation and the built-in processors.
 //
-// Not RT-safe; message-thread only. Scans hold the write lock for their
-// duration; readers block briefly during a scan. The audio thread never
-// touches this object directly — it calls into live plugin instances
-// that PluginHost returned.
+// It does NOT scan. Scanning is engine::PluginScanner's, which runs each
+// plugin in its own process so a crashing plugin can't take the host down.
+// A second, in-process scan API lived here until #97: no production code had
+// ever called it, and its own tests had to skip themselves on any machine
+// with plugins installed, because loading a real plugin in-process is exactly
+// the thing that kills the process. Two scan paths, only one of them safe,
+// was a trap for the next caller.
+//
+// Not RT-safe; message-thread only. The audio thread never touches this
+// object directly — it calls into live plugin instances that PluginHost
+// returned.
 class PluginHost
 {
 public:
     PluginHost();
     ~PluginHost();
-
-    // How many AudioPluginFormat subclasses are currently registered.
-    // After construction this is always > 0 on every supported platform.
-    int getNumFormats() const noexcept;
-
-    // Names of every registered format ("VST3", "AudioUnit", "LV2", …).
-    // UI uses this to present a per-format pick list next to a default-path
-    // editor. Size always equals getNumFormats().
-    juce::StringArray getFormatNames() const;
-
-    // Platform-appropriate default directories that `formatName` searches
-    // by default (e.g. "~/Library/Audio/Plug-Ins/VST3" on macOS). Returns
-    // an empty FileSearchPath if the format isn't registered. Mirrors
-    // juce::AudioPluginFormat::getDefaultLocationsToSearch() semantics.
-    juce::FileSearchPath getDefaultSearchPathForFormat(const juce::String& formatName) const;
-
-    // Synchronously scan `path` with every registered format whose name is
-    // listed in `formatNames`, or with EVERY registered format when
-    // `formatNames` is empty. Returns the number of NEWLY discovered plugins
-    // (not counting ones already in the known list). Non-existent or
-    // unreadable paths return 0 and do not throw.
-    //
-    // Tip: use the per-format form for any caller that has chosen specific
-    // paths. juce::AudioUnitPluginFormat::searchPathsForPlugins() ignores the
-    // FileSearchPath argument and enumerates EVERY AudioComponent the OS
-    // knows about, so passing AU through alongside a VST3-only path will
-    // walk every installed AU plugin too.
-    int scanDirectory(const juce::FileSearchPath& path, const juce::StringArray& formatNames = {});
-
-    // Convenience: scan every format's default OS paths, one format at a
-    // time, only with that format. Returns the total number of newly-
-    // discovered plugins. Suitable for a "first-run scan" button.
-    int scanDefaultPaths();
 
     // Replace the entire known list (and blacklist) from a previously-saved
     // XmlElement produced by createKnownListXml(). Used by App at startup
@@ -83,9 +54,6 @@ public:
     // XML, suitable for storing via session::Preferences. Returns nullptr
     // if JUCE produces an empty list.
     std::unique_ptr<juce::XmlElement> createKnownListXml() const;
-
-    // Remove every entry from the known plugin list.
-    void clearKnownPlugins();
 
     // Snapshot copy of the known plugin list. Returned by value so callers
     // can iterate safely while a concurrent scan adds to the live list.
@@ -161,7 +129,7 @@ public:
     // Mutable reference to the underlying KnownPluginList. Intended for
     // JUCE's built-in PluginListComponent, which mutates the list as the
     // user adds/removes plugins through the UI. Message-thread-only —
-    // the ReadWriteLock used by scanDirectory/getKnownPlugins is NOT
+    // the ReadWriteLock used by getKnownPlugins / loadKnownList is NOT
     // held for UI edits.
     juce::KnownPluginList& getKnownPluginList() noexcept { return knownList_; }
 

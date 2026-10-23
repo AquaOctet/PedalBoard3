@@ -12,8 +12,13 @@ namespace pedalboard3::ui
 {
 
 // The App Mappings window's content on its own: its Keyboard and MIDI / OSC
-// tabs (the UI snapshots tool renders it: UI chrome U7).
-std::unique_ptr<juce::Component> makeAppMappingsContent(AppContext& ctx, juce::KeyPressMappingSet& keyMappings);
+// tabs (the UI snapshots tool renders it: UI chrome U7). `initialTabIndex`
+// picks which tab is showing — 0 Keyboard, 1 MIDI / OSC — so the snapshot
+// tool can photograph the second one; the window itself always opens on the
+// first.
+std::unique_ptr<juce::Component> makeAppMappingsContent(AppContext& ctx,
+                                                        juce::KeyPressMappingSet& keyMappings,
+                                                        int initialTabIndex = 0);
 
 // App Mappings window (roadmap M4 U5, plan
 // docs/plans/2026-09-11-002-feat-mappings-ui-plan.md, KD2 / KD3 / KTD6): one

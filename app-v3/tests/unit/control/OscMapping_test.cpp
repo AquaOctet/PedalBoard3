@@ -98,6 +98,36 @@ TEST_CASE("OSC: midiFromOsc rejects non-MIDI shapes", "[control][osc]")
     REQUIRE_FALSE(midiFromOsc(twoByteBlob).has_value()); // unsupported blob length
 }
 
+TEST_CASE("OSC: midiFromOsc rejects argument lists that are numbers but not MIDI", "[control][osc]")
+{
+    // An XY pad's two normalized floats, and a three-value control message.
+    // Without the status-byte test these decode to a MIDI message with status
+    // 0, built out of data that was never MIDI (#97).
+    REQUIRE_FALSE(midiFromOsc(juce::OSCMessage("/pb3/xy", 0.3f, 0.7f)).has_value());
+    REQUIRE_FALSE(midiFromOsc(juce::OSCMessage("/pb3/rgb", 12, 200, 64)).has_value());
+
+    // 0xF0 and up is a system message: SysEx and the real-time bytes have no
+    // three-byte form for this to decode.
+    REQUIRE_FALSE(midiFromOsc(juce::OSCMessage("/midi", 0xF0, 7, 127)).has_value());
+    REQUIRE_FALSE(midiFromOsc(juce::OSCMessage("/midi", 0xF8, 0, 0)).has_value());
+
+    // Same test on the blob forms, in both layouts.
+    juce::OSCMessage threeBlob("/midi");
+    const juce::uint8 three[3] = {12, 200, 64};
+    threeBlob.addBlob(juce::MemoryBlock(three, 3));
+    REQUIRE_FALSE(midiFromOsc(threeBlob).has_value());
+
+    juce::OSCMessage fourBlob("/midi");
+    const juce::uint8 four[4] = {0, 12, 200, 64}; // port byte, then a non-status byte
+    fourBlob.addBlob(juce::MemoryBlock(four, 4));
+    REQUIRE_FALSE(midiFromOsc(fourBlob).has_value());
+
+    // The boundaries themselves: 0x80 is a note-off, 0xEF the top of pitch bend.
+    REQUIRE(midiFromOsc(juce::OSCMessage("/midi", 0x80, 60, 0)).has_value());
+    REQUIRE(midiFromOsc(juce::OSCMessage("/midi", 0xEF, 0, 64)).has_value());
+    REQUIRE_FALSE(midiFromOsc(juce::OSCMessage("/midi", 0x7F, 60, 0)).has_value());
+}
+
 TEST_CASE("OSC: isOscMulticastAddress validates the 224-239 range", "[control][osc]")
 {
     REQUIRE(isOscMulticastAddress("224.0.0.1"));

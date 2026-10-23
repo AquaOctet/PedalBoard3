@@ -50,6 +50,15 @@ std::optional<float> oscArgumentValue(const juce::OSCMessage& msg, int index) no
 //   - a single blob: 3 raw MIDI bytes, or 4 bytes in the OSC 'm' convention
 //     (portId, status, data1, data2) where the leading port byte is dropped.
 // Returns nullopt for anything that isn't one of those shapes.
+//
+// The first byte must be a channel-voice status, 0x80..0xEF. Every ordinary
+// OSC message is a numeric argument list too, and without that test an XY pad
+// sending "/pb3/xy 0.3 0.7" would read as a two-byte MIDI message with status
+// 0 — a message no MIDI device can produce, built out of data that was never
+// MIDI. System messages (0xF0 and up) are excluded for the opposite reason:
+// SysEx and the real-time bytes have no three-byte form for this to decode.
+// session::ControlHub::handleOsc runs this on every incoming message, so this
+// predicate is the whole of the "is this MIDI?" decision.
 std::optional<juce::MidiMessage> midiFromOsc(const juce::OSCMessage& msg);
 
 // True when `ipv4` is in the IPv4 multicast range 224.0.0.0 - 239.255.255.255

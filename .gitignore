@@ -189,3 +189,9 @@ test_output/
 # by policy. Devs drop it here locally; CI fetches it from the GitLab generic
 # package registry. See AGENTS.md "Windows: ASIO" + app-v3/CMakeLists.txt (#9).
 app-v3/asio_sdk/
+
+# Vendored VST2 SDK — Steinberg discontinued the licence programme, so this
+# one can never be redistributed. Devs who want VST2 hosting drop their own
+# copy here and configure with -DPB3_ENABLE_VST2=ON; CI never has it. See
+# AGENTS.md "Plugin formats" + app-v3/CMakeLists.txt (#97).
+app-v3/vst2_sdk/

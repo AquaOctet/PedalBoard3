@@ -18,7 +18,10 @@ and `.pdl` format only; do not edit.
 - **Engine & UI:** JUCE 8 + CMake, C++20 (targeting C++23 features where portable)
 - **Plugin formats:** VST3 (MIT SDK); AU on macOS; LV2 on macOS and Linux.
   CLAP (vendored `juce_clap_hosting` fork, `PB3_ENABLE_CLAP`, off in every
-  preset) and VST2 (`PB3_ENABLE_VST2`, needs your own SDK) are opt-in.
+  preset) and VST2 (`PB3_ENABLE_VST2`, off by default) are opt-in. VST2 wants
+  the SDK at `app-v3/vst2_sdk/` — anywhere under it that holds
+  `pluginterfaces/vst2.x/aeffect.h`; it is gitignored and unfetchable, and the
+  configure fails rather than silently building without VST2 (#97).
 - **Tests:** Catch2 v3 unit tests, headless (`app-v3/tests/`)
 - **CI:** GitLab CI; see the `workflow:` block in `.gitlab-ci.yml`.
   - Every merge request push runs a pipeline: lint, then build and unit tests

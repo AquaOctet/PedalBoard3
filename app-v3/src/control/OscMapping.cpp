@@ -50,6 +50,15 @@ bool oscArgAsByte(const juce::OSCArgument& arg, int& out) noexcept
     return false;
 }
 
+// A channel-voice status byte: note off/on, aftertouch, CC, program change,
+// channel pressure, pitch bend. Anything below 0x80 is a data byte (so these
+// args were never MIDI) and anything from 0xF0 up is a system message with no
+// three-byte form.
+bool isChannelVoiceStatus(int byte) noexcept
+{
+    return byte >= 0x80 && byte <= 0xEF;
+}
+
 } // namespace
 
 std::optional<juce::MidiMessage> midiFromOsc(const juce::OSCMessage& msg)
@@ -63,9 +72,9 @@ std::optional<juce::MidiMessage> midiFromOsc(const juce::OSCMessage& msg)
         const auto n = blob.getSize();
         if (b == nullptr)
             return std::nullopt;
-        if (n == 3u)
+        if (n == 3u && isChannelVoiceStatus(b[0]))
             return juce::MidiMessage(b[0], b[1], b[2]);
-        if (n == 4u)
+        if (n == 4u && isChannelVoiceStatus(b[1]))
             return juce::MidiMessage(b[1], b[2], b[3]);
         return std::nullopt;
     }
@@ -78,6 +87,9 @@ std::optional<juce::MidiMessage> midiFromOsc(const juce::OSCMessage& msg)
         for (int i = 0; i < n; ++i)
             if (!oscArgAsByte(msg[i], bytes[i]))
                 return std::nullopt; // a non-numeric arg means this isn't MIDI
+
+        if (!isChannelVoiceStatus(bytes[0]))
+            return std::nullopt; // numbers, but not MIDI ones
 
         if (n == 3)
             return juce::MidiMessage(bytes[0], bytes[1], bytes[2]);
