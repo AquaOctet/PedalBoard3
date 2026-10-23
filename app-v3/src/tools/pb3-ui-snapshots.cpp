@@ -583,6 +583,16 @@ int main(int argc, char** argv)
 
             rig.preferences.setPanelShown("patches", true);
             rig.preferences.setPanelShown("browser", true);
+
+            // The bottom of the window with the mappings strip collapsed
+            // (#112). There was no surface for this, which is exactly why
+            // the strip and the status bar were allowed to become twins --
+            // every existing shot has the panel open.
+            rig.preferences.setPanelShown("mappings", false);
+            ui::RootComponent mappingsCollapsed(rig.context);
+            shoot("window-mappings-collapsed", mappingsCollapsed, 1280, 800);
+            rig.preferences.setPanelShown("mappings", true);
+
             ui::RootComponent narrow(rig.context);
             shoot("window-narrow", narrow, 900, 640);
 

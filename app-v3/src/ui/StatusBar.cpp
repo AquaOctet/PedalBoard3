@@ -108,7 +108,19 @@ void StatusBar::paint(juce::Graphics& g)
 {
     g.fillAll(tokens::bgSidebar);
     g.setColour(tokens::borderDefault);
-    g.drawHorizontalLine(0, 0.0f, static_cast<float>(getWidth()));
+    // One border, not two (#112). Where the collapsed mappings strip sits
+    // directly above, its line is already the footer's top edge and a second
+    // one here would cut the footer in half. The strip only spans the canvas
+    // column, so the line is still drawn either side of it.
+    if (topBorderGap_.isEmpty())
+    {
+        g.drawHorizontalLine(0, 0.0f, static_cast<float>(getWidth()));
+    }
+    else
+    {
+        g.drawHorizontalLine(0, 0.0f, static_cast<float>(topBorderGap_.getStart()));
+        g.drawHorizontalLine(0, static_cast<float>(topBorderGap_.getEnd()), static_cast<float>(getWidth()));
+    }
 
     // Status dot at the left edge — coloured per Session::State.
     const int dotX = kBarPadding;

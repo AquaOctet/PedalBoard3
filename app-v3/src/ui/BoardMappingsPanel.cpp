@@ -138,10 +138,9 @@ BoardMappingsPanel::BoardMappingsPanel(AppContext& ctx) : ctx_(ctx), content_(st
     {
         tab->setClickingTogglesState(false);
         tab->setColour(juce::TextButton::buttonColourId, tokens::bgSecondary);
-        tab->setColour(juce::TextButton::buttonOnColourId, tokens::accentPrimary);
-        tab->setColour(juce::TextButton::textColourOnId, tokens::fgInverse);
         addAndMakeVisible(tab);
     }
+    applyTabColours();
     midiTab_.setTooltip("Every MIDI mapping on this board");
     oscTab_.setTooltip("Every OSC mapping on this board");
     midiTab_.onClick = [this] { showTab(Kind::Midi); };
@@ -167,10 +166,25 @@ BoardMappingsPanel::~BoardMappingsPanel()
     viewport_.setViewedComponent(nullptr, false);
 }
 
+// The selected tab wears the primary accent while the panel is open, and
+// nothing while it is collapsed (#112). A solid accent pill one pixel above
+// the status bar made the collapsed strip the loudest thing in the window,
+// for a row that is only there to be clicked open. The demo never puts the
+// primary accent on a tab either (midi-mapping-panel.tsx uses `secondary`).
+void BoardMappingsPanel::applyTabColours()
+{
+    for (auto* tab : {&midiTab_, &oscTab_})
+    {
+        tab->setColour(juce::TextButton::buttonOnColourId, open_ ? tokens::accentPrimary : tokens::bgSecondary);
+        tab->setColour(juce::TextButton::textColourOnId, open_ ? tokens::fgInverse : tokens::fgMuted);
+    }
+}
+
 void BoardMappingsPanel::setOpen(bool open)
 {
     open_ = open;
     viewport_.setVisible(open_);
+    applyTabColours();
     updateHeader();
     resized();
     repaint();
@@ -426,16 +440,23 @@ void BoardMappingsPanel::paint(juce::Graphics& g)
 {
     g.fillAll(tokens::bgSidebar);
     g.setColour(tokens::borderDefault);
+    // Collapsed, this is the single top edge of the whole footer: the status
+    // bar leaves its own line out under this column (#112).
     g.drawHorizontalLine(0, 0.0f, static_cast<float>(getWidth()));
-    g.setColour(tokens::fgMuted);
-    g.setFont(juce::Font(juce::FontOptions(12.0f).withStyle("Bold")));
+    // Quiet while collapsed, for the same reason as the tabs.
+    g.setColour(open_ ? tokens::fgMuted : tokens::fgSubtle);
+    g.setFont(juce::Font(juce::FontOptions(12.0f).withStyle(open_ ? "Bold" : "Regular")));
     g.drawText("MAPPINGS", titleArea_, juce::Justification::centredLeft);
 }
 
 void BoardMappingsPanel::resized()
 {
     auto area = getLocalBounds();
-    auto header = area.removeFromTop(kHeaderHeight).reduced(kPad, 5);
+    // Collapsed the whole panel is kCollapsedHeight, so the header is the
+    // panel; open it is the strip above the rows. Either way it cannot be
+    // taller than what we were given.
+    const int headerHeight = juce::jmin(open_ ? kHeaderHeight : kCollapsedHeight, area.getHeight());
+    auto header = area.removeFromTop(headerHeight).reduced(kPad, open_ ? 5 : 3);
     // Top-left, on the same vertical line as the bank's toggle and the
     // top bar's File button (#120).
     toggle_.setBounds(
