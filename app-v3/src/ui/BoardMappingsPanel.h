@@ -24,10 +24,13 @@ namespace pedalboard3::ui
 //   - Rows edit in place with the dialog's row editors, and every edit goes
 //     through Session::setNodeMappings, as the dialog's do.
 //   - MIDI learn stays in the per-plugin dialog: a row's Learn... opens it.
-//   - The board's feature switches sit in its bottom-right corner as chips
-//     (optional-features U3), on the header row when it's collapsed.
-//   - Collapsed, only the header shows, with the tab counts. Its three-bar
-//     toggle (and Plugins > Mappings Panel) opens and collapses it.
+//   - Hidden or shown, nothing in between: the bottom of the window is one
+//     footer, the status bar, and this panel sits above it when it is up
+//     (#112). A collapsed header strip left two bars down there, and its
+//     "MIDI 0 / OSC 0" tabs put the board's mappings on screen on a board
+//     that has none. The status bar's own toggle is lit while it is up, as
+//     the demo's is; so are the panel's three-bar toggle and
+//     Plugins > Mappings Panel.
 //
 // Threading: message thread only. Listens to Session. The row editors are
 // rebuilt only when the board's mappings change, not when an edit made here
@@ -38,14 +41,6 @@ public:
     static constexpr int kHeaderHeight = 32;
     static constexpr int kOpenHeight = 196;
 
-    // Collapsed, the strip is shorter than the status bar below it (#112).
-    // At 32 it was the status bar's exact twin — same height, same
-    // bgSidebar fill, its own borderDefault line — so the bottom of the
-    // window read as 64 px of one colour cut in half by a hairline, with
-    // neither row subordinate to the other. 26 makes it a sub-row of one
-    // footer rather than a second bar.
-    static constexpr int kCollapsedHeight = 26;
-
     explicit BoardMappingsPanel(AppContext& ctx);
     ~BoardMappingsPanel() override;
 
@@ -54,6 +49,7 @@ public:
     std::function<void(session::NodeId)> onOpenDialog; // Learn...: the plugin's mappings dialog
     std::function<void(session::NodeId)> onSelectNode; // a click on a row's plugin name
 
+    // Up or gone; there is no collapsed state (#112).
     void setOpen(bool open);
     void setSelectedNode(std::optional<session::NodeId>); // follows the canvas selection
 
@@ -69,7 +65,6 @@ private:
     void rebuildRows();
     void layoutRows();
     void showTab(mappingrows::Kind);
-    void applyTabColours(); // the accent is for the open panel only (#112)
     void updateHeader();
     void addMapping();
     void editMidi(size_t row, const control::MidiMapping&);
@@ -83,7 +78,6 @@ private:
     }
 
     AppContext& ctx_;
-    bool open_{true};
     mappingrows::Kind tab_{mappingrows::Kind::Midi};
     std::optional<session::NodeId> selected_;
     std::vector<mappingrows::Row> midi_;

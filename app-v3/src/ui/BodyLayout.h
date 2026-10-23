@@ -67,18 +67,19 @@ inline juce::Rectangle<int> overlayFor(const Layout& l, bool leftSide, const Met
     return {x, strip.getY(), width, strip.getHeight()};
 }
 
-// The board mappings panel under the canvas (UI refresh U9): only its header
-// when collapsed; when open, `openHeight`, but at most half the area and never
-// less than the header.
+// The board mappings panel under the canvas (UI refresh U9): `openHeight` when
+// it is up, but at most half the area and never less than its header row.
+// Closed it takes nothing -- the canvas has the whole column and the status
+// bar is the only footer (#112).
 struct Split
 {
     juce::Rectangle<int> canvas;
     juce::Rectangle<int> bottom;
 };
 
-inline Split splitBottom(juce::Rectangle<int> area, bool open, int openHeight, int headerHeight)
+inline Split splitBottom(juce::Rectangle<int> area, bool open, int openHeight, int minHeight)
 {
-    const int height = open ? juce::jmax(headerHeight, juce::jmin(openHeight, area.getHeight() / 2)) : headerHeight;
+    const int height = open ? juce::jmax(minHeight, juce::jmin(openHeight, area.getHeight() / 2)) : 0;
     Split out;
     out.bottom = area.removeFromBottom(height); // Rectangle clamps
     out.canvas = area;

@@ -602,6 +602,32 @@ int main(int argc, char** argv)
                             static_cast<int>(nodes.size()));
             }
 
+            // The mappings panel with a row in it (#112). Every other shot of
+            // it has an empty board, so the column headings -- which only
+            // appear when there is something to label -- and the row editors
+            // they sit over were never in a snapshot together.
+            if (!nodes.empty())
+            {
+                control::MidiMapping mapped;
+                mapped.source.kind = control::MidiSourceKind::ControlChange;
+                mapped.source.channel = 1;
+                mapped.source.controller = 74;
+                mapped.target.kind = control::MidiTargetKind::PluginParameter;
+                mapped.target.node = nodes[0].id;
+                mapped.target.parameterIndex = 0;
+                if (rig.liveSession.setNodeMappings(nodes[0].id, {mapped}, {}))
+                {
+                    settle(rig);
+                    shoot("window-mappings-rows", root, 1280, 800);
+                    rig.liveSession.setNodeMappings(nodes[0].id, {}, {});
+                    settle(rig);
+                }
+                else
+                {
+                    std::printf("WARNING window-mappings-rows skipped; the session refused the mapping\n");
+                }
+            }
+
             // A panel's open state is read from Preferences in the constructor,
             // so a fresh root is how you snapshot it collapsed.
             rig.preferences.setPanelShown("patches", false);
@@ -612,10 +638,10 @@ int main(int argc, char** argv)
             rig.preferences.setPanelShown("patches", true);
             rig.preferences.setPanelShown("browser", true);
 
-            // The bottom of the window with the mappings strip collapsed
-            // (#112). There was no surface for this, which is exactly why
-            // the strip and the status bar were allowed to become twins --
-            // every existing shot has the panel open.
+            // The bottom of the window with the mappings panel away (#112):
+            // one footer, the status bar, with its mappings toggle unlit.
+            // There was no surface for this, which is exactly why a second
+            // bar was allowed to live down there.
             rig.preferences.setPanelShown("mappings", false);
             ui::RootComponent mappingsCollapsed(rig.context);
             shoot("window-mappings-collapsed", mappingsCollapsed, 1280, 800);
