@@ -62,6 +62,18 @@ public:
     // The tone went on or off; re-read it.
     void refreshTestTone() { refresh(); }
 
+    // The x range where this bar leaves its top border out, because
+    // something above it already drew one and two would read as two bars
+    // (#112). RootComponent sets it to the canvas column while the mappings
+    // strip is collapsed there, and clears it otherwise.
+    void setTopBorderGap(juce::Range<int> gap)
+    {
+        if (gap == topBorderGap_)
+            return;
+        topBorderGap_ = gap;
+        repaint();
+    }
+
     // Re-read which panels are showing and re-light the toggles. RootComponent
     // calls this from its resized(), which every path that opens or closes a
     // panel ends in — including a window resize that crosses the fold width
@@ -78,6 +90,7 @@ private:
     juce::Label leftLabel_;
     juce::Label errorLabel_;
     juce::Colour stateDotColour_;
+    juce::Range<int> topBorderGap_; // empty = draw the whole line
 
     std::unique_ptr<PanelToggle> patchesToggle_;
     std::unique_ptr<PanelToggle> mappingsToggle_;

@@ -269,10 +269,17 @@ public:
         if (!panels.narrow)
             patchesOverlay_ = browserOverlay_ = false;
         // The board mappings panel docks under the canvas (UI refresh U9).
-        const auto split = body::splitBottom(
-            panels.canvas, mappingsOpen_, BoardMappingsPanel::kOpenHeight, BoardMappingsPanel::kHeaderHeight);
+        const auto split =
+            body::splitBottom(panels.canvas,
+                              mappingsOpen_,
+                              BoardMappingsPanel::kOpenHeight,
+                              mappingsOpen_ ? BoardMappingsPanel::kHeaderHeight : BoardMappingsPanel::kCollapsedHeight);
         viewport_.setBounds(split.canvas);
         mappingsPanel_.setBounds(split.bottom);
+        // Collapsed, the strip and the status bar are one footer, so only
+        // the strip draws the top edge across this column (#112).
+        statusBar_.setTopBorderGap(mappingsOpen_ ? juce::Range<int>{}
+                                                 : juce::Range<int>{split.bottom.getX(), split.bottom.getRight()});
 
         patchRail_.setVisible(panels.leftFolded);
         if (panels.leftFolded)

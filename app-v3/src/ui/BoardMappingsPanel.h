@@ -38,6 +38,14 @@ public:
     static constexpr int kHeaderHeight = 32;
     static constexpr int kOpenHeight = 196;
 
+    // Collapsed, the strip is shorter than the status bar below it (#112).
+    // At 32 it was the status bar's exact twin — same height, same
+    // bgSidebar fill, its own borderDefault line — so the bottom of the
+    // window read as 64 px of one colour cut in half by a hairline, with
+    // neither row subordinate to the other. 26 makes it a sub-row of one
+    // footer rather than a second bar.
+    static constexpr int kCollapsedHeight = 26;
+
     explicit BoardMappingsPanel(AppContext& ctx);
     ~BoardMappingsPanel() override;
 
@@ -61,6 +69,7 @@ private:
     void rebuildRows();
     void layoutRows();
     void showTab(mappingrows::Kind);
+    void applyTabColours(); // the accent is for the open panel only (#112)
     void updateHeader();
     void addMapping();
     void editMidi(size_t row, const control::MidiMapping&);
