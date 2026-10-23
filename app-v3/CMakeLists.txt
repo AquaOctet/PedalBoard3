@@ -67,7 +67,7 @@ endif()
 # Options
 # -----------------------------------------------------------------------------
 option(PB3_BUILD_TESTS    "Build unit tests"                          ON)
-option(PB3_ENABLE_VST2    "Enable VST2 hosting (requires user SDK)"   OFF)
+option(PB3_ENABLE_VST2    "Enable VST2 hosting (requires user SDK at app-v3/vst2_sdk/)" OFF)
 option(PB3_ENABLE_CLAP    "Enable CLAP hosting via vendored module"   ON)
 option(PB3_ENABLE_RTSAN   "Enable Clang RealtimeSanitizer (debug)"    OFF)
 option(PB3_LINT_ONLY      "Configure for lint only, skip heavy deps"  OFF)
@@ -267,6 +267,51 @@ target_compile_definitions(pb3_juce_config INTERFACE
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
 )
+
+# -----------------------------------------------------------------------------
+# VST2 hosting (opt-in, SDK-gated)
+# -----------------------------------------------------------------------------
+# JUCE hosts VST2 when built with JUCE_PLUGINHOST_VST=1 and the VST2 headers on
+# the include path: juce_VSTPluginFormat.cpp includes <pluginterfaces/vst2.x/
+# aeffect.h> and aeffectx.h. Steinberg closed the VST2 licence programme, so
+# the SDK cannot be redistributed and cannot be fetched — it only exists in
+# the vstsdk3610_11_06_2018_build_37 (or older) VST3 SDK, or in JUCE 5.3.2.
+# Vendor your copy at app-v3/vst2_sdk/ (any layout — we locate the directory
+# that CONTAINS pluginterfaces/vst2.x/aeffect.h) and configure with
+# -DPB3_ENABLE_VST2=ON. The option is OFF everywhere by default, so CI and
+# every preset build configure exactly as before.
+#
+# Switched on without the SDK this stops the configure instead of warning.
+# The option used to be declared and read by nothing at all (#97): you could
+# set it, the build would succeed, and VST2 still would not load. A flag that
+# lies about what it did is worse than no flag.
+if(PB3_ENABLE_VST2 AND NOT PB3_LINT_ONLY)
+    file(GLOB_RECURSE _pb3_vst2_iface
+         "${CMAKE_CURRENT_SOURCE_DIR}/vst2_sdk/*/pluginterfaces/vst2.x/aeffect.h"
+         "${CMAKE_CURRENT_SOURCE_DIR}/vst2_sdk/pluginterfaces/vst2.x/aeffect.h")
+    if(NOT _pb3_vst2_iface)
+        message(FATAL_ERROR
+            "PB3_ENABLE_VST2=ON but no VST2 SDK was found. Expected "
+            "pluginterfaces/vst2.x/aeffect.h somewhere under "
+            "${CMAKE_CURRENT_SOURCE_DIR}/vst2_sdk/. Take it from the "
+            "vstsdk3610_11_06_2018_build_37 (or older) VST3 SDK, or from "
+            "JUCE 5.3.2. Configure with -DPB3_ENABLE_VST2=OFF to build "
+            "without VST2.")
+    endif()
+    list(GET _pb3_vst2_iface 0 _pb3_vst2_header)
+    # .../pluginterfaces/vst2.x/aeffect.h -> the directory holding pluginterfaces/
+    get_filename_component(_pb3_vst2_dir "${_pb3_vst2_header}" DIRECTORY)
+    get_filename_component(_pb3_vst2_dir "${_pb3_vst2_dir}" DIRECTORY)
+    get_filename_component(_pb3_vst2_dir "${_pb3_vst2_dir}" DIRECTORY)
+    if(NOT EXISTS "${_pb3_vst2_dir}/pluginterfaces/vst2.x/aeffectx.h")
+        message(FATAL_ERROR
+            "VST2 SDK at ${_pb3_vst2_dir} is incomplete: aeffect.h is there but "
+            "pluginterfaces/vst2.x/aeffectx.h is not. JUCE needs both.")
+    endif()
+    message(STATUS "Pedalboard 3: VST2 SDK found at ${_pb3_vst2_dir} — enabling JUCE_PLUGINHOST_VST=1")
+    target_compile_definitions(pb3_juce_config INTERFACE JUCE_PLUGINHOST_VST=1)
+    target_include_directories(pb3_juce_config INTERFACE "${_pb3_vst2_dir}")
+endif()
 
 # -----------------------------------------------------------------------------
 # Windows: ASIO low-latency driver support (opt-in, SDK-gated)

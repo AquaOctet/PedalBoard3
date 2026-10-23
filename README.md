@@ -28,8 +28,11 @@ top.
   side of the board went quiet.
 
 VST3 everywhere, AU on macOS, LV2 on macOS and Linux. CLAP and VST2 are build
-flags (`PB3_ENABLE_CLAP`, `PB3_ENABLE_VST2`), off by default; VST2 needs your
-own SDK.
+flags (`PB3_ENABLE_CLAP`, `PB3_ENABLE_VST2`), off in every preset, so no
+release carries either. VST2 also needs a copy of the SDK — Steinberg stopped
+giving it out, so there is nothing to download; drop yours at
+`app-v3/vst2_sdk/` and configure with `-DPB3_ENABLE_VST2=ON`. Without it the
+configure stops and says so.
 
 ## On a small screen
 
