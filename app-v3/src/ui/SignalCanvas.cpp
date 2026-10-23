@@ -585,7 +585,7 @@ void SignalCanvas::onCardEdit(NodeId id)
         if (s.id == id && s.builtIn)
             editor = makeProcessorEditor(ctx_, *plugin, s.internalType);
     if (editor == nullptr && plugin->hasEditor())
-        editor = plugin->createEditorIfNeeded();
+        editor = plugin->createEditorAndMakeActive();
     if (editor == nullptr)
         return;
 
@@ -601,7 +601,7 @@ void SignalCanvas::onCardEdit(NodeId id)
     }
 
     auto onClose = [this, id] { editors_.erase(id); };
-    editors_[id] = std::make_unique<EditorWindow>(title, editor, std::move(onClose));
+    editors_[id] = std::make_unique<EditorWindow>(title, *plugin, editor, std::move(onClose));
 }
 
 void SignalCanvas::onCardRemove(NodeId id)

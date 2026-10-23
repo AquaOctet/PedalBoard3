@@ -45,9 +45,9 @@ whitespace before it folds anything away, and the panels collapse to a strip.
 
 ![Audio devices](docs/screenshots/dialog-audio-devices.png)
 
-WASAPI and DirectSound on Windows (ASIO too, if you build with the SDK — see
-below), CoreAudio on macOS, ALSA and JACK on Linux. The test tone puts a
-440 Hz sine on the output so you can check the cable before blaming the board.
+WASAPI, DirectSound and ASIO on Windows, CoreAudio on macOS, ALSA and JACK on
+Linux. The test tone puts a 440 Hz sine on the output so you can check the
+cable before blaming the board.
 
 Unplug an interface and plug it back in and it comes back. The output never
 falls back to laptop speakers on its own.
@@ -98,8 +98,6 @@ itself. You need VS with the C++ workload.
 
 The screenshots above came out of `snapshots`, which is also how the UI gets
 reviewed without clicking through it.
-
-ASIO is optional; see "Windows: ASIO" in [AGENTS.md](AGENTS.md).
 
 ### macOS and Linux
 

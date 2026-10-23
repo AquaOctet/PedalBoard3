@@ -71,7 +71,15 @@ public:
     double getTailLengthSeconds() const override { return hasCrashed() ? 0.0 : inner_->getTailLengthSeconds(); }
     int getLatencySamples(); // not override: we compute locally
 
-    juce::AudioProcessorEditor* createEditor() override { return hasCrashed() ? nullptr : inner_->createEditor(); }
+    // createEditorAndMakeActive, not the inner's createEditor: JUCE 8.0.16 made
+    // AudioProcessor::createEditor private so the active-editor slot cannot be
+    // bypassed. The slot it fills is the INNER's -- the returned component holds
+    // a reference to inner_, not to us -- so the host has two slots to clear
+    // before it deletes the editor. ui::EditorWindow does that.
+    juce::AudioProcessorEditor* createEditor() override
+    {
+        return hasCrashed() ? nullptr : inner_->createEditorAndMakeActive();
+    }
     bool hasEditor() const override { return !hasCrashed() && inner_->hasEditor(); }
 
     int getNumPrograms() override { return hasCrashed() ? 1 : inner_->getNumPrograms(); }
