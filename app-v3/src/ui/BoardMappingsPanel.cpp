@@ -89,6 +89,18 @@ public:
 
     void paint(juce::Graphics& g) override
     {
+        // Nothing mapped: the hint is the whole of it. Column headings over
+        // an empty table label nothing, and at window width they have less
+        // room than the rows they were spaced for, so CONTROLS and RANGE
+        // ended up touching.
+        if (emptyText.isNotEmpty())
+        {
+            g.setColour(tokens::fgMuted);
+            g.setFont(juce::Font(juce::FontOptions(12.0f)));
+            g.drawFittedText(emptyText, getLocalBounds().reduced(10, 8), juce::Justification::topLeft, 2);
+            return;
+        }
+
         const int editorWidth = getWidth() - kPluginColumn;
         const auto spans =
             kind == Kind::Midi ? mappingcols::midiSpans(editorWidth) : mappingcols::oscSpans(editorWidth);
@@ -106,16 +118,6 @@ public:
               spans.flags.getLength());
         g.setColour(tokens::borderMuted);
         g.drawHorizontalLine(kColumnHeaderHeight - 1, 0.0f, static_cast<float>(getWidth()));
-
-        if (emptyText.isNotEmpty())
-        {
-            g.setColour(tokens::fgMuted);
-            g.setFont(juce::Font(juce::FontOptions(12.0f)));
-            g.drawFittedText(emptyText,
-                             getLocalBounds().withTrimmedTop(kColumnHeaderHeight).reduced(10, 8),
-                             juce::Justification::topLeft,
-                             2);
-        }
     }
 };
 
@@ -126,7 +128,7 @@ BoardMappingsPanel::BoardMappingsPanel(AppContext& ctx) : ctx_(ctx), content_(st
     setOpaque(true);
 
     toggle_.setShape(panelToggleIcon(), false, true, false);
-    toggle_.setTooltip("Collapse or open the mappings panel (Plugins > Mappings Panel does the same)");
+    toggle_.setTooltip("Hide the mappings panel (Plugins > Mappings Panel brings it back)");
     toggle_.onClick = [this]
     {
         if (onToggle)
@@ -138,9 +140,10 @@ BoardMappingsPanel::BoardMappingsPanel(AppContext& ctx) : ctx_(ctx), content_(st
     {
         tab->setClickingTogglesState(false);
         tab->setColour(juce::TextButton::buttonColourId, tokens::bgSecondary);
+        tab->setColour(juce::TextButton::buttonOnColourId, tokens::accentPrimary);
+        tab->setColour(juce::TextButton::textColourOnId, tokens::fgInverse);
         addAndMakeVisible(tab);
     }
-    applyTabColours();
     midiTab_.setTooltip("Every MIDI mapping on this board");
     oscTab_.setTooltip("Every OSC mapping on this board");
     midiTab_.onClick = [this] { showTab(Kind::Midi); };
@@ -166,28 +169,13 @@ BoardMappingsPanel::~BoardMappingsPanel()
     viewport_.setViewedComponent(nullptr, false);
 }
 
-// The selected tab wears the primary accent while the panel is open, and
-// nothing while it is collapsed (#112). A solid accent pill one pixel above
-// the status bar made the collapsed strip the loudest thing in the window,
-// for a row that is only there to be clicked open. The demo never puts the
-// primary accent on a tab either (midi-mapping-panel.tsx uses `secondary`).
-void BoardMappingsPanel::applyTabColours()
-{
-    for (auto* tab : {&midiTab_, &oscTab_})
-    {
-        tab->setColour(juce::TextButton::buttonOnColourId, open_ ? tokens::accentPrimary : tokens::bgSecondary);
-        tab->setColour(juce::TextButton::textColourOnId, open_ ? tokens::fgInverse : tokens::fgMuted);
-    }
-}
-
+// The panel is either up or not there at all. It used to collapse to a 26 px
+// header strip, which made the bottom of the window two bars and showed the
+// board's mapping counts whether or not it had any (#112). The status bar
+// below is the only footer now, and its lit toggle is how you get this back.
 void BoardMappingsPanel::setOpen(bool open)
 {
-    open_ = open;
-    viewport_.setVisible(open_);
-    applyTabColours();
-    updateHeader();
-    resized();
-    repaint();
+    setVisible(open);
 }
 
 void BoardMappingsPanel::setSelectedNode(std::optional<session::NodeId> node)
@@ -313,20 +301,24 @@ void BoardMappingsPanel::rebuildRows()
 
 void BoardMappingsPanel::layoutRows()
 {
-    const int width = juce::jmax(kMinContentWidth, viewport_.getMaximumVisibleWidth());
+    // Rows need kMinContentWidth to fit their editors, and the viewport
+    // scrolls sideways when the window is too narrow for that. With no rows
+    // there is nothing to fit, so the content is exactly as wide as the
+    // viewport: an empty table scrolling sideways was a scrollbar across the
+    // bottom of the window under a one-line hint.
+    const int visible = viewport_.getMaximumVisibleWidth();
+    const int width = rows_.empty() ? visible : juce::jmax(kMinContentWidth, visible);
     int y = kColumnHeaderHeight;
     for (auto& row : rows_)
     {
         row->setBounds(0, y, width, kRowHeight);
         y += kRowHeight + kRowGap;
     }
-    content_->setSize(width, rows_.empty() ? y + kEmptyHeight : y);
+    content_->setSize(width, rows_.empty() ? kEmptyHeight : y);
 }
 
 void BoardMappingsPanel::showTab(Kind kind)
 {
-    if (!open_ && onToggle)
-        onToggle(); // a tab on the collapsed header opens the panel on it
     if (kind == tab_ && !rows_.empty())
         return;
     tab_ = kind;
@@ -342,7 +334,6 @@ void BoardMappingsPanel::updateHeader()
     oscTab_.setToggleState(tab_ == Kind::Osc, juce::dontSendNotification);
 
     // + Mapping adds to the selected card, so it needs one with parameters.
-    addButton_.setVisible(open_);
     if (!selected_.has_value())
     {
         addButton_.setEnabled(false);
@@ -440,23 +431,18 @@ void BoardMappingsPanel::paint(juce::Graphics& g)
 {
     g.fillAll(tokens::bgSidebar);
     g.setColour(tokens::borderDefault);
-    // Collapsed, this is the single top edge of the whole footer: the status
-    // bar leaves its own line out under this column (#112).
     g.drawHorizontalLine(0, 0.0f, static_cast<float>(getWidth()));
-    // Quiet while collapsed, for the same reason as the tabs.
-    g.setColour(open_ ? tokens::fgMuted : tokens::fgSubtle);
-    g.setFont(juce::Font(juce::FontOptions(12.0f).withStyle(open_ ? "Bold" : "Regular")));
+    g.setColour(tokens::fgMuted);
+    g.setFont(juce::Font(juce::FontOptions(12.0f).withStyle("Bold")));
     g.drawText("MAPPINGS", titleArea_, juce::Justification::centredLeft);
 }
 
 void BoardMappingsPanel::resized()
 {
     auto area = getLocalBounds();
-    // Collapsed the whole panel is kCollapsedHeight, so the header is the
-    // panel; open it is the strip above the rows. Either way it cannot be
-    // taller than what we were given.
-    const int headerHeight = juce::jmin(open_ ? kHeaderHeight : kCollapsedHeight, area.getHeight());
-    auto header = area.removeFromTop(headerHeight).reduced(kPad, open_ ? 5 : 3);
+    // The header is the strip above the rows, and never taller than what we
+    // were given.
+    auto header = area.removeFromTop(juce::jmin(kHeaderHeight, area.getHeight())).reduced(kPad, 5);
     // Top-left, on the same vertical line as the bank's toggle and the
     // top bar's File button (#120).
     toggle_.setBounds(

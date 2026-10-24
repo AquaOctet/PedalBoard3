@@ -66,9 +66,11 @@ TEST_CASE("BodyLayout: the mappings panel docks under the canvas, at most half o
     REQUIRE(open.bottom == juce::Rectangle<int>(0, 404, 800, 196));
     REQUIRE(open.canvas == juce::Rectangle<int>(0, 0, 800, 404));
 
+    // Closed, the panel is not there: no strip, no second bar above the
+    // status bar, and the canvas has the column (#112).
     const auto collapsed = splitBottom(area, false, 196, 32);
-    REQUIRE(collapsed.bottom.getHeight() == 32);
-    REQUIRE(collapsed.canvas.getHeight() == 568);
+    REQUIRE(collapsed.bottom.isEmpty());
+    REQUIRE(collapsed.canvas == area);
 
     REQUIRE(splitBottom({0, 0, 800, 300}, true, 196, 32).bottom.getHeight() == 150); // half a short window
     const auto tiny = splitBottom({0, 0, 800, 40}, true, 196, 32);

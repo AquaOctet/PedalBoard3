@@ -93,8 +93,8 @@ public:
         transportBar_.onTogglePluginBrowser = [this] { togglePluginBrowser(); };
         transportBar_.isPluginBrowserShown = [this] { return pluginBrowser_.isVisible(); };
         // The board mappings panel under the canvas (UI refresh U9): its
-        // three-bar toggle and Plugins > Mappings Panel open it or collapse it
-        // to its header, and it follows the canvas selection both ways.
+        // three-bar toggle, the status bar's and Plugins > Mappings Panel show
+        // it or take it away, and it follows the canvas selection both ways.
         addAndMakeVisible(mappingsPanel_);
         mappingsOpen_ = ctx_.preferences.getPanelShown("mappings", true);
         mappingsPanel_.setOpen(mappingsOpen_);
@@ -269,17 +269,13 @@ public:
         if (!panels.narrow)
             patchesOverlay_ = browserOverlay_ = false;
         // The board mappings panel docks under the canvas (UI refresh U9).
-        const auto split =
-            body::splitBottom(panels.canvas,
-                              mappingsOpen_,
-                              BoardMappingsPanel::kOpenHeight,
-                              mappingsOpen_ ? BoardMappingsPanel::kHeaderHeight : BoardMappingsPanel::kCollapsedHeight);
+        // Closed it takes no height at all: the status bar is the whole
+        // footer, and the panel's toggle there is lit while it is up (#112).
+        const auto split = body::splitBottom(
+            panels.canvas, mappingsOpen_, BoardMappingsPanel::kOpenHeight, BoardMappingsPanel::kHeaderHeight);
         viewport_.setBounds(split.canvas);
-        mappingsPanel_.setBounds(split.bottom);
-        // Collapsed, the strip and the status bar are one footer, so only
-        // the strip draws the top edge across this column (#112).
-        statusBar_.setTopBorderGap(mappingsOpen_ ? juce::Range<int>{}
-                                                 : juce::Range<int>{split.bottom.getX(), split.bottom.getRight()});
+        if (mappingsOpen_)
+            mappingsPanel_.setBounds(split.bottom);
 
         patchRail_.setVisible(panels.leftFolded);
         if (panels.leftFolded)
@@ -356,8 +352,8 @@ public:
         resized();
     }
 
-    // The mappings panel's three-bar toggle and Plugins > Mappings Panel: open
-    // it or collapse it to its header (remembered).
+    // The mappings panel's three-bar toggle, the status bar's and
+    // Plugins > Mappings Panel: show the panel or take it away (remembered).
     void toggleMappingsPanel()
     {
         mappingsOpen_ = !mappingsOpen_;
