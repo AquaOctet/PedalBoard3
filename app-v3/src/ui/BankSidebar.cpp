@@ -1,5 +1,5 @@
 #include "BankSidebar.h"
-#include "ChromeMetrics.h"
+#include "Metrics.h"
 
 #include "Pb3LookAndFeel.h"
 #include "session/FeatureGate.h"
@@ -16,11 +16,11 @@ namespace pedalboard3::ui
 
 namespace
 {
-constexpr int kPad = 12;
-constexpr int kHeaderHeight = 36;
-constexpr int kBoardNameHeight = 28;
-constexpr int kFooterHeight = 48;
-constexpr int kRowHeight = 40;
+constexpr int kPad = metrics::kSpaceXl;
+constexpr int kHeaderHeight = metrics::kPanelHeader;
+constexpr int kBoardNameHeight = metrics::kPanelBoardName;
+constexpr int kFooterHeight = metrics::kFooterBank;
+constexpr int kRowHeight = metrics::kRowTouch;
 } // namespace
 
 BankSidebar::BankSidebar(AppContext& ctx) : ctx_(ctx)
@@ -103,7 +103,8 @@ void BankSidebar::paint(juce::Graphics& g)
     g.setFont(juce::Font(juce::FontOptions(12.0f).withStyle("Bold")));
     // After the toggle, which now takes a 36 px cell so its icon lines up
     // with the top bar's (#120); the label follows the cell, not the icon.
-    g.drawText("BANK", header.withTrimmedLeft(chrome::kIconButtonSize + 4), juce::Justification::centredLeft);
+    g.drawText(
+        "BANK", header.withTrimmedLeft(metrics::kIconButtonSize + metrics::kSpaceSm), juce::Justification::centredLeft);
 
     const auto nameRow = area.removeFromTop(kBoardNameHeight);
     const int patches = ctx_.bankDocument.size();
@@ -126,7 +127,7 @@ void BankSidebar::resized()
     // it (#120): a 36 px cell with the icon centred, exactly as the bar
     // lays its own icon buttons out.
     collapseButton_.setBounds(
-        header.removeFromLeft(chrome::kIconButtonSize).withSizeKeepingCentre(chrome::kIconSize, chrome::kIconSize));
+        header.removeFromLeft(metrics::kIconButtonSize).withSizeKeepingCentre(metrics::kIconSize, metrics::kIconSize));
     area.removeFromTop(kBoardNameHeight);
 
     auto footer = area.removeFromBottom(kFooterHeight).reduced(kPad, 10);

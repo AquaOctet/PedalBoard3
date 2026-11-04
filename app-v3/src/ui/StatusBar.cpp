@@ -3,6 +3,7 @@
 #include "ColourScheme.h"
 #include "engine/AudioEngine.h"
 #include "Icons.h"
+#include "Metrics.h"
 #include "session/Session.h"
 
 namespace pedalboard3::ui
@@ -10,11 +11,11 @@ namespace pedalboard3::ui
 
 namespace
 {
-constexpr int kBarPadding = 12;
-constexpr int kDotSize = 8;
-constexpr int kDotTextGap = 8;
-constexpr int kToggleWidth = 28;
-constexpr int kToggleGap = 2;
+constexpr int kBarPadding = metrics::kSpaceXl;
+constexpr int kDotSize = 8; // the dot itself, not a spacing step
+constexpr int kDotTextGap = metrics::kSpaceLg;
+constexpr int kToggleWidth = 28; // the toggle cell, not a row
+constexpr int kToggleGap = metrics::kSpaceXs;
 } // namespace
 
 // One of the three panel toggles: an outline icon that fills with the accent

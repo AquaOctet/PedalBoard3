@@ -1,6 +1,7 @@
 #include "PluginCard.h"
 
 #include "CardText.h"
+#include "Metrics.h"
 #include "Pb3LookAndFeel.h"
 #include "PortDot.h"
 #include "ProcessorControls.h"
@@ -14,7 +15,7 @@ namespace pedalboard3::ui
 
 namespace
 {
-constexpr float kRadius = 6.0f;
+constexpr float kRadius = metrics::kRadiusCard;
 constexpr float kAccentWidth = 4.0f;
 constexpr int kAccentInset = 4; // integer form of kAccentWidth for layout
 constexpr int kHeaderHeight = 32;
@@ -22,10 +23,10 @@ constexpr int kStripHeight = 3;
 constexpr int kGripWidth = 14;
 constexpr int kButtonGap = 3;
 constexpr int kIconButtonWidth = 22;
-constexpr int kChipPadding = 6;
+constexpr int kChipPadding = metrics::kSpaceMd;
 // Between the title and the first button, so a long name that ellipsises
 // does not finish hard against the bypass icon.
-constexpr int kNameButtonGap = 6;
+constexpr int kNameButtonGap = metrics::kSpaceMd;
 
 // Ports sit at the card's edges, clear of the body text.
 constexpr int kPortRadius = ports::kRadius;

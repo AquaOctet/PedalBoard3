@@ -1,7 +1,7 @@
 #include "PluginBrowser.h"
-#include "ChromeMetrics.h"
 #include "engine/processors/LooperProcessor.h"
 #include "engine/processors/MetronomeProcessor.h"
+#include "Metrics.h"
 #include "session/FeatureGate.h"
 
 #include "engine/PluginHost.h"
@@ -16,13 +16,13 @@ namespace pedalboard3::ui
 
 namespace
 {
-constexpr int kPad = 12;
-constexpr int kHeaderHeight = 36;
-constexpr int kSearchHeight = 30;
-constexpr int kChipHeight = 22;
-constexpr int kChipGap = 6;
-constexpr int kFooterHeight = 44;
-constexpr int kRowHeight = 34;
+constexpr int kPad = metrics::kSpaceXl;
+constexpr int kHeaderHeight = metrics::kPanelHeader;
+constexpr int kSearchHeight = metrics::kSearchHeight;
+constexpr int kChipHeight = metrics::kRowCompact;
+constexpr int kChipGap = metrics::kSpaceMd;
+constexpr int kFooterHeight = metrics::kFooterBrowser;
+constexpr int kRowHeight = metrics::kRowList;
 
 const juce::String kPluginPrefix{"plugin:"};
 const juce::String kInternalPrefix{"internal:"};
@@ -258,7 +258,7 @@ void PluginBrowser::resized()
     // icon buttons (#120): the master mute sits directly above this one
     // and the two were nine pixels apart.
     toggle_.setBounds(
-        header.removeFromRight(chrome::kIconButtonSize).withSizeKeepingCentre(chrome::kIconSize, chrome::kIconSize));
+        header.removeFromRight(metrics::kIconButtonSize).withSizeKeepingCentre(metrics::kIconSize, metrics::kIconSize));
     area.removeFromBottom(kFooterHeight);
 
     auto body = area.reduced(kPad, 0);

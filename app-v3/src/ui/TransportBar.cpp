@@ -16,6 +16,7 @@
 #include "engine/PluginHost.h"
 #include "engine/PluginScanner.h"
 #include "FileActions.h"
+#include "Metrics.h"
 #include "session/BankDocument.h"
 #include "session/EditHistory.h"
 #include "session/Preferences.h"
@@ -37,8 +38,8 @@ namespace pedalboard3::ui
 
 namespace
 {
-constexpr int kBarPadding = 12;
-constexpr int kButtonGap = 6;
+constexpr int kBarPadding = metrics::kSpaceXl;
+constexpr int kButtonGap = metrics::kSpaceMd;
 // Between the DELAY column and the CPU / MEM stack (#124). Bigger than the
 // gaps inside the right cluster on purpose: DELAY is one narrow column of
 // text and CPU / MEM is a block of meters, and at kButtonGap they ran
@@ -49,10 +50,10 @@ constexpr int kDelayMetersGap = 18;
 // read as movement rather than a jump, short enough that dragging a window
 // edge never feels like the bar is lagging behind it.
 constexpr double kRevealMs = 200.0;
-constexpr int kMenuButtonWidth = 36; // the square folder / gear / plug
-constexpr int kActivityWidth = 104;  // MIDI and OSC lights
+constexpr int kMenuButtonWidth = metrics::kIconButtonSize; // the square folder / gear / plug
+constexpr int kActivityWidth = 104;                        // MIDI and OSC lights
 constexpr int kSystemMetersWidth = 168;
-constexpr int kMuteButtonWidth = 36;
+constexpr int kMuteButtonWidth = metrics::kIconButtonSize;
 // The group dividers (#109): a hairline this tall, centred on the bar.
 constexpr int kDividerHeight = 20;
 constexpr int kDividerGap = 7; // either side of one
