@@ -42,9 +42,9 @@ static_assert(kSpaceXs < kSpaceSm && kSpaceSm < kSpaceMd && kSpaceMd < kSpaceLg 
 // laptop at arm's length, so it is sized for a glance and a stab rather than
 // for density. The others are read at a desk with a mouse.
 
-inline constexpr int kRowCompact = 22; // column headings, filter chips
-inline constexpr int kRowDense = 28;   // mapping rows
-inline constexpr int kRowList = 34;    // plugin browser rows
+inline constexpr int kRowCompact = 20; // column headings, filter chips
+inline constexpr int kRowDense = 22;   // mapping rows
+inline constexpr int kRowList = 26;    // plugin browser rows
 inline constexpr int kRowTouch = 40;   // patch rows -- hit while playing
 
 // Nothing smaller than this can hold the UI font and still be clicked at
@@ -64,11 +64,13 @@ inline constexpr int kPanelHeader = 36;    // a side panel's title row
 inline constexpr int kPanelBoardName = 28; // the bank's board-name line
 inline constexpr int kSearchHeight = 30;
 
-// The two footers differ by four pixels and always have. They are named
-// apart rather than averaged, because U1 changes no values; whether that is
-// a decision or a slip is U2's to settle.
-inline constexpr int kFooterBank = 48;    // + New / Duplicate
-inline constexpr int kFooterBrowser = 44; // the drag-and-drop hint
+// U1 found these four pixels apart with nothing recording why, and left
+// them alone. U2's answer: it was a slip, and they were never the same
+// thing anyway. The bank's footer holds two buttons that get clicked, so it
+// stays a touch target; the browser's holds one line of hint text, so it is
+// sized for text.
+inline constexpr int kFooterBank = 48;    // + New / Duplicate -- clicked
+inline constexpr int kFooterBrowser = 28; // one line of hint -- read
 
 // Icons --------------------------------------------------------------------
 //
