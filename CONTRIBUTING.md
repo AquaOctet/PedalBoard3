@@ -85,19 +85,91 @@ in advance, never retroactively.
 
 ## Building and testing
 
-The full build instructions are in [`README.md`](README.md). The short version:
+JUCE 8, CMake 3.25+, C++20, Catch2. Windows is the primary target; macOS and
+Linux build and are covered by CI.
 
-```sh
-# Windows
-./build.ps1 test
+### Windows
 
-# Linux and macOS
-just test
+Any PowerShell — the script finds the Visual Studio developer environment
+itself. You need VS with the C++ workload.
+
+```powershell
+./build.ps1 build                  # Debug
+./build.ps1 build -Config release  # RelWithDebInfo
+./build.ps1 test                   # build, then unit tests
+./build.ps1 run
+./build.ps1 snapshots              # every window, menu and dialog to build/ui-snapshots
+./build.ps1 package                # release build + portable zip (+ installer, with Inno Setup)
+./build.ps1 clean
 ```
+
+The screenshots in the README came out of `snapshots`, which is also how the
+UI gets reviewed without clicking through it.
+
+### macOS and Linux
+
+`just` picks the host's preset. The `Makefile` has the same targets.
+
+```bash
+just build
+just test
+just run
+just release
+```
+
+Or CMake directly:
+
+```bash
+cmake --preset linux-dev -S app-v3
+cmake --build --preset linux-dev
+ctest --preset linux-dev --output-on-failure
+```
+
+macOS needs Xcode's command-line tools (`xcode-select --install`) and
+`brew install cmake ninja just pkg-config`.
+
+Linux needs CMake 3.25+, Ninja, a C++20 compiler (CI uses clang-18) and
+JUCE 8's X11 and audio libraries:
+
+```
+build-essential pkg-config clang-18
+libasound2-dev libjack-jackd2-dev
+libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev
+libxext-dev libxcomposite-dev libxrender-dev
+libfreetype-dev libfontconfig1-dev
+libgl-dev libglu1-mesa-dev mesa-common-dev
+```
+
+It builds with `JUCE_USE_CURL=0` and `JUCE_WEB_BROWSER=0`, so no libcurl or
+WebKit needed.
+
+### Other plugin formats
+
+CLAP and VST2 are build flags (`PB3_ENABLE_CLAP`, `PB3_ENABLE_VST2`), off in
+every preset, so no release carries either. VST2 also needs a copy of the SDK
+— Steinberg stopped giving it out, so there is nothing to download; drop yours
+at `app-v3/vst2_sdk/` and configure with `-DPB3_ENABLE_VST2=ON`. Without it
+the configure stops and says so.
+
+### What CI requires
 
 A merge request needs the test suite passing and `clang-format` clean. CI runs
 both on every MR, across Windows, macOS and Linux, and the release jobs are
 required to pass before a release is cut.
+
+## Where things are
+
+```
+app-v3/src/           engine/, session/, control/, ui/, platform/, tools/
+app-v3/tests/         Catch2 — unit/ mirrors src/
+docs/                 plans/, design/, releases/, status/, screenshots/
+installer/windows/    Inno Setup script
+tools/                packaging scripts
+legacy/               Pedalboard2's end-user docs, for reference
+source code/          original Pedalboard2 source — READ-ONLY, never built
+vercel-ui-demo/       the UI mockup the design follows
+AGENTS.md             conventions, including for coding agents
+```
 
 ## Conventions
 
