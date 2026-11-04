@@ -8,6 +8,7 @@
 #include "engine/processors/FilePlayerProcessor.h"
 #include "engine/processors/VuMeterProcessor.h"
 #include "Fonts.h"
+#include "Metrics.h"
 #include "PluginBrowser.h"
 #include "PortDot.h"
 #include "ProcessorControls.h"
@@ -33,7 +34,7 @@ constexpr int kCardSpacingX = 80;
 constexpr int kEndpointWidth = 86;
 // The title band at the top of an endpoint, above its ports (#123).
 constexpr int kEndpointTitleHeight = 30;
-constexpr int kCanvasMargin = 24;
+constexpr int kCanvasMargin = metrics::kSpaceXxl;
 // Geometry for ui::canvas::layout (CanvasLayout.h).
 constexpr canvas::Metrics kMetrics{kCardWidth, kCardHeight, kEndpointWidth, kCardSpacingX, kCanvasMargin};
 

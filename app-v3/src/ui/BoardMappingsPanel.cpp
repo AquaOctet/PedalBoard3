@@ -1,5 +1,5 @@
 #include "BoardMappingsPanel.h"
-#include "ChromeMetrics.h"
+#include "Metrics.h"
 
 #include "Icons.h"
 #include "MappingRowEditors.h"
@@ -12,10 +12,10 @@ namespace
 {
 using Kind = mappingrows::Kind;
 
-constexpr int kPad = 12;
-constexpr int kColumnHeaderHeight = 22;
-constexpr int kRowHeight = 28;
-constexpr int kRowGap = 2;
+constexpr int kPad = metrics::kSpaceXl;
+constexpr int kColumnHeaderHeight = metrics::kRowCompact;
+constexpr int kRowHeight = metrics::kRowDense;
+constexpr int kRowGap = metrics::kSpaceXs;
 constexpr int kPluginColumn = 150;
 constexpr int kMinContentWidth = kPluginColumn + 740;
 constexpr int kEmptyHeight = 48;
@@ -446,7 +446,7 @@ void BoardMappingsPanel::resized()
     // Top-left, on the same vertical line as the bank's toggle and the
     // top bar's File button (#120).
     toggle_.setBounds(
-        header.removeFromLeft(chrome::kIconButtonSize).withSizeKeepingCentre(chrome::kIconSize, chrome::kIconSize));
+        header.removeFromLeft(metrics::kIconButtonSize).withSizeKeepingCentre(metrics::kIconSize, metrics::kIconSize));
     header.removeFromLeft(10);
     titleArea_ = header.removeFromLeft(76);
     midiTab_.setBounds(header.removeFromLeft(70));
