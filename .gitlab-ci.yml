@@ -619,3 +619,147 @@ release:gitlab:
         - name: "Linux debug symbols (x64)"
           url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/pedalboard3/${PB3_VERSION}/Pedalboard3-${PB3_VERSION}-linux-x64-symbols.tar.gz"
           link_type: other
+
+# ===========================================================================
+# release:github — the mirror (#89).
+#
+# GitLab stays the source of truth. Push mirroring (Settings > Repository >
+# Mirroring repositories) copies main and the tags to GitHub, but it does not
+# copy Releases or their downloads, so this job makes the matching GitHub
+# Release and uploads the same seven files to it.
+#
+# One more click after release:gitlab, and only when both GITHUB_REPO (the
+# mirror, "owner/name") and GITHUB_TOKEN (masked and protected, a fine-grained
+# PAT with Contents: read and write on that repository) are set. Without them
+# the job never appears, so a project that doesn't mirror is unaffected and
+# nothing fails in a pipeline that never wanted one.
+#
+# Every tag is mirrored, betas included. A version with a pre-release suffix
+# (1.0.0-beta.1) is marked as a pre-release on GitHub, which is a flag GitLab
+# doesn't have; the notes carry that fact on the GitLab side.
+#
+# The job is re-runnable: an existing release for the tag is updated in place
+# and an asset of the same name is replaced, so a half-finished upload can be
+# clicked again without making a second release.
+# ===========================================================================
+release:github:
+  stage: publish
+  image: alpine:3.21
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $GITHUB_REPO && $GITHUB_TOKEN'
+      when: manual
+      allow_failure: false
+  needs:
+    # release:gitlab first: it is the one that creates the tag, and a mirror
+    # of a release GitLab hasn't made yet would be the wrong way round.
+    - job: release:gitlab
+    - job: release:linux
+      artifacts: true # the packages themselves, and PB3_VERSION from its dotenv
+    - job: release:macos
+      artifacts: true
+    - job: release:windows
+      artifacts: true
+  variables:
+    GIT_DEPTH: "1" # the notes are read from the checkout
+  script:
+    - apk add --no-cache curl jq
+    - |
+      set -eu
+
+      tag="v${PB3_VERSION}"
+      notes="docs/releases/${tag}.md"
+      [ -f "$notes" ] || { echo "No release notes at $notes: write and merge them first."; exit 1; }
+
+      api="https://api.github.com/repos/${GITHUB_REPO}"
+      hdr_auth="Authorization: Bearer ${GITHUB_TOKEN}"
+      hdr_vsn="X-GitHub-Api-Version: 2022-11-28"
+      hdr_acc="Accept: application/vnd.github+json"
+
+      # A pre-release suffix is everything a SemVer version carries after the
+      # first hyphen: 1.0.0-beta.1 is a pre-release, 1.0.0 is not.
+      case "$PB3_VERSION" in
+        *-*) prerelease=true ;;
+        *)   prerelease=false ;;
+      esac
+      echo "Mirroring $tag to ${GITHUB_REPO} (prerelease=$prerelease)."
+
+      # Settings before timing: a wrong GITHUB_REPO and a token that can't see
+      # it both answer 404 on any path under it, which is indistinguishable
+      # from a commit the mirror hasn't pushed yet. Ask about the repository
+      # itself first, so the five-minute wait below can only ever mean what it
+      # says.
+      code=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+        --header "$hdr_auth" --header "$hdr_vsn" --header "$hdr_acc" "$api")
+      case "$code" in
+        200) ;;
+        401|403) echo "GitHub answered $code for ${GITHUB_REPO}: GITHUB_TOKEN is rejected, or lacks Contents access to it." >&2; exit 1 ;;
+        404) echo "GitHub answered 404 for ${GITHUB_REPO}: either GITHUB_REPO names a repository that doesn't exist, or GITHUB_TOKEN can't see it." >&2; exit 1 ;;
+        *) echo "GitHub answered $code for ${GITHUB_REPO}." >&2; exit 1 ;;
+      esac
+
+      # Push mirroring is asynchronous, so the commit this release points at
+      # may not have reached GitHub yet. Wait for it rather than creating a
+      # release against a commit that isn't there: up to five minutes, which
+      # is far longer than a mirror of this repo has ever taken.
+      ok=no
+      i=0
+      while [ "$i" -lt 15 ]; do
+        code=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+          --header "$hdr_auth" --header "$hdr_vsn" --header "$hdr_acc" \
+          "${api}/commits/${CI_COMMIT_SHA}")
+        if [ "$code" = "200" ]; then ok=yes; break; fi
+        echo "  $CI_COMMIT_SHA isn't on GitHub yet (HTTP $code); waiting for the push mirror."
+        i=$((i + 1))
+        sleep 20
+      done
+      [ "$ok" = "yes" ] || { echo "The push mirror didn't bring $CI_COMMIT_SHA to GitHub within five minutes. Check Settings > Repository > Mirroring repositories, then click this job again." >&2; exit 1; }
+
+      # Create the release, or update the one a previous click left behind.
+      body=$(jq -n --arg t "$tag" --arg n "Pedalboard 3 ${PB3_VERSION}" \
+                   --rawfile b "$notes" --arg s "$CI_COMMIT_SHA" \
+                   --argjson p "$prerelease" \
+        '{tag_name:$t, name:$n, body:$b, target_commitish:$s, prerelease:$p, draft:false}')
+
+      existing=$(curl --silent --header "$hdr_auth" --header "$hdr_vsn" --header "$hdr_acc" \
+        "${api}/releases/tags/${tag}" | jq -r '.id // empty')
+
+      if [ -n "$existing" ]; then
+        echo "Release $tag already exists (id $existing); updating it."
+        release=$(curl --fail --silent --show-error --request PATCH \
+          --header "$hdr_auth" --header "$hdr_vsn" --header "$hdr_acc" \
+          --data "$body" "${api}/releases/${existing}")
+      else
+        release=$(curl --fail --silent --show-error --request POST \
+          --header "$hdr_auth" --header "$hdr_vsn" --header "$hdr_acc" \
+          --data "$body" "${api}/releases")
+      fi
+
+      id=$(echo "$release" | jq -r '.id')
+      url=$(echo "$release" | jq -r '.html_url')
+      [ "$id" != "null" ] || { echo "GitHub didn't return a release id:"; echo "$release"; exit 1; }
+
+      # The same seven files release:gitlab links to: four packages and three
+      # symbol bundles. They are whatever the three release jobs built, so a
+      # missing one is a packaging bug, not something to paper over.
+      for f in packages/*; do
+        [ -f "$f" ] || continue
+        name=$(basename "$f")
+
+        # Replace rather than duplicate: GitHub renames a second asset of the
+        # same name instead of refusing it, which would leave two downloads.
+        old=$(echo "$release" | jq -r --arg n "$name" '.assets[]? | select(.name == $n) | .id')
+        if [ -n "$old" ]; then
+          curl --fail --silent --show-error --request DELETE \
+            --header "$hdr_auth" --header "$hdr_vsn" "${api}/releases/assets/${old}"
+          echo "  replaced $name"
+        fi
+
+        curl --fail --silent --show-error --output /dev/null --request POST \
+          --header "$hdr_auth" --header "$hdr_vsn" \
+          --header "Content-Type: application/octet-stream" \
+          --data-binary "@${f}" \
+          "https://uploads.github.com/repos/${GITHUB_REPO}/releases/${id}/assets?name=${name}"
+        echo "  uploaded $name"
+      done
+
+      echo "Mirrored: $url"

@@ -16,10 +16,31 @@ Releases are made by hand, from main only. No merge request or pushed tag starts
    - creates the tag `v<version>` on that main commit;
    - makes the GitLab Release, with the notes and a download link for each package.
 
-   GitLab has no pre-release flag, so the notes say it's a beta. The GitHub mirror (#89) will mark the release as a pre-release there.
-6. **Try the downloads on a clean machine** (#87). On Windows, run the installer and the zip on a PC without Visual Studio.
+   GitLab has no pre-release flag, so the notes say it's a beta. `release:github` marks the release as a pre-release there.
+6. **Click `release:github`**, if the mirror is set up (see below). It copies the release to GitHub with the same notes and the same seven downloads.
+7. **Try the downloads on a clean machine** (#87). On Windows, run the installer and the zip on a PC without Visual Studio.
 
-A maintainer does steps 3 to 5. The tag comes from `release:gitlab`, never from a pushed tag.
+A maintainer does steps 3 to 6. The tag comes from `release:gitlab`, never from a pushed tag.
+
+## The GitHub mirror
+
+GitLab is the source of truth: the code, the pipelines and the releases are made here. GitHub is a copy, so people who look for the app there find it.
+
+Two halves, because GitLab's push mirroring copies commits and tags but not Releases or their downloads:
+
+- **The code.** GitLab push-mirrors `main` and the tags into the GitHub repository, set up once under Settings > Repository > Mirroring repositories.
+- **The releases.** `release:github` makes the matching GitHub Release through the API and uploads the same packages to it.
+
+Every release is mirrored, betas included. A version with a pre-release suffix (`1.0.0-beta.1`) is marked as a pre-release on GitHub; a plain `1.0.0` is a full release.
+
+The job only appears when both of these CI variables exist, so a fork or a clone that doesn't mirror never sees it and never fails because of it:
+
+| Variable | What it holds |
+|---|---|
+| `GITHUB_REPO` | The mirror, as `owner/name`. Protected. |
+| `GITHUB_TOKEN` | A fine-grained GitHub PAT with **Contents: read and write** on that repository, and nothing else. Masked and protected. |
+
+Clicking `release:github` again is safe: it updates the release it already made and replaces any download of the same name, rather than making a second one. Because push mirroring runs on its own schedule, the job first waits up to five minutes for the release commit to reach GitHub, and says so if it doesn't.
 
 ## The packages
 
