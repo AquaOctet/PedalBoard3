@@ -583,6 +583,14 @@ int main(int argc, char** argv)
                 std::printf("WARNING window-board has %d of 4 nodes; the session refused the rest\n", added);
             shoot("window-board", root, 1280, 800);
 
+            // A short window with the panels still open. BodyLayout only folds
+            // them below 1200 px wide, so every other surface here is either
+            // 800 px tall with both panels up or narrow enough that they are
+            // strips -- which left the common case of a laptop window that is
+            // wide enough to keep the browser but too short to show much of it
+            // with no coverage at all.
+            shoot("window-short", root, 1280, 620);
+
             // Selecting a card is the only way a still image can show the two
             // accents apart (#105): the selected card and its mapping row take
             // the "chosen" pink, while the playing patch and the live cables

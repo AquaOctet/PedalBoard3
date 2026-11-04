@@ -6,7 +6,8 @@ you're on stage.
 
 It's a ground-up rebuild of Niall Moody's
 [Pedalboard2](https://www.niallmoody.com/work/pedalboard2/) (2013), which
-predates VST3 and doesn't get built for current machines any more.
+predates VST3 and doesn't get built for current machines any more. It still
+opens Pedalboard2 `.pdl` files.
 
 ![The main window](docs/screenshots/window-board.png)
 
@@ -14,45 +15,71 @@ Bank on the left, board in the middle, plugin browser on the right. Mappings
 along the bottom; transport, meters and the latency/CPU/memory readouts on
 top.
 
+## Download
+
+**[Latest release](https://github.com/AquaOctet/PedalBoard3/releases/latest)**
+— Windows installer or portable zip, macOS universal, Linux x64. Also on
+[GitLab](https://gitlab.com/void-realm-solutions/pedalboard-3/-/releases).
+
+This is a **beta**. It's used regularly on Windows and all three platforms are
+built and tested on every change, but macOS and Linux get far less hands-on
+use. Keep backups of boards you care about, and read the
+[release notes](docs/releases/) for the known limitations — the app isn't
+signed yet, so Windows SmartScreen and macOS Gatekeeper will both warn you the
+first time.
+
+## Quick start
+
+1. **Pick your audio device.** Settings > Audio Devices. The test tone puts a
+   440 Hz sine on the output, so you can check the cable before blaming the
+   board.
+2. **Scan for plugins.** Plugins > Plugin List. Scanning runs in a separate
+   process, so a plugin that crashes while being scanned can't take the app
+   down.
+3. **Build a chain.** Drag plugins from the right-hand browser onto the board,
+   or double-click one to add it at the end.
+4. **Save the bank.** Each patch in it gets a number, shown as `PC 0`, `PC 1`
+   and so on down the left.
+5. **Switch patches with your feet.** Send MIDI Program Change 3 from a
+   footswitch and you're on patch 3. Nothing to configure — that's the whole
+   point of the program.
+
 ## What it does
 
-- **Banks of patches.** Send Program Change 3, you're on patch 3. That's the
-  whole point of the program.
+- **Banks of patches**, switched by Program Change.
 - **MIDI and OSC mappings.** Point a CC, note, program change or pitch bend at
-  any plugin parameter, or hit Learn and move the knob.
+  any plugin parameter, or hit Learn and move the knob. App-wide mappings
+  cover things like next and previous patch.
 - **Built-in nodes.** Level, VU meter, output toggle, file player, recorder,
   metronome, looper.
 - **A transport** with a play head the plugins can see, so tempo-synced delays
   line up.
 - **Separate in and out metering**, so when it goes quiet you can tell which
   side of the board went quiet.
+- **Undo and redo**, Open Recent, and opening a board by dropping it on the
+  window. The window remembers its size and position.
+- **Missing plugins don't break a patch.** They open as placeholders and the
+  rest of the board plays.
 
-VST3 everywhere, AU on macOS, LV2 on macOS and Linux. CLAP and VST2 are build
-flags (`PB3_ENABLE_CLAP`, `PB3_ENABLE_VST2`), off in every preset, so no
-release carries either. VST2 also needs a copy of the SDK — Steinberg stopped
-giving it out, so there is nothing to download; drop yours at
-`app-v3/vst2_sdk/` and configure with `-DPB3_ENABLE_VST2=ON`. Without it the
-configure stops and says so.
+Plugin formats: VST3 everywhere, AU on macOS, LV2 on macOS and Linux. No CLAP
+or VST2 in released builds.
 
-## On a small screen
+### On a small screen
 
 Laptop on a music stand is the normal case, so the top bar spends its
 whitespace before it folds anything away, and the panels collapse to a strip.
 
 ![The same board in a narrow window](docs/screenshots/window-narrow.png)
 
-## Audio setup
+### Audio setup
 
 ![Audio devices](docs/screenshots/dialog-audio-devices.png)
 
 WASAPI, DirectSound and ASIO on Windows, CoreAudio on macOS, ALSA and JACK on
-Linux. The test tone puts a 440 Hz sine on the output so you can check the
-cable before blaming the board.
+Linux. Unplug an interface and plug it back in and it comes back; the output
+never falls back to laptop speakers on its own.
 
-Unplug an interface and plug it back in and it comes back. The output never
-falls back to laptop speakers on its own.
-
-## Turning off what you don't use
+### Turning off what you don't use
 
 ![The settings menu](docs/screenshots/menu-settings.png)
 
@@ -62,93 +89,29 @@ MIDI on, OSC off.
 
 Cables are separate: a plugin only gets a MIDI cable if it has MIDI pins.
 
-## Status
+## Building from source
 
-M1–M6 are merged — stability, live MIDI/OSC control, banks with Program
-Change switching, the mappings UI, the crash guard and `.pdl` safety, and the
-parity tail. So are the finish pass, the UI refresh and the chrome pass.
-
-Next is 1.0.0-beta.1. The version, release pipeline, Windows installer and
-portable zip all exist; what's left is hands-on use and a few decisions.
-
-- Where things stand: [`docs/status/2026-09-14-handoff.md`](docs/status/2026-09-14-handoff.md)
-- Open work: milestones M7, M8 and 1.x on GitLab
-- Releases are cut by hand off main: [`docs/releases/README.md`](docs/releases/README.md)
-- Roadmap: [`docs/plans/2026-07-02-001-feat-road-to-1-0-release-plan.md`](docs/plans/2026-07-02-001-feat-road-to-1-0-release-plan.md)
-
-## Building it
-
-JUCE 8, CMake, C++20, Catch2. Windows is the primary target; macOS and Linux
-build and are covered by CI.
-
-### Windows
-
-Any PowerShell — the script finds the Visual Studio developer environment
-itself. You need VS with the C++ workload.
+JUCE 8, CMake 3.25+, C++20, Catch2. Windows is the primary target; macOS and
+Linux build and are covered by CI.
 
 ```powershell
-./build.ps1 build                  # Debug
-./build.ps1 build -Config release  # RelWithDebInfo
-./build.ps1 test                   # build, then unit tests
+./build.ps1 build        # Windows: any PowerShell, finds VS itself
+./build.ps1 test
 ./build.ps1 run
-./build.ps1 snapshots              # every window, menu and dialog to build/ui-snapshots
-./build.ps1 package                # release build + portable zip (+ installer, with Inno Setup)
-./build.ps1 clean
 ```
 
-The screenshots above came out of `snapshots`, which is also how the UI gets
-reviewed without clicking through it.
-
-### macOS and Linux
-
-`just` picks the host's preset. The `Makefile` has the same targets.
-
 ```bash
-just build
+just build               # macOS and Linux; the Makefile has the same targets
 just test
 just run
-just release
 ```
 
-Or CMake directly:
+Full prerequisites, the other build targets, the CLAP and VST2 flags and the
+repository layout are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
-```bash
-cmake --preset linux-dev -S app-v3
-cmake --build --preset linux-dev
-ctest --preset linux-dev --output-on-failure
-```
-
-macOS needs Xcode's command-line tools (`xcode-select --install`) and
-`brew install cmake ninja just pkg-config`.
-
-Linux needs CMake 3.25+, Ninja, a C++20 compiler (CI uses clang-18) and
-JUCE 8's X11 and audio libraries:
-
-```
-build-essential pkg-config clang-18
-libasound2-dev libjack-jackd2-dev
-libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev
-libxext-dev libxcomposite-dev libxrender-dev
-libfreetype-dev libfontconfig1-dev
-libgl-dev libglu1-mesa-dev mesa-common-dev
-```
-
-It builds with `JUCE_USE_CURL=0` and `JUCE_WEB_BROWSER=0`, so no libcurl or
-WebKit needed.
-
-## Where things are
-
-```
-app-v3/src/           engine/, session/, control/, ui/, platform/, tools/
-app-v3/tests/         Catch2 — unit/ mirrors src/
-docs/                 plans/, design/, releases/, status/, screenshots/
-installer/windows/    Inno Setup script
-tools/                packaging scripts
-legacy/               Pedalboard2's end-user docs, for reference
-source code/          original Pedalboard2 source — READ-ONLY, never built
-vercel-ui-demo/       the UI mockup the design follows
-AGENTS.md             conventions, including for coding agents
-```
+Development happens on
+[GitLab](https://gitlab.com/void-realm-solutions/pedalboard-3), which is where
+CI runs and where the open work lives; GitHub is a mirror.
 
 ## Licence
 
