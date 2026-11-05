@@ -483,6 +483,12 @@ test:macos:unit:
 #     portable zip. The exes carry the MSVC runtime; package.ps1 checks that.
 #   - macOS: a zip of the universal .app, with the helper inside it.
 #   - Linux: a tarball of the app and the helper.
+# package.sh is run through `bash` rather than executed. It is mode 100755 in
+# the index, but this repo is developed on Windows with core.fileMode false, so
+# the working tree cannot defend that bit -- and it being missing is what failed
+# the first real release run (#144, exit 126 after a clean build). Going through
+# bash means losing it again costs nothing.
+#
 # .rules-release says when they run: by hand, on main. Their packages stay
 # job artifacts for two weeks; release:gitlab publishes them. Signing and
 # notarisation are still #40.
@@ -495,7 +501,7 @@ release:linux:
     PB3_BUILD_PRESET: linux-release
   script:
     - !reference [build:linux, script]
-    - tools/package.sh build/linux-release packages
+    - bash tools/package.sh build/linux-release packages
     # The bare version (no v), for release:gitlab's download links.
     - echo "PB3_VERSION=$(tr -d '[:space:]' < build/linux-release/pb3-version.txt)" > release.env
   artifacts:
@@ -513,7 +519,7 @@ release:macos:
     PB3_BUILD_PRESET: macos-universal
   script:
     - !reference [build:macos, script]
-    - tools/package.sh build/macos-universal packages
+    - bash tools/package.sh build/macos-universal packages
   artifacts:
     paths: [ packages/*.zip, packages/*-symbols.tar.gz ]
     expire_in: 2 weeks
@@ -523,6 +529,18 @@ release:windows:
   extends: build:windows
   stage: release
   rules: *rules-release
+  # The project default is one hour, and the first real release run spent
+  # 59m41s of it in the script, then lost the three packages it had just built
+  # when the clock ran out before the artifact upload (#144). Two hours is the
+  # most a job can ask for here: saas-windows-medium-amd64 caps
+  # maximum_timeout at 7200s, so this needs no project-settings change.
+  #
+  # Nearly all of that hour was the build, with a cache that was cold for a
+  # reason worth knowing: GitLab suffixes a cache key with `-protected` on a
+  # protected branch, so these release jobs keep a cache of their own that no
+  # merge request job ever warms. The first run wrote it (20% ccache hits);
+  # later ones start from it.
+  timeout: 2h
   variables:
     PB3_BUILD_PRESET: windows-ci
   script:
