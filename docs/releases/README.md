@@ -33,6 +33,8 @@ Two halves, because GitLab's push mirroring copies commits and tags but not Rele
 
 Every release is mirrored, betas included. A version with a pre-release suffix (`1.0.0-beta.1`) is marked as a pre-release on GitHub; a plain `1.0.0` is a full release.
 
+Because of that, **the README links to the releases index, not `/releases/latest`.** GitHub defines "latest" as the most recent release that is *not* a pre-release, so while every release carries a suffix that URL answers 404 and the browser lands on the index anyway. Once a plain version ships, `/releases/latest` starts resolving and becomes the better link.
+
 The job only appears when both of these CI variables exist, so a fork or a clone that doesn't mirror never sees it and never fails because of it:
 
 | Variable | What it holds |
