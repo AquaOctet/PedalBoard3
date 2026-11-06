@@ -253,6 +253,36 @@ TEST_CASE("EditHistory: an add at a position commits there, and undo removes it"
     REQUIRE(f.s.getNodeCount() == 0);
 }
 
+TEST_CASE("EditHistory: undoing a node spliced into a cable puts the original cable back",
+          "[session][edit-history][drop]")
+{
+    Fixture f;
+
+    // Two nodes wired in series, then a third dropped onto the cable between
+    // them (#142). The add records the wiring from before it, and that has to
+    // be the wiring from before the splice -- not before the plain append the
+    // splice replaced.
+    const auto a = f.add();
+    const auto b = f.add();
+    const auto before = f.s.getActivePatch().connections;
+
+    const session::PatchConnection hop{a, 0, b, 0};
+    const auto has = [](const std::vector<session::PatchConnection>& v, const session::PatchConnection& c)
+    { return std::find(v.begin(), v.end(), c) != v.end(); };
+    REQUIRE(has(before, hop));
+
+    f.h.addInternalNode("LevelProcessor", std::nullopt, {}, hop);
+    f.settle();
+    REQUIRE(f.s.getNodeCount() == 3);
+    REQUIRE_FALSE(has(f.s.getActivePatch().connections, hop)); // it really did splice
+
+    REQUIRE(f.h.undo());
+    f.settle();
+
+    REQUIRE(f.s.getNodeCount() == 2);
+    REQUIRE(f.s.getActivePatch().connections == before); // the original cable, not a bridge
+}
+
 TEST_CASE("EditHistory: a node's note undoes and redoes, and an unchanged note records nothing",
           "[session][edit-history][note]")
 {

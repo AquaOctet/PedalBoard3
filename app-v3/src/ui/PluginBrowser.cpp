@@ -71,7 +71,8 @@ std::vector<browser::Entry> browserEntries(AppContext& ctx)
 bool addBrowserEntry(AppContext& ctx,
                      const juce::String& id,
                      std::optional<juce::Point<float>> position,
-                     const juce::MemoryBlock& state)
+                     const juce::MemoryBlock& state,
+                     std::optional<session::PatchConnection> insertInto)
 {
     // The same rule as the top bar's Add Plugin: only while Session is idle
     // and the chain is the live graph.
@@ -83,7 +84,8 @@ bool addBrowserEntry(AppContext& ctx,
         const auto type = id.fromFirstOccurrenceOf(kInternalPrefix, false, false);
         if (!builtInAvailable(ctx, type))
             return false; // switched off since the list or the drag began
-        ctx.editHistory.addInternalNode(type, position, state.getSize() > 0 ? state : settingsStateFor(ctx, type));
+        ctx.editHistory.addInternalNode(
+            type, position, state.getSize() > 0 ? state : settingsStateFor(ctx, type), insertInto);
     }
     else if (id.startsWith(kPluginPrefix))
     {
@@ -95,7 +97,7 @@ bool addBrowserEntry(AppContext& ctx,
                          [&identifier](const auto& d) { return d.createIdentifierString() == identifier; });
         if (desc == effects.end())
             return false;
-        ctx.editHistory.addPlugin(*desc, position);
+        ctx.editHistory.addPlugin(*desc, position, insertInto);
     }
     else
     {

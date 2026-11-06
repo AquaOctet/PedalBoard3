@@ -173,7 +173,16 @@ public:
     // `position`: where the node's card goes on the canvas (model coordinates,
     // ui/CanvasLayout.h), e.g. a drop from the plugin browser (UI refresh U5).
     // Without one the canvas gives it an auto slot.
-    void addPlugin(juce::PluginDescription, std::optional<juce::Point<float>> position = std::nullopt);
+    //
+    // `insertInto`: a cable to splice the new node into, rather than appending
+    // it to the end of the chain (#142). Dropping a plugin onto a cable puts
+    // it between those two nodes, which is the only way to land in the middle
+    // of a chain without rewiring by hand. The cable is re-checked when the
+    // add commits -- the worker runs off the message thread, so it may have
+    // been deleted in between -- and an appended node is the fallback.
+    void addPlugin(juce::PluginDescription,
+                   std::optional<juce::Point<float>> position = std::nullopt,
+                   std::optional<PatchConnection> insertInto = std::nullopt);
 
     // Append a built-in (internal) node to the active patch's chain, by its
     // typeId (e.g. "LevelProcessor"). Same worker pipeline as addPlugin — the
@@ -182,7 +191,8 @@ public:
     // Player added by dropping a file carries the file, M6 U6).
     void addInternalNode(juce::String internalType,
                          std::optional<juce::Point<float>> position = std::nullopt,
-                         juce::MemoryBlock initialState = {});
+                         juce::MemoryBlock initialState = {},
+                         std::optional<PatchConnection> insertInto = std::nullopt);
 
     // Synchronous: take effect before the call returns.
     void removeNode(NodeId);
@@ -374,6 +384,7 @@ private:
         std::vector<PatchConnection> restoreConnections;
         std::optional<juce::Point<float>> position; // a positioned add (UI refresh U5)
         juce::MemoryBlock initialState;             // a new node's starting state (M6 U6)
+        std::optional<PatchConnection> insertInto;  // splice into this cable (#142)
     };
 
     struct LoadPatchResult
@@ -396,6 +407,7 @@ private:
         std::vector<PatchConnection> restoreConnections;
         std::optional<juce::Point<float>> position;
         juce::MemoryBlock initialState;
+        std::optional<PatchConnection> insertInto;
     };
 
     using Result = std::variant<std::monostate, LoadPatchResult, AddPluginResult>;
@@ -422,6 +434,11 @@ private:
     // rather than recomputing a linear chain.
     void autoConnectNewNode(NodeId newId);          // splice a new node before the graph output
     void pruneAndBridgeConnections(NodeId removed); // drop a node's edges, bridge its neighbours
+    // Put a new node inside an existing cable: every edge between that cable's
+    // two endpoints is re-routed through newId. The exact inverse of
+    // pruneAndBridgeConnections above. Falls back to autoConnectNewNode when
+    // the cable is already gone (#142).
+    void spliceNewNodeInto(NodeId newId, const PatchConnection& target);
     void applyConnectionsToLiveGraph();
 
     // The runtime's currently-live graph pointer, or nullptr. The identity

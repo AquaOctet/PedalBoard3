@@ -4,6 +4,8 @@
 #include "BrowserModel.h"
 #include "ColourScheme.h"
 
+#include "../session/Patch.h" // PatchConnection, for the splice target (#142)
+
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <functional>
@@ -22,10 +24,13 @@ namespace pedalboard3::ui
 // the chain can't take an add right now (Session busy, or the live graph
 // isn't the active slot's).
 // `state`: a built-in's starting state (a File Player dropped with its file).
+// `insertInto`: a cable the new node is spliced into rather than appended to
+// the end of the chain -- a drop that landed on one (#142).
 bool addBrowserEntry(AppContext& ctx,
                      const juce::String& id,
                      std::optional<juce::Point<float>> position,
-                     const juce::MemoryBlock& state = {});
+                     const juce::MemoryBlock& state = {},
+                     std::optional<session::PatchConnection> insertInto = std::nullopt);
 
 // The browser entry id a drag carries, or empty when the drag isn't from the
 // browser.

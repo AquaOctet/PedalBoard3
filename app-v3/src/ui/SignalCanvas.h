@@ -173,7 +173,12 @@ private:
         bool valid{false};
     };
     PortRef portAt(juce::Point<int>) const;
-    std::optional<session::PatchConnection> cableAt(juce::Point<int>) const;
+    // How close the point has to be to a cable to pick it. Tight for a click,
+    // because a stray pixel should not select a cable you did not mean; a
+    // whole card's half-height for a drop, where the gesture aimed a 170x92
+    // card at the cable and the pointer only happens to be its centre (#142).
+    static constexpr float kCableClickTol = 6.0f;
+    std::optional<session::PatchConnection> cableAt(juce::Point<int>, float tolerance = kCableClickTol) const;
     // The connection feeding a destination port (for grab-to-detach), if any.
     std::optional<session::PatchConnection> connectionInto(const PortRef&) const;
 

@@ -123,6 +123,7 @@ public:
                 ar.restoreConnections = std::move(addReq->restoreConnections);
                 ar.position = addReq->position;
                 ar.initialState = std::move(addReq->initialState);
+                ar.insertInto = addReq->insertInto;
 
                 // Direct host factory — bypasses BuildFn so we get a single
                 // processor back, not a graph. Internal nodes go through the
@@ -317,23 +318,28 @@ void Session::enqueueAddRequest(AddPluginRequest req)
         worker_->notify();
 }
 
-void Session::addPlugin(juce::PluginDescription desc, std::optional<juce::Point<float>> position)
+void Session::addPlugin(juce::PluginDescription desc,
+                        std::optional<juce::Point<float>> position,
+                        std::optional<PatchConnection> insertInto)
 {
     AddPluginRequest req;
     req.desc = std::move(desc);
     req.position = position;
+    req.insertInto = insertInto;
     enqueueAddRequest(std::move(req));
 }
 
 void Session::addInternalNode(juce::String internalType,
                               std::optional<juce::Point<float>> position,
-                              juce::MemoryBlock initialState)
+                              juce::MemoryBlock initialState,
+                              std::optional<PatchConnection> insertInto)
 {
     AddPluginRequest req;
     req.kind = NodeKind::Internal;
     req.internalType = std::move(internalType);
     req.position = position;
     req.initialState = std::move(initialState);
+    req.insertInto = insertInto;
     enqueueAddRequest(std::move(req));
 }
 
@@ -1065,6 +1071,49 @@ void Session::pruneAndBridgeConnections(NodeId removed)
         }
 }
 
+void Session::spliceNewNodeInto(NodeId newId, const PatchConnection& target)
+{
+    auto& conns = activePatch_.connections;
+
+    // Every cable between the same two endpoints, not just the one that was
+    // clicked: a stereo pair is two cables drawn on top of each other, and
+    // splicing one of them would leave the other channel bypassing the new
+    // node -- silently turning a stereo path half-wet.
+    const auto sameHop = [&target](const PatchConnection& c) { return c.src == target.src && c.dst == target.dst; };
+
+    std::vector<PatchConnection> hop;
+    for (const auto& c : conns)
+        if (sameHop(c))
+            hop.push_back(c);
+
+    // The add commits on the message thread after the worker instantiated the
+    // plugin, so the cable we were dropped on may have been deleted in
+    // between. Appending is the honest fallback; guessing at a replacement
+    // cable would wire the node somewhere the user never pointed at.
+    if (hop.empty())
+    {
+        autoConnectNewNode(newId);
+        return;
+    }
+
+    conns.erase(std::remove_if(conns.begin(), conns.end(), sameHop), conns.end());
+
+    // src -> new -> dst, with the new node's pin channel taken from the source
+    // side. That makes this the exact inverse of removeNode's bridging (which
+    // matches in.dstChannel against out.srcChannel), so dropping a node onto a
+    // cable and then deleting it again restores the original cable.
+    for (const auto& c : hop)
+    {
+        const PatchConnection intoNew{c.src, c.srcChannel, newId, c.srcChannel};
+        if (!connectionExists(conns, intoNew))
+            conns.push_back(intoNew);
+
+        const PatchConnection outOfNew{newId, c.srcChannel, c.dst, c.dstChannel};
+        if (!connectionExists(conns, outOfNew))
+            conns.push_back(outOfNew);
+    }
+}
+
 bool Session::addConnection(NodeId src, int srcChannel, NodeId dst, int dstChannel)
 {
     if (getState() != State::Idle)
@@ -1407,6 +1456,8 @@ void Session::commitAddPlugin(AddPluginResult&& result)
 
         if (restored)
             activePatch_.connections = std::move(result.restoreConnections);
+        else if (result.insertInto.has_value())
+            spliceNewNodeInto(newId, *result.insertInto);
         else
             autoConnectNewNode(newId);
 

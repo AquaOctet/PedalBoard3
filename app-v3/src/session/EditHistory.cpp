@@ -28,16 +28,20 @@ EditHistory::~EditHistory()
     session_.removeChangeListener(this);
 }
 
-void EditHistory::addPlugin(juce::PluginDescription desc, std::optional<juce::Point<float>> position)
+void EditHistory::addPlugin(juce::PluginDescription desc,
+                            std::optional<juce::Point<float>> position,
+                            std::optional<PatchConnection> insertInto)
 {
-    session_.addPlugin(std::move(desc), position); // recorded when it commits
+    session_.addPlugin(std::move(desc), position, insertInto); // recorded when it commits
 }
 
 void EditHistory::addInternalNode(juce::String internalType,
                                   std::optional<juce::Point<float>> position,
-                                  juce::MemoryBlock initialState)
+                                  juce::MemoryBlock initialState,
+                                  std::optional<PatchConnection> insertInto)
 {
-    session_.addInternalNode(std::move(internalType), position, std::move(initialState)); // recorded when it commits
+    // recorded when it commits
+    session_.addInternalNode(std::move(internalType), position, std::move(initialState), insertInto);
 }
 
 void EditHistory::removeNode(NodeId id)
