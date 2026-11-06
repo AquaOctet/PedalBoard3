@@ -288,8 +288,11 @@ tools/               pb3-scanner-helper, pb3-ui-snapshots
 ## Current state
 
 M1–M6 have merged, plus the finish pass, the UI refresh and the UI chrome
-pass. Next is 1.0.0-beta.1 (M7), then the signed v1.0.0 (M8). Development
-continues on a MacBook from 2026-09-14.
+pass. **1.0.0-beta.1 was released on 2026-11-05**, publicly, on both GitLab
+and the GitHub mirror — the first release this project has cut. The version
+here is now `beta.2`, so a build off main never claims to be the one that
+shipped. Next is the signed v1.0.0 (M8). Development continues on a MacBook
+from 2026-09-14.
 
 The GitLab board is the source of truth for open work (M7, M8, 1.x);
 `docs/status/2026-09-14-handoff.md` has the state, the next steps in order

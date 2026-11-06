@@ -18,7 +18,7 @@ project(Pedalboard3
 # lives here. The app, .pdl files and the packages show PB3_VERSION_STRING; an
 # empty suffix makes a plain release. A release is tagged v<PB3_VERSION_STRING>
 # (docs/releases/README.md).
-set(PB3_VERSION_SUFFIX "beta.1")
+set(PB3_VERSION_SUFFIX "beta.2")
 if(PB3_VERSION_SUFFIX)
     set(PB3_VERSION_STRING "${PROJECT_VERSION}-${PB3_VERSION_SUFFIX}")
 else()

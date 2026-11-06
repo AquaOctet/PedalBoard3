@@ -17,8 +17,8 @@ top.
 
 ## Download
 
-**[Latest release](https://github.com/AquaOctet/PedalBoard3/releases/latest)**
-— Windows installer or portable zip, macOS universal, Linux x64. Also on
+**[Downloads](https://github.com/AquaOctet/PedalBoard3/releases)** — Windows
+installer or portable zip, macOS universal, Linux x64. Also on
 [GitLab](https://gitlab.com/void-realm-solutions/pedalboard-3/-/releases).
 
 This is a **beta**. It's used regularly on Windows and all three platforms are
