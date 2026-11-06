@@ -577,6 +577,123 @@ TEST_CASE("Session: removeNode prunes its edges and bridges neighbours", "[sessi
     REQUIRE(hasConn(conns, 3, 0, session::graphIO, 0));
 }
 
+// ---------------------------------------------------------------------------
+// #142: a plugin dropped onto a cable goes into that cable, not onto the end
+// of the chain. Before this, the card landed where it was dropped but was
+// always wired last, so there was no way to get into the middle of a chain
+// without rewiring by hand.
+// ---------------------------------------------------------------------------
+
+// The id the next add will take, so a test can name the node it just made.
+session::NodeId newestNode(session::Session& s, std::initializer_list<session::NodeId> before)
+{
+    for (const auto& n : s.getActivePatch().nodes)
+        if (std::find(before.begin(), before.end(), n.id) == before.end())
+            return n.id;
+    return session::graphIO;
+}
+
+TEST_CASE("Session: a node spliced into a cable lands inside it, not at the end", "[session][routing][drop]")
+{
+    ChainFixture f; // graphIO -> 1 -> 2 -> 3 -> graphIO
+
+    f.s.addInternalNode("LevelProcessor", std::nullopt, {}, session::PatchConnection{1, 0, 2, 0});
+    pumpUntilIdle(f.s);
+
+    const auto id = newestNode(f.s, {1, 2, 3});
+    REQUIRE(id != session::graphIO);
+    const auto conns = f.s.getActivePatch().connections;
+
+    REQUIRE(hasConn(conns, 1, 0, id, 0));      // 1 -> new
+    REQUIRE(hasConn(conns, id, 0, 2, 0));      // new -> 2
+    REQUIRE_FALSE(hasConn(conns, 1, 0, 2, 0)); // the cable it replaced is gone
+
+    // The rest of the chain is untouched, and the new node is NOT on the end.
+    REQUIRE(hasConn(conns, 2, 0, 3, 0));
+    REQUIRE(hasConn(conns, 3, 0, session::graphIO, 0));
+    REQUIRE_FALSE(hasConn(conns, id, 0, session::graphIO, 0));
+}
+
+TEST_CASE("Session: splicing one cable of a stereo pair moves every channel of that hop", "[session][routing][drop]")
+{
+    ChainFixture f;
+
+    // Aimed at the left channel only. A stereo pair is drawn as two cables on
+    // top of each other, so moving just the one clicked would leave the right
+    // channel running past the new node -- half the signal processed.
+    f.s.addInternalNode("LevelProcessor", std::nullopt, {}, session::PatchConnection{1, 0, 2, 0});
+    pumpUntilIdle(f.s);
+
+    const auto id = newestNode(f.s, {1, 2, 3});
+    const auto conns = f.s.getActivePatch().connections;
+
+    for (const int ch : {0, 1, kMidi})
+    {
+        REQUIRE(hasConn(conns, 1, ch, id, ch));
+        REQUIRE(hasConn(conns, id, ch, 2, ch));
+        REQUIRE_FALSE(hasConn(conns, 1, ch, 2, ch));
+    }
+}
+
+TEST_CASE("Session: splicing a node in and removing it again restores the original cables", "[session][routing][drop]")
+{
+    ChainFixture f;
+    const auto before = f.s.getActivePatch().connections;
+
+    f.s.addInternalNode("LevelProcessor", std::nullopt, {}, session::PatchConnection{1, 0, 2, 0});
+    pumpUntilIdle(f.s);
+    const auto id = newestNode(f.s, {1, 2, 3});
+    REQUIRE(id != session::graphIO);
+
+    f.s.removeNode(id);
+    const auto after = f.s.getActivePatch().connections;
+
+    // removeNode bridges on in.dstChannel == out.srcChannel, and the splice
+    // uses the source side's channel on both of the new node's pins, which
+    // makes the two exact inverses. Same set, order not promised.
+    REQUIRE(after.size() == before.size());
+    for (const auto& c : before)
+        REQUIRE(hasConn(after, c.src, c.srcChannel, c.dst, c.dstChannel));
+    REQUIRE_FALSE(touchesNode(after, id));
+}
+
+TEST_CASE("Session: dropping onto the input cable puts the node at the front of the chain", "[session][routing][drop]")
+{
+    ChainFixture f;
+
+    f.s.addInternalNode("LevelProcessor", std::nullopt, {}, session::PatchConnection{session::graphIO, 0, 1, 0});
+    pumpUntilIdle(f.s);
+
+    const auto id = newestNode(f.s, {1, 2, 3});
+    const auto conns = f.s.getActivePatch().connections;
+
+    REQUIRE(hasConn(conns, session::graphIO, 0, id, 0));
+    REQUIRE(hasConn(conns, id, 0, 1, 0));
+    REQUIRE_FALSE(hasConn(conns, session::graphIO, 0, 1, 0));
+}
+
+TEST_CASE("Session: a splice target that no longer exists appends instead of dropping the node",
+          "[session][routing][drop]")
+{
+    ChainFixture f;
+
+    // The add commits on the message thread well after the worker took the
+    // request, so the cable can be deleted in between. Nodes 1 and 3 are never
+    // directly connected, which stands in for that cable having gone.
+    f.s.addInternalNode("LevelProcessor", std::nullopt, {}, session::PatchConnection{1, 0, 3, 0});
+    pumpUntilIdle(f.s);
+
+    const auto id = newestNode(f.s, {1, 2, 3});
+    REQUIRE(id != session::graphIO);
+    const auto conns = f.s.getActivePatch().connections;
+
+    // Appended, exactly as an add with no target would be -- not left adrift
+    // with no edges at all, and not wired somewhere it was never aimed.
+    REQUIRE(hasConn(conns, id, 0, session::graphIO, 0));
+    REQUIRE(hasConn(conns, 3, 0, id, 0));
+    REQUIRE_FALSE(hasConn(conns, 3, 0, session::graphIO, 0));
+}
+
 TEST_CASE("Session: setNodePosition updates the snapshot", "[session][routing]")
 {
     ChainFixture f;

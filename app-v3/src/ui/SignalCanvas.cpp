@@ -732,12 +732,11 @@ SignalCanvas::PortRef SignalCanvas::portAt(juce::Point<int> p) const
     return best;
 }
 
-std::optional<session::PatchConnection> SignalCanvas::cableAt(juce::Point<int> p) const
+std::optional<session::PatchConnection> SignalCanvas::cableAt(juce::Point<int> p, float tolerance) const
 {
-    constexpr float kCablePickTol = 6.0f;
     const auto pf = p.toFloat();
     std::optional<session::PatchConnection> best;
-    float bestDist = kCablePickTol;
+    float bestDist = tolerance;
 
     for (const auto& c : connections_)
     {
@@ -896,7 +895,13 @@ void SignalCanvas::itemDropped(const SourceDetails& details)
     // card centred on the pointer.
     const auto topLeft = details.localPosition - viewOffset_.value_or(juce::Point<int>{}) -
                          juce::Point<int>(kCardWidth / 2, kCardHeight / 2);
-    addBrowserEntry(ctx_, browserDragId(details.description), topLeft.toFloat());
+
+    // Dropped onto a cable, the node goes *into* that cable instead of onto
+    // the end of the chain (#142). Landing in the middle of a chain was
+    // otherwise impossible without adding the plugin and rewiring by hand,
+    // even though the card already came to rest exactly where it was aimed.
+    const auto target = cableAt(details.localPosition, static_cast<float>(kCardHeight) / 2.0f);
+    addBrowserEntry(ctx_, browserDragId(details.description), topLeft.toFloat(), {}, target);
 }
 
 bool SignalCanvas::isInterestedInFileDrag(const juce::StringArray& files)
