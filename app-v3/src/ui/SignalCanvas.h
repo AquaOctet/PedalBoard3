@@ -126,7 +126,13 @@ public:
     // `modelPosition` is where the card goes, in the coordinates nodes save,
     // already adjusted for the scroll offset and for centring the card on
     // the pointer.
-    std::function<void(juce::Point<float> modelPosition)> onCanvasContextMenu;
+    //
+    // `insertInto` is the cable that card will land across, when there is one:
+    // the menu adds the plugin into that cable rather than onto the end of the
+    // chain (#146). The canvas works it out rather than the bar, because the
+    // canvas is the thing that knows where the cables are drawn.
+    std::function<void(juce::Point<float> modelPosition, std::optional<session::PatchConnection> insertInto)>
+        onCanvasContextMenu;
 
     // The per-plugin mappings dialog (M4 U4): at most one open; opening another
     // node's replaces it. The board mappings panel's Learn... opens it too.
@@ -173,12 +179,20 @@ private:
         bool valid{false};
     };
     PortRef portAt(juce::Point<int>) const;
-    // How close the point has to be to a cable to pick it. Tight for a click,
-    // because a stray pixel should not select a cable you did not mean; a
-    // whole card's half-height for a drop, where the gesture aimed a 170x92
-    // card at the cable and the pointer only happens to be its centre (#142).
+    // Walks every cable currently drawn and returns the one `score` likes
+    // best: smaller is better, nullopt rejects. The two ways of picking a
+    // cable -- a pointer clicking near one, and a card coming to rest across
+    // one -- differ only in that function, so they share the walk (#146).
+    std::optional<session::PatchConnection> bestCable(
+        const std::function<std::optional<float>(const juce::Path&)>& score) const;
+    // How close the pointer has to be to a cable to select it by clicking.
+    // Tight, because a stray pixel should not select a cable you did not mean.
     static constexpr float kCableClickTol = 6.0f;
-    std::optional<session::PatchConnection> cableAt(juce::Point<int>, float tolerance = kCableClickTol) const;
+    std::optional<session::PatchConnection> cableAt(juce::Point<int>) const;
+    // The cable a card dropped here would land across, if any. Not the same
+    // question as cableAt: that one is about the pointer, this one is about
+    // the 170x92 card the pointer is only the centre of (#146).
+    std::optional<session::PatchConnection> cableUnderCardAt(juce::Point<int>) const;
     // The connection feeding a destination port (for grab-to-detach), if any.
     std::optional<session::PatchConnection> connectionInto(const PortRef&) const;
 

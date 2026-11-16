@@ -21,6 +21,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include <algorithm>
+#include <limits>
 #include <unordered_set>
 
 namespace pedalboard3::ui
@@ -732,11 +733,11 @@ SignalCanvas::PortRef SignalCanvas::portAt(juce::Point<int> p) const
     return best;
 }
 
-std::optional<session::PatchConnection> SignalCanvas::cableAt(juce::Point<int> p, float tolerance) const
+std::optional<session::PatchConnection> SignalCanvas::bestCable(
+    const std::function<std::optional<float>(const juce::Path&)>& score) const
 {
-    const auto pf = p.toFloat();
     std::optional<session::PatchConnection> best;
-    float bestDist = tolerance;
+    float bestScore = std::numeric_limits<float>::max();
 
     for (const auto& c : connections_)
     {
@@ -751,16 +752,37 @@ std::optional<session::PatchConnection> SignalCanvas::cableAt(juce::Point<int> p
                       static_cast<float>(from.getY()),
                       static_cast<float>(to.getX()),
                       static_cast<float>(to.getY()));
-        juce::Point<float> nearest;
-        path.getNearestPoint(pf, nearest);
-        const float d = nearest.getDistanceFrom(pf);
-        if (d < bestDist)
+
+        if (const auto s = score(path); s.has_value() && *s < bestScore)
         {
-            bestDist = d;
+            bestScore = *s;
             best = c;
         }
     }
     return best;
+}
+
+std::optional<session::PatchConnection> SignalCanvas::cableAt(juce::Point<int> p) const
+{
+    const auto pf = p.toFloat();
+    return bestCable(
+        [pf](const juce::Path& path) -> std::optional<float>
+        {
+            juce::Point<float> nearest;
+            path.getNearestPoint(pf, nearest);
+            const float d = nearest.getDistanceFrom(pf);
+            if (d > kCableClickTol)
+                return std::nullopt;
+            return d;
+        });
+}
+
+std::optional<session::PatchConnection> SignalCanvas::cableUnderCardAt(juce::Point<int> canvasPoint) const
+{
+    // The card the gesture is actually aiming, placed the way every add path
+    // places it: centred on the pointer.
+    const auto card = juce::Rectangle<int>(kCardWidth, kCardHeight).withCentre(canvasPoint);
+    return bestCable([card](const juce::Path& path) { return canvas::cableUnderCard(path, card); });
 }
 
 std::optional<session::PatchConnection> SignalCanvas::connectionInto(const PortRef& port) const
@@ -810,12 +832,18 @@ void SignalCanvas::mouseDown(const juce::MouseEvent& e)
     selectedCable_ = cableAt(p);
     repaint();
 
-    // Right-click on bare canvas opens Add Plugin, placed where you clicked
-    // (#120). Only on bare canvas: a right-click that landed on a cable has
-    // just selected it, and a menu over the top of that would be answering a
-    // question nobody asked.
-    if (e.mods.isPopupMenu() && !selectedCable_.has_value() && onCanvasContextMenu)
-        onCanvasContextMenu(modelPositionFor(p));
+    // Right-click opens Add Plugin, placed where you clicked (#120), and the
+    // plugin goes into the cable that card lands across (#146).
+    //
+    // This used to skip the menu when the click had selected a cable, on the
+    // grounds that a menu over the top of a fresh selection answered a
+    // question nobody asked. It answers one now: a right-click squarely on a
+    // cable is the plainest way there is to say "put a plugin here", and
+    // refusing it left that gesture as the one place you could not add a
+    // plugin at all. The cable stays selected either way, so Delete still
+    // reaches it.
+    if (e.mods.isPopupMenu() && onCanvasContextMenu)
+        onCanvasContextMenu(modelPositionFor(p), selectedCable_.has_value() ? selectedCable_ : cableUnderCardAt(p));
 }
 
 juce::Point<float> SignalCanvas::modelPositionFor(juce::Point<int> canvasPoint) const
@@ -896,11 +924,11 @@ void SignalCanvas::itemDropped(const SourceDetails& details)
     const auto topLeft = details.localPosition - viewOffset_.value_or(juce::Point<int>{}) -
                          juce::Point<int>(kCardWidth / 2, kCardHeight / 2);
 
-    // Dropped onto a cable, the node goes *into* that cable instead of onto
+    // Dropped across a cable, the node goes *into* that cable instead of onto
     // the end of the chain (#142). Landing in the middle of a chain was
     // otherwise impossible without adding the plugin and rewiring by hand,
     // even though the card already came to rest exactly where it was aimed.
-    const auto target = cableAt(details.localPosition, static_cast<float>(kCardHeight) / 2.0f);
+    const auto target = cableUnderCardAt(details.localPosition);
     addBrowserEntry(ctx_, browserDragId(details.description), topLeft.toFloat(), {}, target);
 }
 

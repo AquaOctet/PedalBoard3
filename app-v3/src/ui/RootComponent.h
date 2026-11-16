@@ -102,10 +102,13 @@ public:
         mappingsPanel_.onOpenDialog = [this](session::NodeId id) { canvas_.openMappings(id); };
         mappingsPanel_.onSelectNode = [this](session::NodeId id) { canvas_.selectNode(id); };
         canvas_.onSelectionChanged = [this](std::optional<session::NodeId> id) { mappingsPanel_.setSelectedNode(id); };
-        // Right-click the board to add a plugin, where you clicked (#120).
-        // This replaced the top bar's [+], which could only ever append to
-        // the end of the chain.
-        canvas_.onCanvasContextMenu = [this](juce::Point<float> at) { transportBar_.openAddPluginMenuAt(at); };
+        // Right-click the board to add a plugin, where you clicked (#120),
+        // and into the cable it lands across (#146). This replaced the top
+        // bar's [+], which could only ever append to the end of the chain --
+        // and for a while so could this, which was the same bug wearing the
+        // other gesture.
+        canvas_.onCanvasContextMenu = [this](juce::Point<float> at, std::optional<session::PatchConnection> insertInto)
+        { transportBar_.openAddPluginMenuAt(at, insertInto); };
         transportBar_.onToggleMappingsPanel = [this] { toggleMappingsPanel(); };
         transportBar_.isMappingsPanelShown = [this] { return mappingsOpen_; };
 
