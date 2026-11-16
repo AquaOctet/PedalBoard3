@@ -15,6 +15,7 @@ namespace pedalboard3::ui
 
 class AppMappingsWindow;
 class RootComponent;
+class TrayIcon;
 
 // Path γ MainWindow — a thin juce::DocumentWindow shell whose content
 // is a vertical stack of TransportBar (h:48), juce::Viewport wrapping
@@ -38,6 +39,10 @@ public:
     ~MainWindow() override;
 
     void closeButtonPressed() override;
+
+    // Bring the window back from the tray (#147). Public because the tray icon
+    // and, on Windows, a second launch of the app both reach for it.
+    void showFromTray();
 
     // Quit through the save prompt (finish pass KD4): Save / Don't Save /
     // Cancel when the board has unsaved changes. App routes
@@ -77,6 +82,10 @@ private:
     juce::ApplicationCommandManager commandManager_;
     std::unique_ptr<RootComponent> root_;
     std::unique_ptr<AppMappingsWindow> appMappingsWindow_;
+    // Null when the desktop has no tray to put it in, which is a real case on
+    // Linux and is why closing consults CloseAction.h rather than the setting
+    // alone (#147).
+    std::unique_ptr<TrayIcon> tray_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainWindow)
 };

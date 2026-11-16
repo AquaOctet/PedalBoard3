@@ -561,6 +561,22 @@ TEST_CASE("Preferences: Open Recent's files round-trip in order", "[session][pre
     REQUIRE(prefs.getRecentFiles().isEmpty());
 }
 
+TEST_CASE("Preferences: closing keeps the app running unless told otherwise", "[session][preferences][tray]")
+{
+    pb3test::TempSettings settings;
+    session::Preferences prefs(settings.file());
+
+    // The default is the whole point of the setting: the close button sits
+    // next to minimise, and on a pedalboard hitting it mid-set should not stop
+    // the audio (#147). Someone who never opens Settings gets that behaviour.
+    REQUIRE(prefs.getCloseToTray());
+
+    prefs.setCloseToTray(false);
+    REQUIRE_FALSE(prefs.getCloseToTray());
+    prefs.setCloseToTray(true);
+    REQUIRE(prefs.getCloseToTray());
+}
+
 TEST_CASE("Preferences: the MMC switch round-trips", "[session][preferences][mmc]")
 {
     pb3test::TempSettings settings;

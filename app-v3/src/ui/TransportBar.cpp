@@ -1080,6 +1080,20 @@ juce::PopupMenu TransportBar::makeSettingsMenu()
                      if (onOpenAppMappings)
                          onOpenAppMappings();
                  });
+    // Closing the window keeps the app running in the tray (#147). A ticked
+    // menu item rather than a dialog: it is one boolean, and inventing a
+    // General Settings window to hold one boolean would be a worse answer
+    // than the menu that already holds ticked items.
+    //
+    // The wording says what happens, not what it is called. "Close to tray"
+    // means nothing to someone who has not met the phrase, and the thing they
+    // want to know before they touch it is whether the app stops.
+    menu.addItem("Closing the window keeps it running",
+                 true,
+                 ctx_.preferences.getCloseToTray(),
+                 [this] { ctx_.preferences.setCloseToTray(!ctx_.preferences.getCloseToTray()); });
+    menu.addSeparator();
+
     // The board's feature switches (optional-features U3, KD4): each feature
     // that is on in Settings, ticked while it is on for THIS board.
     //

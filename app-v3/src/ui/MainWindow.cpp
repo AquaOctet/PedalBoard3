@@ -1,5 +1,8 @@
 #include "MainWindow.h"
 
+#include "CloseAction.h"
+#include "TrayIcon.h"
+
 #include "RootComponent.h"
 
 #include "AboutWindow.h"
@@ -79,6 +82,12 @@ MainWindow::MainWindow(const juce::String& name, AppContext& context)
     restoreWindowPosition();
     setVisible(true);
 
+    // The tray icon exists for the whole run, not only while hidden: creating
+    // it at the moment of closing would be the worst time to discover the
+    // desktop has nowhere to put it (#147). Built here so closeButtonPressed
+    // can ask whether there is a way back before taking the window away.
+    tray_ = std::make_unique<TrayIcon>([this] { showFromTray(); }, [this] { requestQuit(); });
+
     // Again once the content has actually been laid out. The first call
     // cannot know how much of the window's width the OS frame takes, because
     // the content has no size yet; this one can measure it.
@@ -116,7 +125,35 @@ MainWindow::~MainWindow()
 
 void MainWindow::closeButtonPressed()
 {
+    // The close button is next to minimise, and on a pedalboard hitting it
+    // mid-set should not stop the audio (#147). So by default it hides, and
+    // the board keeps playing.
+    //
+    // It hides only when there is a tray icon to get the window back from --
+    // see CloseAction.h for why that condition is not a nicety.
+    const auto action = closeActionFor(ctx_.preferences.getCloseToTray(), tray_ != nullptr && tray_->isAvailable());
+
+    if (action == CloseAction::HideToTray)
+    {
+        // No save prompt. Hiding discards nothing, so asking "save your
+        // changes?" would be asking about a loss that is not happening, and
+        // training people to dismiss the one prompt that does matter.
+        setVisible(false);
+        tray_->announceFirstHide();
+        return;
+    }
+
     juce::JUCEApplication::getInstance()->systemRequestedQuit();
+}
+
+void MainWindow::showFromTray()
+{
+    setVisible(true);
+    // Both, and in this order: a window restored from the tray can come back
+    // minimised, and a window that is merely visible can still be behind the
+    // thing the user was looking at when they went to find it.
+    setMinimised(false);
+    toFront(true);
 }
 
 void MainWindow::changeListenerCallback(juce::ChangeBroadcaster* source)
