@@ -9,6 +9,8 @@
 #include "SystemMeters.h"
 #include "TransportControls.h"
 
+#include "session/Patch.h" // PatchConnection, for the splice target (#146)
+
 #include <juce_animation/juce_animation.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -127,8 +129,10 @@ public:
     void confirmRemovePatch();
 
     // Open the Add Plugin menu at `position` (model coordinates), for the
-    // canvas's right-click (#120).
-    void openAddPluginMenuAt(juce::Point<float> position);
+    // canvas's right-click (#120). `insertInto` is the cable the new card
+    // lands across, when it lands across one (#146).
+    void openAddPluginMenuAt(juce::Point<float> position,
+                             std::optional<session::PatchConnection> insertInto = std::nullopt);
 
     // Switch the Test Tone (Settings > Test Tone, and the Audio Devices
     // dialog's toggle). Public so the UI snapshot tool can drive the real
@@ -165,8 +169,12 @@ private:
 
     // The Add Plugin menu, shared by Plugins > Add Plugin and the canvas's
     // right-click; each item carries its own action. `position` is where the
-    // card goes, or nothing for the end of the chain.
-    juce::PopupMenu makeAddPluginMenu(std::optional<juce::Point<float>> position = std::nullopt);
+    // card goes, or nothing for the end of the chain. `insertInto` is which
+    // cable it goes into; without one the node is appended, which is what
+    // Plugins > Add Plugin has always done and should keep doing -- a menu
+    // opened from the bar points at nowhere in particular (#146).
+    juce::PopupMenu makeAddPluginMenu(std::optional<juce::Point<float>> position = std::nullopt,
+                                      std::optional<session::PatchConnection> insertInto = std::nullopt);
     bool canAddPlugin() const; // Session Idle
     void openFileMenu();
     void openPluginList();

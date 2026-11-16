@@ -670,7 +670,8 @@ bool TransportBar::canAddPlugin() const
     return ctx_.session.getState() == session::Session::State::Idle;
 }
 
-juce::PopupMenu TransportBar::makeAddPluginMenu(std::optional<juce::Point<float>> position)
+juce::PopupMenu TransportBar::makeAddPluginMenu(std::optional<juce::Point<float>> position,
+                                                std::optional<session::PatchConnection> insertInto)
 {
     // Effects-only filter: v3.0 ships as a live-performance effect rack;
     // instruments are sidestepped per the master-plan scope and to dodge
@@ -697,13 +698,14 @@ juce::PopupMenu TransportBar::makeAddPluginMenu(std::optional<juce::Point<float>
                          .setEnabled(false));
     }
 
-    const auto addEntries = [this, &menu, position](const std::vector<browser::Entry>& entries)
+    const auto addEntries = [this, &menu, position, insertInto](const std::vector<browser::Entry>& entries)
     {
         for (const auto& entry : entries)
         {
             juce::PopupMenu::Item item(entry.name);
             item.shortcutKeyDescription = browser::formatTag(entry);
-            item.setAction([this, id = entry.id, position] { addBrowserEntry(ctx_, id, position); });
+            item.setAction([this, id = entry.id, position, insertInto]
+                           { addBrowserEntry(ctx_, id, position, {}, insertInto); });
             menu.addItem(std::move(item));
         }
     };
@@ -716,15 +718,16 @@ juce::PopupMenu TransportBar::makeAddPluginMenu(std::optional<juce::Point<float>
     return menu;
 }
 
-void TransportBar::openAddPluginMenuAt(juce::Point<float> position)
+void TransportBar::openAddPluginMenuAt(juce::Point<float> position, std::optional<session::PatchConnection> insertInto)
 {
     if (!canAddPlugin())
         return;
 
     // At the mouse, not under a button: this one is opened by right-clicking
-    // the board, and the card is going to land where the click was.
-    makeAddPluginMenu(position).showMenuAsync(
-        juce::PopupMenu::Options{}.withMinimumWidth(Pb3LookAndFeel::kMenuMinimumWidth));
+    // the board, and the card is going to land where the click was -- in the
+    // cable it lands across, if it lands across one.
+    makeAddPluginMenu(position, insertInto)
+        .showMenuAsync(juce::PopupMenu::Options{}.withMinimumWidth(Pb3LookAndFeel::kMenuMinimumWidth));
 }
 
 void TransportBar::openPluginList()

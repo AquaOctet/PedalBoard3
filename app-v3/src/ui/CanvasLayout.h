@@ -145,4 +145,32 @@ inline Layout layout(const std::vector<std::optional<juce::Point<int>>>& saved,
     return out;
 }
 
+// Does a card dropped here come to rest across this cable?
+//
+// A drop aims a whole card, not a pixel. The pointer is only incidentally the
+// middle of a 170x92 rectangle, so "is the pointer near the cable" answers a
+// question the user did not ask -- and answering it needed a tolerance in
+// pixels, picked by hand (#142 used half a card's height). The card's own
+// rectangle says the same thing without the invented number, and says it in
+// both axes: a chain runs left to right, so the width is what a drop between
+// two cards actually has to spare.
+//
+// Returns how far the cable runs from the card's centre, so that when a card
+// covers several cables the nearest one wins. nullopt means this card does not
+// reach this cable (#146).
+inline std::optional<float> cableUnderCard(const juce::Path& cable, juce::Rectangle<int> card)
+{
+    const auto centre = card.getCentre().toFloat();
+    juce::Point<float> nearest;
+    cable.getNearestPoint(centre, nearest);
+
+    // The nearest point to the centre rather than any intersection: a cable
+    // clipping one corner of the card is not what the gesture meant, and
+    // taking the closest approach keeps the rule the same one the ranking
+    // uses.
+    if (!card.toFloat().contains(nearest))
+        return std::nullopt;
+    return nearest.getDistanceFrom(centre);
+}
+
 } // namespace pedalboard3::ui::canvas
