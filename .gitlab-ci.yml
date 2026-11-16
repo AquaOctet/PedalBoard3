@@ -275,6 +275,15 @@ build:linux:
   stage: build
   image: "${CI_LINUX_IMAGE}"
   rules: *rules-gate
+  # Start at once rather than waiting out the lint stage. lint:format's median
+  # is 36 s, of which 24 s is runner provisioning and 1.3 s is the actual
+  # check, and build:windows consistently starts 2-3 s after it ends -- 35 s
+  # on the critical path, every pipeline, waiting for a job that cannot fail
+  # in a way these three care about (#148). The cost is that a formatting-only
+  # failure no longer short-circuits the platform builds; `interruptible: true`
+  # and auto_cancel_pending_pipelines mean a corrected push kills the doomed
+  # run quickly.
+  needs: []
   <<: *cache-build
   # ccache: app-v3/CMakeLists.txt finds it in the image and uses it.
   variables:
@@ -308,9 +317,36 @@ build:linux:
 # SaaS, PowerShell), on every MR push. Required (#33).
 build:windows:
   stage: build
-  tags: [ saas-windows-medium-amd64 ]
+  # Which Windows runner the gate uses, chosen by a project variable rather
+  # than pinned here (#148). A tag is a requirement, not a preference: a job
+  # tagged for a runner that is switched off does not fall back to a hosted
+  # one, it sits pending until the project timeout kills it. The variable
+  # defaults to saas-windows-medium-amd64, which is always online; flipping it
+  # to pb3-win-local in Settings > CI/CD > Variables routes this one job onto
+  # the local workstation while someone is actually sat at it, and flipping it
+  # back costs a field, not a merge request.
+  #
+  # release:windows pins the hosted tag literally. It must never follow this.
+  tags: [ "$PB3_WINDOWS_RUNNER" ]
   rules: *rules-gate
+  # Start at once rather than waiting out the lint stage. lint:format's median
+  # is 36 s, of which 24 s is runner provisioning and 1.3 s is the actual
+  # check, and build:windows consistently starts 2-3 s after it ends -- 35 s
+  # on the critical path, every pipeline, waiting for a job that cannot fail
+  # in a way these three care about (#148). The cost is that a formatting-only
+  # failure no longer short-circuits the platform builds; `interruptible: true`
+  # and auto_cancel_pending_pipelines mean a corrected push kills the doomed
+  # run quickly.
+  needs: []
   allow_failure: false
+  # The project default is one hour and this job has already run 3628 s once
+  # (pipeline iid 415, a cache that matched almost nothing: 0% direct hits,
+  # 369 misses, 2362 s of compiling). It passed, but only just, and nothing
+  # here asked for more time -- release:windows carries a timeout for exactly
+  # this reason and the gate carried none. saas-windows-medium-amd64 caps
+  # maximum_timeout at 7200 s, so 2h needs no project-settings change, and a
+  # local runner has no such cap (#148).
+  timeout: 2h
   <<: *cache-build
   before_script: *windows-setup
   variables:
@@ -410,18 +446,12 @@ build:windows:
     # Unit tests in the same job: a separate test job would re-pay the VM boot,
     # cache restore and the whole setup above (~8-10 min) for a ~1 min ctest.
     - ctest --preset $env:PB3_BUILD_PRESET
-  artifacts:
-    paths:
-      - build/windows-dev/
-    # Exclude the ~570 MB CPM dependency tree — see build:linux for the
-    # rationale (tests need our binaries, not the JUCE sources).
-    exclude:
-      - "build/windows-dev/_deps/**/*"
-      # Intermediate objects + CMake internals — see build:linux.
-      - "build/windows-dev/**/CMakeFiles/**"
-      - "build/windows-dev/**/*.obj"
-    expire_in: 1 day
-    when: on_success
+  # No artifacts, deliberately. build:linux and build:macos upload theirs
+  # because test:linux:unit and test:macos:unit `needs:` them; Windows runs
+  # ctest inside this job, so nothing has ever consumed what it uploaded.
+  # Measured at 74.5 s of a 78 s section, on the critical path, every
+  # pipeline, for a folder nobody opened (#148). A Windows build to download
+  # is what release:windows is for.
 
 # macOS Debug build on GitLab.com's saas-macos-medium-m1 (Apple Silicon), on
 # every MR push. Required (#33).
@@ -429,6 +459,7 @@ build:macos:
   stage: build
   tags: [ saas-macos-medium-m1 ]
   rules: *rules-gate
+  needs: [] # see build:linux (#148)
   allow_failure: false
   before_script: *macos-setup
   variables:
@@ -529,17 +560,26 @@ release:windows:
   extends: build:windows
   stage: release
   rules: *rules-release
+  # Hardcoded, and it has to be. `extends` copies build:windows's tags, so
+  # without this line a release would follow $PB3_WINDOWS_RUNNER onto whatever
+  # machine the gate is pointed at -- including a workstation that may be
+  # switched off, or that has a different toolchain from the one releases are
+  # built with. What ships is built on a hosted runner, every time.
+  tags: [ saas-windows-medium-amd64 ]
   # The project default is one hour, and the first real release run spent
   # 59m41s of it in the script, then lost the three packages it had just built
   # when the clock ran out before the artifact upload (#144). Two hours is the
   # most a job can ask for here: saas-windows-medium-amd64 caps
   # maximum_timeout at 7200s, so this needs no project-settings change.
   #
-  # Nearly all of that hour was the build, with a cache that was cold for a
-  # reason worth knowing: GitLab suffixes a cache key with `-protected` on a
-  # protected branch, so these release jobs keep a cache of their own that no
-  # merge request job ever warms. The first run wrote it (20% ccache hits);
-  # later ones start from it.
+  # Nearly all of that hour was the build, against a cold cache. The reason it
+  # was cold is worth stating correctly, because the first version of this
+  # comment got it wrong: it is not the `-protected` key suffix. GitLab adds
+  # that to merge request jobs too (a job on refs/merge-requests/143/head
+  # restores `ccache-build-windows-protected`), so it separates nothing here.
+  # What separates them is `ccache-${CI_JOB_NAME_SLUG}` -- the job name is in
+  # the key, so release:windows and build:windows have never shared a cache.
+  # The first run wrote it (20% ccache hits); later ones start from it.
   timeout: 2h
   variables:
     PB3_BUILD_PRESET: windows-ci
