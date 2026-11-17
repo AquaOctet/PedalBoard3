@@ -24,22 +24,34 @@ same drawing, filed under each platform's own name.
 `app-v3/src/CMakeLists.txt` is the only consumer; the comments there carry the reasoning,
 and this is the index.
 
-**The app icon** goes through `juce_add_gui_app`, which takes exactly two images and
-converts them at configure time -- `AppIcon.icns` inside the bundle on macOS, `icon.ico`
-compiled into the exe's resources on Windows, and nothing at all on Linux.
+**The app icon** is `windows/Pedalboard3.ico` on Windows and `macos/AppIcon.icns` on
+macOS -- the finished files, with all ten and all seven drawn sizes in them.
+
+JUCE has no argument for a finished icon file. `juce_add_gui_app` converts `ICON_BIG` and
+`ICON_SMALL` at configure time into its own `icon.ico` / `AppIcon.icns`, and by the time it
+returns, that path is already written into the info file `juceaide` reads afterwards, so
+overriding the target property is too late. `pb3_use_drawn_icon_file` in
+`app-v3/src/CMakeLists.txt` therefore writes the drawn file over the one JUCE just
+generated, checking the folder and the name first so that a JUCE upgrade which moves either
+stops the build instead of quietly shipping the downscales again.
+
+`ICON_BIG` and `ICON_SMALL` are still passed, because without them JUCE writes no icon file
+to replace, and on Linux they are all there is:
 
 - `ICON_BIG` = `master/pedalboard3-mac-1024.png` on macOS, `juce/icon-big.png` elsewhere.
   Apple's tile needs the transparent margin macOS expects around it; Windows and Linux
   want the square full-bleed.
-- `ICON_SMALL` = `linux/hicolor/32x32/apps/pedalboard3.png`, the hand-drawn 32 px art, on
-  every platform. JUCE picks, per output size, the smaller of the two images that is still
-  big enough, so this lands in the 32 px slot exactly as drawn and the 16 px slot becomes a
-  halving of it rather than of a 1024 px render.
+- `ICON_SMALL` = `linux/hicolor/32x32/apps/pedalboard3.png`, the hand-drawn 32 px art. JUCE
+  picks, per output size, the smaller of the two images that is still big enough.
 
-JUCE has no way to accept a finished `.ico` or `.icns`, so `windows/Pedalboard3.ico` and
-`macos/AppIcon.icns` do not reach the exe or the bundle. `tools/package.ps1` does hand
-`windows/Pedalboard3.ico` to Inno Setup, which takes a file, so the installer wizard and
-the Add/Remove Programs entry show every drawn size.
+`tools/package.ps1` gives Inno Setup the same `windows/Pedalboard3.ico`, so the installer
+wizard and the Add/Remove Programs entry show every drawn size too.
+
+One trap worth knowing about on Windows: the generated `.rc` names the icon file rather
+than containing it, so its text does not change when the icon does, and CMake's Ninja
+custom commands `restat`. Replacing the `.ico` without touching the `.rc` leaves the
+resource compiler un-run and the previous icon inside the exe, through a build that reports
+no problem at all. `pb3_use_drawn_icon_file` touches it.
 
 **The tray icon** (`app-v3/src/ui/TrayIcon.cpp`, `ui/TrayArt.h`) is embedded as binary
 data, because the app-icon conversion above leaves nothing to draw with at runtime:

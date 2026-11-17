@@ -255,12 +255,15 @@ pb3_apply_strict_warnings(pb3_app_core
 # would take).
 #
 # Two images rather than one because JUCE picks, per output size, the smaller
-# of them that is still big enough. ICON_SMALL is the hand-drawn 32px pixel
-# art, so Windows' 32px slot comes out exactly as it was drawn and its 16px
-# slot is a halving of that rather than of a 1024px render; 48 and 256 come
-# from ICON_BIG. (JUCE takes exactly two, which is why the hand-tuned 16, 20,
-# 24 and 48 in resources/icons/windows/Pedalboard3.ico cannot all reach the
-# exe. tools/package.ps1 gives that .ico to the installer, which can take it.)
+# of them that is still big enough: ICON_SMALL is the hand-drawn 32px pixel
+# art, so the 32px slot comes out exactly as it was drawn and the 16px slot is
+# a halving of that rather than of a 1024px render.
+#
+# That is still a halving, though, and 16 and 48 were drawn by hand too. The
+# finished .ico and .icns beside them hold every drawn size, so the block after
+# juce_add_gui_app puts those in place of what JUCE builds here. These two
+# arguments remain because JUCE needs them -- without an icon it writes no
+# icon file for us to replace, and on Linux they are all there is.
 #
 # ICON_BIG differs by platform because the artwork does: Apple's tile needs the
 # transparent margin macOS expects around it, Windows and Linux want the square
@@ -284,6 +287,74 @@ juce_add_gui_app(Pedalboard3
     NEEDS_CURL          FALSE
     NEEDS_WEB_BROWSER   FALSE
 )
+
+# The exe and the bundle get the icon files that were drawn, not the pair of
+# images JUCE just converted. juceaide builds its icon from ICON_BIG and
+# ICON_SMALL and can only hold what it can derive from two pictures, so its
+# 16px is a halved 32 and its 48px is a downscaled 1024. Pedalboard3.ico holds
+# ten hand-tuned sizes and AppIcon.icns seven, and the only way in is to put
+# them where JUCE has just put its own: it offers no argument for a finished
+# icon file, and by the time juce_add_gui_app returns the path is already
+# written into the configure-time info file that juceaide reads afterwards.
+#
+# All of that is JUCE's private arrangement, so nothing here is assumed. The
+# generated folder and the file name are both checked, and a JUCE upgrade that
+# moves either stops the build rather than quietly shipping the downscales
+# again.
+function(pb3_use_drawn_icon_file target drawn generated_name)
+    get_target_property(generated_dir ${target} JUCE_GENERATED_SOURCES_DIRECTORY)
+
+    if(NOT generated_dir)
+        message(FATAL_ERROR
+            "${target} has no JUCE_GENERATED_SOURCES_DIRECTORY. JUCE has moved "
+            "something this build reaches into; see the icon notes in "
+            "app-v3/src/CMakeLists.txt and app-v3/resources/icons/README.md.")
+    endif()
+
+    set(generated "${generated_dir}/${generated_name}")
+
+    if(NOT EXISTS "${generated}")
+        message(FATAL_ERROR
+            "JUCE did not leave a ${generated_name} in '${generated_dir}'. Its "
+            "icon conversion has changed shape, so replacing the result with "
+            "${drawn} would silently do nothing; see the icon notes in "
+            "app-v3/src/CMakeLists.txt.")
+    endif()
+
+    # Editing the icon file alone has to re-run configure, or the copy below
+    # never gets the chance to happen. Registered before the early return, so
+    # it is registered on every configure rather than only on the one that
+    # happens to copy.
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${drawn}")
+
+    file(SHA256 "${drawn}" want)
+    file(SHA256 "${generated}" have)
+
+    if(want STREQUAL have)
+        return()
+    endif()
+
+    file(COPY_FILE "${drawn}" "${generated}")
+
+    # Windows only: the generated .rc names the icon file, so its text does not
+    # change when the icon does, and CMake's Ninja custom commands restat --
+    # without this the resource compiler is never re-run and a build that looks
+    # entirely successful keeps the previous icon inside the exe.
+    set(rc "${generated_dir}/${target}_resources.rc")
+
+    if(EXISTS "${rc}")
+        file(TOUCH_NOCREATE "${rc}")
+    endif()
+endfunction()
+
+if(APPLE)
+    # Unverified by eye: nobody on this project has looked at a Dock icon. The
+    # file is the one iconutil produced from the same artwork the rest of the
+    # set comes from, and CI proves the bundle still builds.
+    pb3_use_drawn_icon_file(Pedalboard3 "${PB3_ICON_DIR}/macos/AppIcon.icns" AppIcon.icns)
+elseif(WIN32)
+    pb3_use_drawn_icon_file(Pedalboard3 "${PB3_ICON_DIR}/windows/Pedalboard3.ico" icon.ico)
+endif()
 
 target_sources(Pedalboard3 PRIVATE main.cpp)
 
