@@ -111,7 +111,12 @@ if (-not $Iscc) {
     }
 }
 if ($Iscc) {
-    $icon = Join-Path $BuildDir 'src/Pedalboard3_artefacts/JuceLibraryCode/icon.ico'
+    # The hand-tuned .ico rather than the one JUCE generates from ICON_BIG /
+    # ICON_SMALL: Inno Setup takes a file, so the wizard and the Add/Remove
+    # Programs entry get all of the drawn sizes (16, 20, 24, 32, 40, 48, ...),
+    # where the exe's own resource can only hold what JUCE builds from two
+    # images. See app-v3/src/CMakeLists.txt above juce_add_gui_app.
+    $icon = Join-Path $PSScriptRoot '../app-v3/resources/icons/windows/Pedalboard3.ico'
     & $Iscc /Qp "/DAppVersion=$version" "/DNumericVersion=$($version -replace '-.*$', '')" `
         "/DStageDir=$((Resolve-Path -LiteralPath $stage).Path)" `
         "/DIconFile=$((Resolve-Path -LiteralPath $icon).Path)" `

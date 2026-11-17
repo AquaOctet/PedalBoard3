@@ -1,21 +1,63 @@
 #include "TrayIcon.h"
 
-#include "Pb3Icon.h"
+#include "Pb3TrayIcons.h"
+#include "TrayArt.h"
 
 namespace pedalboard3::ui
 {
 
+namespace
+{
+// The pixel height the notification area is drawing at. It asks for the
+// system's small-icon size, which is 16 logical pixels scaled by the display:
+// 20 at 125%, 24 at 150%, 32 at 200%. JUCE builds the native icon at whatever
+// size the image happens to be and leaves the shell to rescale, so getting
+// this right is what makes the hand-drawn art arrive intact.
+int trayHeightPx()
+{
+    if (auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
+        return juce::roundToInt(16.0 * display->scale);
+
+    return 16;
+}
+
+juce::Image trayColourArt()
+{
+    switch (trayArtSizeFor(trayHeightPx()))
+    {
+    case 16:
+        return juce::ImageCache::getFromMemory(pb3tray::traycolor16_png, pb3tray::traycolor16_pngSize);
+    case 20:
+        return juce::ImageCache::getFromMemory(pb3tray::traycolor20_png, pb3tray::traycolor20_pngSize);
+    case 24:
+        return juce::ImageCache::getFromMemory(pb3tray::traycolor24_png, pb3tray::traycolor24_pngSize);
+    case 32:
+        return juce::ImageCache::getFromMemory(pb3tray::traycolor32_png, pb3tray::traycolor32_pngSize);
+    case 40:
+        return juce::ImageCache::getFromMemory(pb3tray::traycolor40_png, pb3tray::traycolor40_pngSize);
+    default:
+        return juce::ImageCache::getFromMemory(pb3tray::traycolor48_png, pb3tray::traycolor48_pngSize);
+    }
+}
+} // namespace
+
 TrayIcon::TrayIcon(std::function<void()> onShow, std::function<void()> onQuit)
     : onShow_(std::move(onShow)), onQuit_(std::move(onQuit))
 {
-    const auto icon = juce::ImageCache::getFromMemory(pb3icon::icon_png, pb3icon::icon_pngSize);
-    if (icon.isValid())
+    const auto colour = trayColourArt();
+
+    // The second argument is the template image, and it is what macOS uses in
+    // the menu bar: a black-and-transparent silhouette the system tints for
+    // light and dark menu bars, which JUCE marks as a template for us. It is a
+    // separate drawing, not the colour one -- a menu bar given colour artwork
+    // shows a photo-like blob. Windows and Linux ignore it, and ignore the
+    // colour one on macOS, so both are always passed.
+    const auto templateArt =
+        juce::ImageCache::getFromMemory(pb3tray::TrayIconTemplate_png, pb3tray::TrayIconTemplate_pngSize);
+
+    if (colour.isValid() && templateArt.isValid())
     {
-        // The template image is the second argument, and it is what macOS uses
-        // in the menu bar: a black-and-transparent silhouette the system tints
-        // for light and dark. Passing the colour icon for both would make a
-        // Mac menu bar show a photo-like blob. Windows and Linux ignore it.
-        setIconImage(icon, icon);
+        setIconImage(colour, templateArt);
         setIconTooltip("Pedalboard 3");
     }
 
@@ -25,7 +67,7 @@ TrayIcon::TrayIcon(std::function<void()> onShow, std::function<void()> onQuit)
     // negative costs a quit the user asked a setting to avoid; a false
     // positive strands them with no window. The cheap failure is the right
     // one to risk.
-    available_ = icon.isValid() && getPeer() != nullptr;
+    available_ = colour.isValid() && templateArt.isValid() && getPeer() != nullptr;
 }
 
 TrayIcon::~TrayIcon()
