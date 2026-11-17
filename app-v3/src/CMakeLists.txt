@@ -247,34 +247,36 @@ pb3_apply_strict_warnings(pb3_app_core
 # -----------------------------------------------------------------------------
 # Top-level app shell
 # -----------------------------------------------------------------------------
-# The app icon. JUCE converts these two images into the platform's app icon at
-# configure time: AppIcon.icns in the bundle on macOS, icon.ico compiled into
-# the exe's resources on Windows. On Linux it does nothing at all -- a desktop
-# reads the icon from the hicolor theme by way of a .desktop file, which is
-# packaging this repo does not have yet (resources/icons/README.md says what it
-# would take).
+# The app icon. JUCE converts what it is given here into the platform's app
+# icon at configure time: AppIcon.icns in the bundle on macOS, icon.ico
+# compiled into the exe's resources on Windows.
 #
-# Two images rather than one because JUCE picks, per output size, the smaller
-# of them that is still big enough: ICON_SMALL is the hand-drawn 32px pixel
-# art, so the 32px slot comes out exactly as it was drawn and the 16px slot is
-# a halving of that rather than of a 1024px render.
+# These are the JUCE-facing pair the set ships for exactly this: icon-big.png is
+# the full-bleed square at 1024 and icon-small.png the simplified drawing at 64.
+# Apple is the exception, because its artwork is -- the Mac tile carries the
+# transparent margin macOS expects around it, and a second image would only
+# push a stray size into an .icns that is replaced wholesale below anyway.
 #
-# That is still a halving, though, and 16 and 48 were drawn by hand too. The
-# finished .ico and .icns beside them hold every drawn size, so the block after
-# juce_add_gui_app puts those in place of what JUCE builds here. These two
-# arguments remain because JUCE needs them -- without an icon it writes no
-# icon file for us to replace, and on Linux they are all there is.
+# What JUCE builds out of them is thrown away on the two platforms that have a
+# finished icon file: the block after juce_add_gui_app puts Pedalboard3.ico and
+# AppIcon.icns in its place, because those hold every hand-drawn size and this
+# pair can only hold what JUCE can derive from two pictures. They are still
+# passed because JUCE needs them -- given no icon it writes no icon file for us
+# to replace at all.
 #
-# ICON_BIG differs by platform because the artwork does: Apple's tile needs the
-# transparent margin macOS expects around it, Windows and Linux want the square
-# full-bleed. ICON_SMALL is the same drawing everywhere -- the copy under
-# linux/ is byte-identical to windows/_layers/app-32.png.
+# On Linux they do nothing whatever. JUCE's icon conversion has a branch for
+# macOS, Windows and iOS and none for Linux, so no window icon is embedded and
+# none is generated: a Linux desktop finds the icon through the hicolor theme
+# and a .desktop file, which is packaging this repo does not have yet
+# (resources/icons/README.md says what it would take, and what the alternative
+# costs).
 if(APPLE)
     set(PB3_ICON_BIG ${PB3_ICON_DIR}/master/pedalboard3-mac-1024.png)
+    set(PB3_ICON_SMALL "")
 else()
     set(PB3_ICON_BIG ${PB3_ICON_DIR}/juce/icon-big.png)
+    set(PB3_ICON_SMALL ${PB3_ICON_DIR}/juce/icon-small.png)
 endif()
-set(PB3_ICON_SMALL ${PB3_ICON_DIR}/linux/hicolor/32x32/apps/pedalboard3.png)
 
 juce_add_gui_app(Pedalboard3
     PRODUCT_NAME        "Pedalboard 3"
@@ -283,6 +285,7 @@ juce_add_gui_app(Pedalboard3
     VERSION             "${PROJECT_VERSION}"
     BUNDLE_ID           "com.pedalboard3.app"
     ICON_BIG            "${PB3_ICON_BIG}"
+    # Empty on macOS, which juce_add_gui_app treats as "not given".
     ICON_SMALL          "${PB3_ICON_SMALL}"
     NEEDS_CURL          FALSE
     NEEDS_WEB_BROWSER   FALSE

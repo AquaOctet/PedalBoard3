@@ -41,8 +41,9 @@ to replace, and on Linux they are all there is:
 - `ICON_BIG` = `master/pedalboard3-mac-1024.png` on macOS, `juce/icon-big.png` elsewhere.
   Apple's tile needs the transparent margin macOS expects around it; Windows and Linux
   want the square full-bleed.
-- `ICON_SMALL` = `linux/hicolor/32x32/apps/pedalboard3.png`, the hand-drawn 32 px art. JUCE
-  picks, per output size, the smaller of the two images that is still big enough.
+- `ICON_SMALL` = `juce/icon-small.png` on Windows and Linux -- the pair this set ships for
+  exactly this purpose. macOS passes none: a second image would only push a stray size
+  into an `.icns` that is replaced wholesale anyway.
 
 `tools/package.ps1` gives Inno Setup the same `windows/Pedalboard3.ico`, so the installer
 wizard and the Add/Remove Programs entry show every drawn size too.
@@ -65,6 +66,21 @@ data, because the app-icon conversion above leaves nothing to draw with at runti
   `juce::Image` with no scale factor, so a 36 px image would become a 36 pt menu bar item
   rather than a sharp 18 pt one. They are kept here for whenever that is worth working
   around.
+
+## Not in this set yet
+
+Two things the build has a place for and the artwork has not arrived for:
+
+- `windows/tray-white.ico` and `windows/tray-black.ico`, the single-colour title-bar
+  icon for dark/accent and light title bars. `preview-mono.png` shows the ladder drawn
+  at 16, 20, 24, 32 and 48 px, so it exists; only the `.ico` files are absent here.
+  `macos/menubar/TrayIconTemplate.png` is the same drawing at 18/36/54 for the Mac menu
+  bar, which is not the ladder Windows asks for.
+- `linux/hicolor/symbolic/**`, the symbolic variant a GNOME-style tray wants.
+
+`windows/Pedalboard3.ico` holds 16, 20, 24, 32, 40, 48, 64, 96, 128 and 256 px. It does
+not hold 30, 36 or 42, which are what 125%, 150% and 175% scaling ask for; Windows scales
+the nearest size it finds.
 
 ## Linux packaging
 
