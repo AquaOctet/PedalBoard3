@@ -127,7 +127,7 @@ BoardMappingsPanel::BoardMappingsPanel(AppContext& ctx) : ctx_(ctx), content_(st
 {
     setOpaque(true);
 
-    toggle_.setShape(panelToggleIcon(), false, true, false);
+    toggle_.setShape(panelSideIcon(PanelSide::Bottom), false, true, false);
     toggle_.setTooltip("Hide the mappings panel (Plugins > Mappings Panel brings it back)");
     toggle_.onClick = [this]
     {
@@ -432,9 +432,9 @@ void BoardMappingsPanel::paint(juce::Graphics& g)
     g.fillAll(tokens::bgSidebar);
     g.setColour(tokens::borderDefault);
     g.drawHorizontalLine(0, 0.0f, static_cast<float>(getWidth()));
-    g.setColour(tokens::fgMuted);
-    g.setFont(juce::Font(juce::FontOptions(12.0f).withStyle("Bold")));
-    g.drawText("MAPPINGS", titleArea_, juce::Justification::centredLeft);
+    // No MAPPINGS caption (VR-U4). The MIDI and OSC tabs beside it, and the
+    // "+ Mapping" button at the other end, already say what the panel is.
+    juce::ignoreUnused(titleArea_);
 }
 
 void BoardMappingsPanel::resized()

@@ -83,6 +83,9 @@ set(PB3_TEST_SOURCES
     ../src/ui/EditorWindow.cpp
     ../src/ui/Fonts.cpp
     ../src/ui/Pb3LookAndFeel.cpp
+    # VR-U4's filter bar, for the same reason: JUCE's graphics and nothing else.
+    ../src/ui/SegmentedControl.cpp
+    unit/ui/SegmentedControl_test.cpp
     unit/ui/MappingRows_test.cpp
     unit/control/MidiMapping_test.cpp
     unit/control/MidiRouter_test.cpp

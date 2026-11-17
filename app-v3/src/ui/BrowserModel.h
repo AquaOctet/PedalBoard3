@@ -59,6 +59,17 @@ inline juce::StringArray chipsFor(const std::vector<Entry>& entries)
     return chips;
 }
 
+// The filter to show after the offered set changes: the one in use if it is
+// still there, otherwise All (VR-U4).
+//
+// A scan finishing is the common case, and it rebuilds the filter bar under
+// someone who is in the middle of reading a filtered list. Keeping their
+// choice is the whole of "no filter state is lost".
+inline juce::String keepOrResetChip(const juce::StringArray& chips, const juce::String& current)
+{
+    return chips.contains(current) ? current : kAllChip;
+}
+
 // A search matches the name or the vendor, case-insensitively; a chip other
 // than All keeps only its category.
 inline bool matches(const Entry& e, const juce::String& query, const juce::String& chip)
@@ -101,6 +112,24 @@ inline std::vector<Group> groupsFor(const std::vector<Entry>& entries,
         if (!group->entries.empty())
             groups.push_back(std::move(*group));
     return groups;
+}
+
+// The format every entry in a group shares, or empty when they differ (VR-U4).
+//
+// A caption that repeats on every row of a section is decoration: "VST3" eight
+// times under ALL EFFECTS tells you nothing you could not read off one line.
+// Where a section is mixed, though, the caption is the only thing separating a
+// built-in from a plugin of the same name, so it stays on the rows.
+inline juce::String sharedFormat(const Group& group)
+{
+    if (group.entries.empty())
+        return {};
+
+    const auto& first = group.entries.front().format;
+    for (const auto& e : group.entries)
+        if (e.format != first)
+            return {};
+    return first;
 }
 
 // The Add Plugin menu (UI chrome U3): the effects A to Z, then the built-ins

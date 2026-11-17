@@ -3,6 +3,7 @@
 #include "AppContext.h"
 #include "BrowserModel.h"
 #include "ColourScheme.h"
+#include "SegmentedControl.h"
 
 #include "../session/Patch.h" // PatchConnection, for the splice target (#142)
 
@@ -73,6 +74,9 @@ private:
         bool header{false};
         juce::String title; // header rows
         browser::Entry entry;
+        // The format this row's section shares, or empty when it is mixed: the
+        // header prints it once, or every row prints its own (VR-U4).
+        juce::String sharedFormat;
     };
 
     int getNumRows() override;
@@ -82,9 +86,8 @@ private:
     void changeListenerCallback(juce::ChangeBroadcaster*) override;
 
     void rebuildEntries(); // the known plugins changed
-    void rebuildChips();
+    void rebuildFilters();
     void refilter(); // the search, the chip or the recents changed
-    int layoutChips(juce::Rectangle<int> area, bool apply);
 
     AppContext& ctx_;
     std::vector<browser::Entry> entries_;
@@ -93,7 +96,7 @@ private:
 
     juce::ShapeButton toggle_{"Plugin browser", tokens::fgMuted, tokens::fgPrimary, tokens::accentPrimary};
     juce::TextEditor search_;
-    std::vector<std::unique_ptr<juce::TextButton>> chips_;
+    SegmentedControl filter_;
     juce::ListBox list_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginBrowser)
