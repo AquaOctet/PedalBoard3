@@ -22,7 +22,7 @@ PatchRail::PatchRail(AppContext& ctx) : ctx_(ctx)
 {
     setOpaque(true);
 
-    panelButton_.setShape(panelToggleIcon(), false, true, false);
+    panelButton_.setShape(panelSideIcon(PanelSide::Left), false, true, false);
     panelButton_.setTooltip("Open the patch bank");
     panelButton_.onClick = [this]
     {

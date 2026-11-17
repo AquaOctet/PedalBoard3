@@ -150,6 +150,8 @@ add_library(pb3_app_core STATIC
     ui/FeaturePrompt.h
     ui/FeatureSettingsWindows.cpp
     ui/FeatureSettingsWindows.h
+    ui/SegmentedControl.cpp
+    ui/SegmentedControl.h
     ui/SettingsWindow.cpp
     ui/SettingsWindow.h
     ui/SignalCanvas.cpp
@@ -235,6 +237,7 @@ pb3_apply_strict_warnings(pb3_app_core
     ui/RecorderWindow.cpp
     ui/FeaturePrompt.cpp
     ui/FeatureSettingsWindows.cpp
+    ui/SegmentedControl.cpp
     ui/SettingsWindow.cpp
     ui/SignalCanvas.cpp
     ui/StatusBar.cpp

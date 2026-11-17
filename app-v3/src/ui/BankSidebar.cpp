@@ -34,7 +34,7 @@ BankSidebar::BankSidebar(AppContext& ctx) : ctx_(ctx)
     list_.setColour(juce::ListBox::outlineColourId, juce::Colours::transparentBlack);
     addAndMakeVisible(list_);
 
-    collapseButton_.setShape(panelToggleIcon(), false, true, false);
+    collapseButton_.setShape(panelSideIcon(PanelSide::Left), false, true, false);
     collapseButton_.setTooltip("Collapse the patch bank to its strip");
     collapseButton_.onClick = [this]
     {
@@ -98,13 +98,11 @@ void BankSidebar::paint(juce::Graphics& g)
     g.drawHorizontalLine(getHeight() - kFooterHeight, 0.0f, static_cast<float>(getWidth() - 1));
 
     auto area = getLocalBounds().reduced(kPad, 0);
-    const auto header = area.removeFromTop(kHeaderHeight);
+    // No BANK caption (VR-U4). The board's name sits on the next line with its
+    // patch count beside it, and the rows below are patches: nothing here was
+    // ever in doubt, and the word was one of six shouting at once.
+    area.removeFromTop(kHeaderHeight);
     g.setColour(tokens::fgMuted);
-    g.setFont(juce::Font(juce::FontOptions(12.0f).withStyle("Bold")));
-    // After the toggle, which now takes a 36 px cell so its icon lines up
-    // with the top bar's (#120); the label follows the cell, not the icon.
-    g.drawText(
-        "BANK", header.withTrimmedLeft(metrics::kIconButtonSize + metrics::kSpaceSm), juce::Justification::centredLeft);
 
     const auto nameRow = area.removeFromTop(kBoardNameHeight);
     const int patches = ctx_.bankDocument.size();

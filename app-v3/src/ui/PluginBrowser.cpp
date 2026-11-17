@@ -5,6 +5,7 @@
 #include "session/FeatureGate.h"
 
 #include "engine/PluginHost.h"
+#include "Fonts.h"
 #include "Icons.h"
 #include "session/BankDocument.h"
 #include "session/EditHistory.h"
@@ -19,8 +20,6 @@ namespace
 constexpr int kPad = metrics::kSpaceXl;
 constexpr int kHeaderHeight = metrics::kPanelHeader;
 constexpr int kSearchHeight = metrics::kSearchHeight;
-constexpr int kChipHeight = metrics::kRowCompact;
-constexpr int kChipGap = metrics::kSpaceMd;
 constexpr int kFooterHeight = metrics::kFooterBrowser;
 constexpr int kRowHeight = metrics::kRowList;
 
@@ -121,7 +120,7 @@ PluginBrowser::PluginBrowser(AppContext& ctx) : ctx_(ctx)
     setOpaque(true);
     setWantsKeyboardFocus(true);
 
-    toggle_.setShape(panelToggleIcon(), false, true, false);
+    toggle_.setShape(panelSideIcon(PanelSide::Right), false, true, false);
     toggle_.setTooltip("Collapse the plugin browser to its strip (Plugins > Plugin Browser does the same)");
     toggle_.onClick = [this]
     {
@@ -134,6 +133,13 @@ PluginBrowser::PluginBrowser(AppContext& ctx) : ctx_(ctx)
     search_.onTextChange = [this] { refilter(); };
     search_.onEscapeKey = [this] { search_.clear(); };
     addAndMakeVisible(search_);
+
+    filter_.onChange = [this](juce::String chosen)
+    {
+        chip_ = std::move(chosen);
+        refilter();
+    };
+    addAndMakeVisible(filter_);
 
     list_.setModel(this);
     list_.setRowHeight(kRowHeight);
@@ -168,34 +174,15 @@ void PluginBrowser::rebuildEntries()
     entries_ = browserEntries(ctx_);
 
     search_.setTextToShowWhenEmpty("Search " + juce::String(entries_.size()) + " plugins", tokens::fgMuted);
-    rebuildChips();
+    rebuildFilters();
     refilter();
 }
 
-void PluginBrowser::rebuildChips()
+void PluginBrowser::rebuildFilters()
 {
     const auto chips = browser::chipsFor(entries_);
-    if (!chips.contains(chip_))
-        chip_ = browser::kAllChip;
-
-    chips_.clear();
-    for (const auto& name : chips)
-    {
-        auto chip = std::make_unique<juce::TextButton>(name);
-        chip->setClickingTogglesState(false);
-        chip->setToggleState(name == chip_, juce::dontSendNotification);
-        chip->setColour(juce::TextButton::buttonColourId, tokens::bgSecondary);
-        chip->setColour(juce::TextButton::buttonOnColourId, tokens::accentPrimary);
-        chip->onClick = [this, name]
-        {
-            chip_ = name;
-            for (auto& c : chips_)
-                c->setToggleState(c->getButtonText() == chip_, juce::dontSendNotification);
-            refilter();
-        };
-        addAndMakeVisible(*chip);
-        chips_.push_back(std::move(chip));
-    }
+    chip_ = browser::keepOrResetChip(chips, chip_);
+    filter_.setOptions(chips, chip_);
     resized();
 }
 
@@ -204,33 +191,13 @@ void PluginBrowser::refilter()
     rows_.clear();
     for (auto& group : browser::groupsFor(entries_, ctx_.preferences.getRecentPlugins(), search_.getText(), chip_))
     {
-        rows_.push_back({true, group.title, {}});
+        const auto shared = browser::sharedFormat(group);
+        rows_.push_back({true, group.title, {}, shared});
         for (auto& entry : group.entries)
-            rows_.push_back({false, {}, std::move(entry)});
+            rows_.push_back({false, {}, std::move(entry), shared});
     }
     list_.updateContent();
     list_.repaint();
-}
-
-int PluginBrowser::layoutChips(juce::Rectangle<int> area, bool apply)
-{
-    // Wrap the chips into rows; returns the height they take.
-    int x = area.getX();
-    int y = area.getY();
-    const juce::Font font(juce::FontOptions(12.0f));
-    for (auto& chip : chips_)
-    {
-        const int width = juce::roundToInt(juce::GlyphArrangement::getStringWidth(font, chip->getButtonText())) + 18;
-        if (x > area.getX() && x + width > area.getRight())
-        {
-            x = area.getX();
-            y += kChipHeight + kChipGap;
-        }
-        if (apply)
-            chip->setBounds(x, y, width, kChipHeight);
-        x += width + kChipGap;
-    }
-    return chips_.empty() ? 0 : y + kChipHeight - area.getY();
 }
 
 void PluginBrowser::paint(juce::Graphics& g)
@@ -240,11 +207,10 @@ void PluginBrowser::paint(juce::Graphics& g)
     g.drawVerticalLine(0, 0.0f, static_cast<float>(getHeight()));
     g.drawHorizontalLine(getHeight() - kFooterHeight, 1.0f, static_cast<float>(getWidth()));
 
-    const auto header = getLocalBounds().reduced(kPad, 0).removeFromTop(kHeaderHeight);
+    // No PLUGINS caption. A panel of plugins with a "Search 12 plugins" box in
+    // it does not need a label saying what it is, any more than the bank or
+    // the mappings panel did (VR-U4).
     g.setColour(tokens::fgMuted);
-    g.setFont(juce::Font(juce::FontOptions(12.0f).withStyle("Bold")));
-    g.drawText("PLUGINS", header, juce::Justification::centredLeft);
-
     g.setFont(juce::Font(juce::FontOptions(12.0f)));
     g.drawFittedText("Drag onto the canvas, or double-click to add at the end of the chain.",
                      getLocalBounds().removeFromBottom(kFooterHeight).reduced(kPad, 6),
@@ -266,8 +232,9 @@ void PluginBrowser::resized()
     auto body = area.reduced(kPad, 0);
     search_.setBounds(body.removeFromTop(kSearchHeight));
     body.removeFromTop(8);
-    const int chipsHeight = layoutChips(body, true);
-    body.removeFromTop(chipsHeight + 8);
+    const int filterHeight = filter_.heightForWidth(body.getWidth());
+    filter_.setBounds(body.removeFromTop(filterHeight));
+    body.removeFromTop(8);
     list_.setBounds(body.withTrimmedLeft(-6).withTrimmedRight(-6));
 }
 
@@ -295,9 +262,23 @@ void PluginBrowser::paintListBoxItem(int rowNumber, juce::Graphics& g, int width
 
     if (row.header)
     {
+        // Sentence case at a normal weight, not bold capitals: three section
+        // breaks in a list do not need to shout, they need to be findable
+        // (VR-U4).
+        auto header = area.withTrimmedTop(8);
         g.setColour(tokens::fgMuted);
-        g.setFont(juce::Font(juce::FontOptions(11.0f).withStyle("Bold")));
-        g.drawText(row.title.toUpperCase(), area.withTrimmedTop(8), juce::Justification::centredLeft);
+
+        // The format every row below shares, said once here instead of on each
+        // of them -- unless the section is already named after it, because
+        // "Built-in / BUILT-IN" is the same decoration this unit is removing.
+        if (row.sharedFormat.isNotEmpty() && !row.sharedFormat.equalsIgnoreCase(row.title))
+        {
+            g.setFont(fonts::ui(10.0f));
+            g.drawText(row.sharedFormat.toUpperCase(), header.removeFromRight(52), juce::Justification::centredRight);
+        }
+
+        g.setFont(fonts::ui(11.0f, fonts::Weight::Medium));
+        g.drawText(row.title, header, juce::Justification::centredLeft);
         return;
     }
 
@@ -307,17 +288,18 @@ void PluginBrowser::paintListBoxItem(int rowNumber, juce::Graphics& g, int width
         g.fillRoundedRectangle(area.toFloat(), 6.0f);
     }
 
-    const auto bar = area.removeFromLeft(12).withSizeKeepingCentre(5, 20).toFloat();
-    g.setColour(row.entry.builtIn ? tokens::accentInfo : tokens::accentPrimary);
-    g.fillRoundedRectangle(bar, 2.0f);
-
-    g.setColour(tokens::fgMuted);
-    g.setFont(juce::Font(juce::FontOptions(10.0f)));
-    g.drawText(row.entry.format, area.removeFromRight(52), juce::Justification::centredRight);
+    if (row.sharedFormat.isEmpty())
+    {
+        // A mixed section, so the format is the only thing telling a built-in
+        // from a plugin of the same name.
+        g.setColour(tokens::fgMuted);
+        g.setFont(fonts::ui(10.0f));
+        g.drawText(row.entry.format, area.removeFromRight(52), juce::Justification::centredRight);
+    }
 
     g.setColour(tokens::fgPrimary);
-    g.setFont(juce::Font(juce::FontOptions(14.0f)));
-    g.drawText(row.entry.name, area.withTrimmedLeft(4), juce::Justification::centredLeft, true);
+    g.setFont(fonts::ui(14.0f));
+    g.drawText(row.entry.name, area.withTrimmedLeft(metrics::kSpaceMd), juce::Justification::centredLeft, true);
 }
 
 void PluginBrowser::listBoxItemDoubleClicked(int row, const juce::MouseEvent&)
@@ -343,7 +325,7 @@ juce::var PluginBrowser::getDragSourceDescription(const juce::SparseSet<int>& ro
 BrowserRail::BrowserRail()
 {
     setOpaque(true);
-    toggle_.setShape(panelToggleIcon(), false, true, false);
+    toggle_.setShape(panelSideIcon(PanelSide::Right), false, true, false);
     toggle_.setTooltip("Open the plugin browser (Plugins > Plugin Browser does the same)");
     toggle_.onClick = [this]
     {

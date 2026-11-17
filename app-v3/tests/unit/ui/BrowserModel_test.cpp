@@ -122,3 +122,65 @@ TEST_CASE("BrowserModel: the Add Plugin menu lists the effects A to Z, then the 
     REQUIRE(builtIns == juce::StringArray{"Level", "VU Meter"});
     REQUIRE(builtInTags == juce::StringArray{"INT", "INT"});
 }
+
+TEST_CASE("BrowserModel: a section whose rows all share a format has it once, not on every row", "[ui][browser]")
+{
+    // The whole point of VR-U4's row caption: eight rows reading "VST3" under
+    // ALL EFFECTS is eight copies of one fact. sharedFormat answering tells
+    // the browser to print it in the header instead.
+    const browser::Group effects{"All effects",
+                                 {plugin("plugin:a", "Decapitator", "Soundtoys", "Fx|Distortion"),
+                                  plugin("plugin:b", "Pro-Q 3", "FabFilter", "Fx|EQ")}};
+    REQUIRE(browser::sharedFormat(effects) == "VST3");
+
+    const browser::Group builtIns{
+        "Built-in", {builtIn("internal:LevelProcessor", "Level"), builtIn("internal:VuMeterProcessor", "VU Meter")}};
+    REQUIRE(browser::sharedFormat(builtIns) == "Built-in");
+}
+
+TEST_CASE("BrowserModel: a mixed section keeps the format on its rows", "[ui][browser]")
+{
+    // Recently used is the one that mixes, and there the caption is the only
+    // thing separating a built-in from a plugin that shares its name.
+    const browser::Group recents{
+        "Recently used",
+        {builtIn("internal:LevelProcessor", "Level"), plugin("plugin:a", "Decapitator", "Soundtoys", "Fx|Distortion")}};
+    REQUIRE(browser::sharedFormat(recents).isEmpty());
+}
+
+TEST_CASE("BrowserModel: an empty section shares no format", "[ui][browser]")
+{
+    REQUIRE(browser::sharedFormat(browser::Group{"All effects", {}}).isEmpty());
+}
+
+TEST_CASE("BrowserModel: one row is a section that shares its format", "[ui][browser]")
+{
+    // Not a corner case for its own sake: a search narrowing ALL EFFECTS to a
+    // single plugin is the commonest way this group gets one row, and printing
+    // "VST3" twice on one screen is exactly what the rule exists to stop.
+    const browser::Group one{"All effects", {plugin("plugin:a", "Decapitator", "Soundtoys", "Fx|Distortion")}};
+    REQUIRE(browser::sharedFormat(one) == "VST3");
+}
+
+TEST_CASE("BrowserModel: a filter in use survives the options being rebuilt", "[ui][browser]")
+{
+    // The scenario VR-U4's swap has to not break: a scan finishes, the filter
+    // bar is rebuilt underneath someone reading a filtered list, and their
+    // choice is still there.
+    const juce::StringArray before{"All", "Built-in", "Reverb"};
+    const juce::StringArray after{"All", "Built-in", "Delay", "Reverb"};
+
+    REQUIRE(browser::keepOrResetChip(after, "Reverb") == "Reverb");
+    REQUIRE(browser::keepOrResetChip(after, browser::kBuiltInChip) == browser::kBuiltInChip);
+    REQUIRE(browser::keepOrResetChip(before, browser::kAllChip) == browser::kAllChip);
+}
+
+TEST_CASE("BrowserModel: a filter that is no longer offered falls back to All", "[ui][browser]")
+{
+    // Plugins can go away too -- a rescan after a folder is removed. Leaving
+    // the browser filtered to a category nothing files under any more shows an
+    // empty list with no way to tell why.
+    const juce::StringArray after{"All", "Built-in", "Delay"};
+    REQUIRE(browser::keepOrResetChip(after, "Reverb") == browser::kAllChip);
+    REQUIRE(browser::keepOrResetChip({}, "Reverb") == browser::kAllChip);
+}
