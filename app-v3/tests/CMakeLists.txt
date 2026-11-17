@@ -67,6 +67,7 @@ set(PB3_TEST_SOURCES
     unit/ui/CanvasLayout_test.cpp
     unit/ui/CloseAction_test.cpp
     unit/ui/TrayArt_test.cpp
+    unit/ui/TitleBarIcon_test.cpp
     unit/ui/MeterMath_test.cpp
     unit/ui/BankRows_test.cpp
     unit/ui/BodyLayout_test.cpp

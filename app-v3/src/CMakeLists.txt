@@ -50,6 +50,11 @@ juce_add_binary_data(pb3_ui_tray_icons
         ${PB3_ICON_DIR}/windows/_layers/tray-color-40.png
         ${PB3_ICON_DIR}/windows/_layers/tray-color-48.png
         ${PB3_ICON_DIR}/macos/menubar/TrayIconTemplate.png
+        # The title bar's corner on Windows (ui/TitleBarIcon.cpp). Whole .ico
+        # files rather than a ladder of PNGs, because Windows picks the image
+        # out of one itself and these are the files the set ships.
+        ${PB3_ICON_DIR}/windows/tray-black.ico
+        ${PB3_ICON_DIR}/windows/tray-white.ico
 )
 
 # The mockup's fonts (UI chrome plan 2026-09-13-002, KD1): Barlow Semi Condensed,
@@ -160,6 +165,8 @@ add_library(pb3_app_core STATIC
     ui/StatusBar.h
     ui/TransportBar.cpp
     ui/TransportBar.h
+    ui/TitleBarIcon.cpp
+    ui/TitleBarIcon.h
     ui/TrayArt.h
     ui/TrayIcon.cpp
     ui/TrayIcon.h
@@ -244,6 +251,7 @@ pb3_apply_strict_warnings(pb3_app_core
     ui/TransportBar.cpp
     ui/TempoPopover.cpp
     ui/TransportControls.cpp
+    ui/TitleBarIcon.cpp
     ui/TrayIcon.cpp
 )
 
