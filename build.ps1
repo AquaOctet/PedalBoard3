@@ -79,6 +79,73 @@ function Initialize-VsEnv {
     }
 }
 
+# A Visual Studio update retires the versioned MSVC directory that CMakeCache
+# recorded, and moving or reinstalling Ninja does the same to CMAKE_MAKE_PROGRAM.
+# CMake's own message for this names the missing path but not the cause, and not
+# that the cure is the whole directory: deleting CMakeCache.txt alone leaves
+# object files built by the old toolset to be linked against the new one.
+function Reset-StaleToolchain {
+    $cache = Join-Path $buildDir 'CMakeCache.txt'
+    if (-not (Test-Path -LiteralPath $cache)) { return }
+
+    $entries = 'CMAKE_CXX_COMPILER', 'CMAKE_C_COMPILER', 'CMAKE_MAKE_PROGRAM', 'CMAKE_RC_COMPILER'
+    $gone = foreach ($line in Get-Content -LiteralPath $cache) {
+        if ($line -match '^(?<name>[A-Z_]+):(?:FILE)?PATH=(?<path>.+)$' -and
+            $entries -contains $Matches.name -and
+            -not (Test-Path -LiteralPath $Matches.path)) {
+            "  $($Matches.name) -> $($Matches.path)"
+        }
+    }
+
+    if (-not $gone) { return }
+
+    Write-Host "The toolchain $buildDir was configured against is gone:" -ForegroundColor Yellow
+    $gone | ForEach-Object { Write-Host $_ -ForegroundColor Yellow }
+    Write-Host ("Usually a Visual Studio update. Removing $buildDir and configuring from " +
+        'scratch, because a part-cleaned tree links new objects against the old toolset.') -ForegroundColor Yellow
+    Remove-Item -Recurse -Force -LiteralPath $buildDir
+}
+
+# The drawn icon has to actually be inside the exe. JUCE's generated .rc names
+# the icon file rather than containing it, so its text does not change when the
+# icon does, and CMake's Ninja custom commands restat: the resource compiler can
+# be skipped and the previous icon stay in the exe through a build that prints
+# "Built:" exactly as usual. app-v3/src/CMakeLists.txt touches the .rc to stop
+# that happening; this is what notices if it ever stops working.
+#
+# Local only, like the check above: CI configures and builds from an empty
+# directory every time, so there is no previous icon for a build to keep.
+function Assert-DrawnIconInExe {
+    # Relative, like every other path here: the script sets the location to the
+    # repo root before anything else runs.
+    $ico = 'app-v3/resources/icons/windows/Pedalboard3.ico'
+    if (-not (Test-Path -LiteralPath $ico) -or -not (Test-Path -LiteralPath $appExe)) { return }
+
+    $drawn = [System.IO.File]::ReadAllBytes($ico)
+    if ($drawn.Length -lt 22) { return }
+
+    # The first image in the .ico. Its length and offset are the last two fields
+    # of the directory entry that starts at byte 6, and the exe stores the image
+    # data verbatim as an RT_ICON resource.
+    $length = [BitConverter]::ToInt32($drawn, 14)
+    $offset = [BitConverter]::ToInt32($drawn, 18)
+    if ($length -le 0 -or ($offset + $length) -gt $drawn.Length) { return }
+
+    # Latin1 maps every byte to the character of the same value, so this is a
+    # byte search wearing a string's clothes -- and IndexOf is a great deal
+    # faster than walking 30-odd MB of exe in PowerShell.
+    $haystack = [System.Text.Encoding]::Latin1.GetString([System.IO.File]::ReadAllBytes($appExe))
+    $needle = [System.Text.Encoding]::Latin1.GetString($drawn, $offset, $length)
+
+    if ($haystack.IndexOf($needle, [StringComparison]::Ordinal) -ge 0) { return }
+
+    throw ("The build succeeded but the icon in $appExe is not the one in " +
+        "app-v3/resources/icons/windows/Pedalboard3.ico. The resource compiler was skipped: " +
+        "touch $buildDir/src/Pedalboard3_artefacts/JuceLibraryCode/Pedalboard3_resources.rc and " +
+        "build again, or run './build.ps1 clean' first. See pb3_use_drawn_icon_file in " +
+        'app-v3/src/CMakeLists.txt.')
+}
+
 function Invoke-CMake {
     param([string[]]$CMakeArgs)
     & cmake @CMakeArgs
@@ -87,12 +154,14 @@ function Invoke-CMake {
 
 function Invoke-Configure {
     Initialize-VsEnv
+    Reset-StaleToolchain
     Invoke-CMake @('--preset', $preset, '-S', 'app-v3')
 }
 
 function Invoke-Build {
     Invoke-Configure
     Invoke-CMake @('--build', '--preset', $preset)
+    Assert-DrawnIconInExe
 }
 
 switch ($Task) {
