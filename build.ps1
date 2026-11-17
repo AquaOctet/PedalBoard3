@@ -31,6 +31,11 @@ param(
 $ErrorActionPreference = 'Stop'
 # The script lives at the repo root; run everything from there regardless of CWD.
 Set-Location -LiteralPath $PSScriptRoot
+# .NET keeps a current directory of its own, and Set-Location does not touch it:
+# it stays wherever the process started. Anything in here that reaches past the
+# PowerShell providers -- [System.IO.File], for one -- resolves relative paths
+# against this, not against the line above.
+[System.Environment]::CurrentDirectory = $PSScriptRoot
 
 # Packages always come from the release build.
 if ($Task -eq 'package') { $Config = 'release' }
@@ -116,12 +121,27 @@ function Reset-StaleToolchain {
 # Local only, like the check above: CI configures and builds from an empty
 # directory every time, so there is no previous icon for a build to keep.
 function Assert-DrawnIconInExe {
-    # Relative, like every other path here: the script sets the location to the
-    # repo root before anything else runs.
+    # Relative, like every other path here, and resolved to full paths before
+    # they reach .NET: a relative path handed to [System.IO.File] is read
+    # against .NET's own current directory rather than this script's location.
     $ico = 'app-v3/resources/icons/windows/Pedalboard3.ico'
     if (-not (Test-Path -LiteralPath $ico) -or -not (Test-Path -LiteralPath $appExe)) { return }
 
-    $drawn = [System.IO.File]::ReadAllBytes($ico)
+    $icoPath = (Resolve-Path -LiteralPath $ico).ProviderPath
+    $exePath = (Resolve-Path -LiteralPath $appExe).ProviderPath
+
+    try {
+        $drawn = [System.IO.File]::ReadAllBytes($icoPath)
+        $image = [System.IO.File]::ReadAllBytes($exePath)
+    }
+    catch {
+        # The check could not run. A guard that cannot read its inputs has
+        # found nothing wrong with the build, and must not be the reason one
+        # fails.
+        Write-Warning "Could not check the icon in the built exe: $($_.Exception.Message)"
+        return
+    }
+
     if ($drawn.Length -lt 22) { return }
 
     # The first image in the .ico. Its length and offset are the last two fields
@@ -134,7 +154,7 @@ function Assert-DrawnIconInExe {
     # Latin1 maps every byte to the character of the same value, so this is a
     # byte search wearing a string's clothes -- and IndexOf is a great deal
     # faster than walking 30-odd MB of exe in PowerShell.
-    $haystack = [System.Text.Encoding]::Latin1.GetString([System.IO.File]::ReadAllBytes($appExe))
+    $haystack = [System.Text.Encoding]::Latin1.GetString($image)
     $needle = [System.Text.Encoding]::Latin1.GetString($drawn, $offset, $length)
 
     if ($haystack.IndexOf($needle, [StringComparison]::Ordinal) -ge 0) { return }
