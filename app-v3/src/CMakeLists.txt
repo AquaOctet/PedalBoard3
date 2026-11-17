@@ -20,19 +20,41 @@ add_subdirectory(session)
 # control/ (MIDI and OSC) depends only on session/NodeId.h + juce basics.
 add_subdirectory(control)
 
+# The icon set (resources/icons/README.md says what every file is for).
+set(PB3_ICON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../resources/icons)
+
+# The tray icon's artwork (#147). ICON_BIG/ICON_SMALL further down are a
+# build-time conversion into the platform's app icon and leave nothing to draw
+# with at runtime, so the notification-area art is embedded separately.
+#
+# A ladder of sizes rather than one image, because the shell asks for the icon
+# at the tray's own pixel size -- 16 at 100% DPI, 20 at 125%, 24 at 150%, 32 at
+# 200% -- and JUCE builds the native icon at whatever size the juce::Image
+# happens to be, leaving the shell to rescale whatever it is given. Every size
+# here is hand-drawn pixel art rather than a downscale, so handing over the
+# right one is the difference between the drawing and a smudge of it.
+# ui/TrayArt.h picks. These same bytes serve Linux: resources/icons/linux/tray
+# holds identical files at the sizes the two sets share.
+#
+# macOS is the exception and takes TrayIconTemplate.png instead: a menu bar
+# extra wants a black-and-transparent silhouette for the system to tint, and
+# JUCE marks the second image as a template for us.
+juce_add_binary_data(pb3_ui_tray_icons
+    HEADER_NAME Pb3TrayIcons.h
+    NAMESPACE pb3tray
+    SOURCES
+        ${PB3_ICON_DIR}/windows/_layers/tray-color-16.png
+        ${PB3_ICON_DIR}/windows/_layers/tray-color-20.png
+        ${PB3_ICON_DIR}/windows/_layers/tray-color-24.png
+        ${PB3_ICON_DIR}/windows/_layers/tray-color-32.png
+        ${PB3_ICON_DIR}/windows/_layers/tray-color-40.png
+        ${PB3_ICON_DIR}/windows/_layers/tray-color-48.png
+        ${PB3_ICON_DIR}/macos/menubar/TrayIconTemplate.png
+)
+
 # The mockup's fonts (UI chrome plan 2026-09-13-002, KD1): Barlow Semi Condensed,
 # Barlow Condensed and JetBrains Mono, all SIL OFL (licences beside them).
 # ui/Fonts.cpp reads them from the generated Pb3Fonts.h.
-# The app icon, again. ICON_BIG below hands icon.png to JUCE for the platform
-# app icon, which is a build-time conversion and leaves nothing to draw with at
-# runtime. The tray icon (#147) needs it as a juce::Image, so the same file is
-# embedded here rather than a second artwork being invented for a 16x16 slot.
-juce_add_binary_data(pb3_ui_icon
-    HEADER_NAME Pb3Icon.h
-    NAMESPACE pb3icon
-    SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../icon.png
-)
-
 set(PB3_FONT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../resources/fonts)
 juce_add_binary_data(pb3_ui_fonts
     HEADER_NAME Pb3Fonts.h
@@ -136,6 +158,7 @@ add_library(pb3_app_core STATIC
     ui/StatusBar.h
     ui/TransportBar.cpp
     ui/TransportBar.h
+    ui/TrayArt.h
     ui/TrayIcon.cpp
     ui/TrayIcon.h
     ui/TempoPopover.cpp
@@ -164,7 +187,7 @@ target_link_libraries(pb3_app_core
         pb3_session_core
         pb3_control_core
         pb3_ui_fonts
-        pb3_ui_icon
+        pb3_ui_tray_icons
         # juce_animation (JUCE 8): the top bar's folds are eased rather than
         # snapped (#115). Header-and-cpp only, no extra system dependency.
         juce::juce_animation
@@ -224,20 +247,114 @@ pb3_apply_strict_warnings(pb3_app_core
 # -----------------------------------------------------------------------------
 # Top-level app shell
 # -----------------------------------------------------------------------------
-# ICON_BIG: JUCE converts icon.png into the platform app icon at build time
-# (.icns on macOS, .ico on Windows, embedded BinaryData used for the window /
-# taskbar icon on Linux). The 3000x3000 master is downscaled by JUCE for each
-# target size; ICON_SMALL is omitted so JUCE derives it from the big one.
+# The app icon. JUCE converts these two images into the platform's app icon at
+# configure time: AppIcon.icns in the bundle on macOS, icon.ico compiled into
+# the exe's resources on Windows. On Linux it does nothing at all -- a desktop
+# reads the icon from the hicolor theme by way of a .desktop file, which is
+# packaging this repo does not have yet (resources/icons/README.md says what it
+# would take).
+#
+# Two images rather than one because JUCE picks, per output size, the smaller
+# of them that is still big enough: ICON_SMALL is the hand-drawn 32px pixel
+# art, so the 32px slot comes out exactly as it was drawn and the 16px slot is
+# a halving of that rather than of a 1024px render.
+#
+# That is still a halving, though, and 16 and 48 were drawn by hand too. The
+# finished .ico and .icns beside them hold every drawn size, so the block after
+# juce_add_gui_app puts those in place of what JUCE builds here. These two
+# arguments remain because JUCE needs them -- without an icon it writes no
+# icon file for us to replace, and on Linux they are all there is.
+#
+# ICON_BIG differs by platform because the artwork does: Apple's tile needs the
+# transparent margin macOS expects around it, Windows and Linux want the square
+# full-bleed. ICON_SMALL is the same drawing everywhere -- the copy under
+# linux/ is byte-identical to windows/_layers/app-32.png.
+if(APPLE)
+    set(PB3_ICON_BIG ${PB3_ICON_DIR}/master/pedalboard3-mac-1024.png)
+else()
+    set(PB3_ICON_BIG ${PB3_ICON_DIR}/juce/icon-big.png)
+endif()
+set(PB3_ICON_SMALL ${PB3_ICON_DIR}/linux/hicolor/32x32/apps/pedalboard3.png)
+
 juce_add_gui_app(Pedalboard3
     PRODUCT_NAME        "Pedalboard 3"
     COMPANY_NAME        "OpenZephyr LLC"
     COMPANY_COPYRIGHT   "Copyright (c) 2026 OpenZephyr LLC"
     VERSION             "${PROJECT_VERSION}"
     BUNDLE_ID           "com.pedalboard3.app"
-    ICON_BIG            "${CMAKE_SOURCE_DIR}/icon.png"
+    ICON_BIG            "${PB3_ICON_BIG}"
+    ICON_SMALL          "${PB3_ICON_SMALL}"
     NEEDS_CURL          FALSE
     NEEDS_WEB_BROWSER   FALSE
 )
+
+# The exe and the bundle get the icon files that were drawn, not the pair of
+# images JUCE just converted. juceaide builds its icon from ICON_BIG and
+# ICON_SMALL and can only hold what it can derive from two pictures, so its
+# 16px is a halved 32 and its 48px is a downscaled 1024. Pedalboard3.ico holds
+# ten hand-tuned sizes and AppIcon.icns seven, and the only way in is to put
+# them where JUCE has just put its own: it offers no argument for a finished
+# icon file, and by the time juce_add_gui_app returns the path is already
+# written into the configure-time info file that juceaide reads afterwards.
+#
+# All of that is JUCE's private arrangement, so nothing here is assumed. The
+# generated folder and the file name are both checked, and a JUCE upgrade that
+# moves either stops the build rather than quietly shipping the downscales
+# again.
+function(pb3_use_drawn_icon_file target drawn generated_name)
+    get_target_property(generated_dir ${target} JUCE_GENERATED_SOURCES_DIRECTORY)
+
+    if(NOT generated_dir)
+        message(FATAL_ERROR
+            "${target} has no JUCE_GENERATED_SOURCES_DIRECTORY. JUCE has moved "
+            "something this build reaches into; see the icon notes in "
+            "app-v3/src/CMakeLists.txt and app-v3/resources/icons/README.md.")
+    endif()
+
+    set(generated "${generated_dir}/${generated_name}")
+
+    if(NOT EXISTS "${generated}")
+        message(FATAL_ERROR
+            "JUCE did not leave a ${generated_name} in '${generated_dir}'. Its "
+            "icon conversion has changed shape, so replacing the result with "
+            "${drawn} would silently do nothing; see the icon notes in "
+            "app-v3/src/CMakeLists.txt.")
+    endif()
+
+    # Editing the icon file alone has to re-run configure, or the copy below
+    # never gets the chance to happen. Registered before the early return, so
+    # it is registered on every configure rather than only on the one that
+    # happens to copy.
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${drawn}")
+
+    file(SHA256 "${drawn}" want)
+    file(SHA256 "${generated}" have)
+
+    if(want STREQUAL have)
+        return()
+    endif()
+
+    file(COPY_FILE "${drawn}" "${generated}")
+
+    # Windows only: the generated .rc names the icon file, so its text does not
+    # change when the icon does, and CMake's Ninja custom commands restat --
+    # without this the resource compiler is never re-run and a build that looks
+    # entirely successful keeps the previous icon inside the exe.
+    set(rc "${generated_dir}/${target}_resources.rc")
+
+    if(EXISTS "${rc}")
+        file(TOUCH_NOCREATE "${rc}")
+    endif()
+endfunction()
+
+if(APPLE)
+    # Unverified by eye: nobody on this project has looked at a Dock icon. The
+    # file is the one iconutil produced from the same artwork the rest of the
+    # set comes from, and CI proves the bundle still builds.
+    pb3_use_drawn_icon_file(Pedalboard3 "${PB3_ICON_DIR}/macos/AppIcon.icns" AppIcon.icns)
+elseif(WIN32)
+    pb3_use_drawn_icon_file(Pedalboard3 "${PB3_ICON_DIR}/windows/Pedalboard3.ico" icon.ico)
+endif()
 
 target_sources(Pedalboard3 PRIVATE main.cpp)
 

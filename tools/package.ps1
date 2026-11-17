@@ -111,7 +111,12 @@ if (-not $Iscc) {
     }
 }
 if ($Iscc) {
-    $icon = Join-Path $BuildDir 'src/Pedalboard3_artefacts/JuceLibraryCode/icon.ico'
+    # The same hand-tuned .ico the exe carries, taken from the source tree
+    # rather than from the build folder: the wizard and the Add/Remove Programs
+    # entry then show all ten drawn sizes, and the installer's icon cannot
+    # quietly differ from the application's. See pb3_use_drawn_icon_file in
+    # app-v3/src/CMakeLists.txt.
+    $icon = Join-Path $PSScriptRoot '../app-v3/resources/icons/windows/Pedalboard3.ico'
     & $Iscc /Qp "/DAppVersion=$version" "/DNumericVersion=$($version -replace '-.*$', '')" `
         "/DStageDir=$((Resolve-Path -LiteralPath $stage).Path)" `
         "/DIconFile=$((Resolve-Path -LiteralPath $icon).Path)" `
