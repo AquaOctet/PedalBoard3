@@ -15,6 +15,7 @@ namespace pedalboard3::ui
 
 class AppMappingsWindow;
 class RootComponent;
+class TitleBarIcon;
 class TrayIcon;
 
 // Path γ MainWindow — a thin juce::DocumentWindow shell whose content
@@ -86,6 +87,9 @@ private:
     // Linux and is why closing consults CloseAction.h rather than the setting
     // alone (#147).
     std::unique_ptr<TrayIcon> tray_;
+    // The single-colour drawing in the title bar's corner on Windows; a
+    // do-nothing object on the other two, which have no such corner.
+    std::unique_ptr<TitleBarIcon> titleBarIcon_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainWindow)
 };

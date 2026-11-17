@@ -12,10 +12,11 @@ same drawing, filed under each platform's own name.
 |---|---|
 | macOS Dock / Finder | `macos/AppIcon.icns` (or build it from `macos/AppIcon.iconset` with `iconutil -c icns AppIcon.iconset` on a Mac, which is the most complete) |
 | macOS menu bar status item | `macos/menubar/TrayIconTemplate.png` + `@2x` / `@3x`. These are template images: black and transparent only, so macOS tints them for light and dark menu bars. |
-| Windows taskbar / exe / shortcuts | `windows/Pedalboard3.ico` (16-256 px; 32 px and below use a simplified drawing) |
+| Windows taskbar / exe / shortcuts | `windows/Pedalboard3.ico` (16-256 px, including 30/36/42 px for 125/150/175% scaling) |
+| Windows title bar (the small top-left icon) | `windows/tray-white.ico` on a dark or accent-coloured bar, `windows/tray-black.ico` on a light one. Set as the window's small icon only, so the taskbar keeps the colour icon. |
 | Windows notification area (tray) | `windows/tray.ico` (full colour, 16-48 px; works on light and dark taskbars) |
 | Linux app icon | `linux/hicolor/**` -> copy to `/usr/share/icons/hicolor/` (or `~/.local/share/icons/hicolor/`) and use `Icon=pedalboard3` in the `.desktop` file |
-| Linux tray (KDE, GNOME with AppIndicator, XFCE, etc.) | `linux/tray/pedalboard3-tray-{16,22,24,32,48}.png` (full colour) |
+| Linux tray (KDE, GNOME with AppIndicator, XFCE, etc.) | `linux/tray/pedalboard3-tray-{16,22,24,32,48}.png` (full colour). Single-colour alternatives in `linux/tray/mono/`, and `linux/hicolor/symbolic/apps/pedalboard3-symbolic.svg`, which GNOME and KDE recolour to match the panel themselves. |
 | JUCE `ICON_BIG` / `ICON_SMALL` | `juce/icon-big.png`, `juce/icon-small.png` |
 | Masters | `master/*.svg` (Mac tile with margin, full-bleed square, one-colour glyph) |
 
@@ -67,20 +68,16 @@ data, because the app-icon conversion above leaves nothing to draw with at runti
   rather than a sharp 18 pt one. They are kept here for whenever that is worth working
   around.
 
-## Not in this set yet
+**The title-bar icon** on Windows (`app-v3/src/ui/TitleBarIcon.cpp`) is the single-colour
+drawing, because a full-colour icon at 16 px in a corner is mush. It goes in as the window's
+`ICON_SMALL` only: Windows takes the title bar from `ICON_SMALL` and the taskbar and Alt+Tab
+from `ICON_BIG`, so setting one leaves the other on the colour icon.
+`juce::DocumentWindow::setIcon` sets both, which is why this does not use it.
 
-Two things the build has a place for and the artwork has not arrived for:
-
-- `windows/tray-white.ico` and `windows/tray-black.ico`, the single-colour title-bar
-  icon for dark/accent and light title bars. `preview-mono.png` shows the ladder drawn
-  at 16, 20, 24, 32 and 48 px, so it exists; only the `.ico` files are absent here.
-  `macos/menubar/TrayIconTemplate.png` is the same drawing at 18/36/54 for the Mac menu
-  bar, which is not the ladder Windows asks for.
-- `linux/hicolor/symbolic/**`, the symbolic variant a GNOME-style tray wants.
-
-`windows/Pedalboard3.ico` holds 16, 20, 24, 32, 40, 48, 64, 96, 128 and 256 px. It does
-not hold 30, 36 or 42, which are what 125%, 150% and 175% scaling ask for; Windows scales
-the nearest size it finds.
+Which of the two depends on how Windows is painting the bar -- `AppsUseLightTheme` under
+`Themes\Personalize`, and `ColorPrevalence` under `DWM`. An accent-coloured bar counts as
+dark whatever the theme says, since Windows only offers accent colours dark enough for white
+caption text.
 
 ## Linux packaging
 

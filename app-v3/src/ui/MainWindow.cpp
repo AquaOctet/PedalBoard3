@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 
 #include "CloseAction.h"
+#include "TitleBarIcon.h"
 #include "TrayIcon.h"
 
 #include "RootComponent.h"
@@ -87,6 +88,10 @@ MainWindow::MainWindow(const juce::String& name, AppContext& context)
     // desktop has nowhere to put it (#147). Built here so closeButtonPressed
     // can ask whether there is a way back before taking the window away.
     tray_ = std::make_unique<TrayIcon>([this] { showFromTray(); }, [this] { requestQuit(); });
+
+    // After setVisible, because the icon goes to the peer's native handle and
+    // there is no peer before the window is on the desktop.
+    titleBarIcon_ = std::make_unique<TitleBarIcon>(*this);
 
     // Again once the content has actually been laid out. The first call
     // cannot know how much of the window's width the OS frame takes, because
