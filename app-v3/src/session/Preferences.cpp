@@ -393,6 +393,22 @@ void Preferences::applyNewPatchDefaults(Patch& patch)
     patch.timeSigDenominator = denominator;
 }
 
+bool Preferences::getCloseToTray()
+{
+    if (auto* store = props_.getUserSettings())
+        return store->getBoolValue("window.closeToTray", true);
+    return true;
+}
+
+void Preferences::setCloseToTray(bool enabled)
+{
+    if (auto* store = props_.getUserSettings())
+    {
+        store->setValue("window.closeToTray", enabled);
+        store->setNeedsToBeSaved(true);
+    }
+}
+
 bool Preferences::getMetronomeClickButton()
 {
     if (auto* store = props_.getUserSettings())

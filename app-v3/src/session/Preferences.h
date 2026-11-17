@@ -138,6 +138,13 @@ public:
     bool getMmcTransport();
     void setMmcTransport(bool enabled);
 
+    // Closing the window keeps the app running in the tray instead of quitting
+    // (#147). On by default: the close button sits next to minimise, and on a
+    // pedalboard hitting it mid-set should not stop the audio. Off restores
+    // the old behaviour, where close quits through the save prompt.
+    bool getCloseToTray();
+    void setCloseToTray(bool enabled);
+
     // The Settings switch for each optional feature (plan
     // docs/plans/2026-09-12-002-feat-optional-features-plan.md, KD2 / KD3):
     // "feature.<key>", session::enabledByDefault until the user sets it.

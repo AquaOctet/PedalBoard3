@@ -23,6 +23,16 @@ add_subdirectory(control)
 # The mockup's fonts (UI chrome plan 2026-09-13-002, KD1): Barlow Semi Condensed,
 # Barlow Condensed and JetBrains Mono, all SIL OFL (licences beside them).
 # ui/Fonts.cpp reads them from the generated Pb3Fonts.h.
+# The app icon, again. ICON_BIG below hands icon.png to JUCE for the platform
+# app icon, which is a build-time conversion and leaves nothing to draw with at
+# runtime. The tray icon (#147) needs it as a juce::Image, so the same file is
+# embedded here rather than a second artwork being invented for a 16x16 slot.
+juce_add_binary_data(pb3_ui_icon
+    HEADER_NAME Pb3Icon.h
+    NAMESPACE pb3icon
+    SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../icon.png
+)
+
 set(PB3_FONT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../resources/fonts)
 juce_add_binary_data(pb3_ui_fonts
     HEADER_NAME Pb3Fonts.h
@@ -57,6 +67,7 @@ add_library(pb3_app_core STATIC
     ui/BodyLayout.h
     ui/BrowserModel.h
     ui/CanvasLayout.h
+    ui/CloseAction.h
     ui/Metrics.h
     ui/CardText.h
     ui/ColourScheme.h
@@ -125,6 +136,8 @@ add_library(pb3_app_core STATIC
     ui/StatusBar.h
     ui/TransportBar.cpp
     ui/TransportBar.h
+    ui/TrayIcon.cpp
+    ui/TrayIcon.h
     ui/TempoPopover.cpp
     ui/TransportControls.cpp
     ui/TempoPopover.h
@@ -151,6 +164,7 @@ target_link_libraries(pb3_app_core
         pb3_session_core
         pb3_control_core
         pb3_ui_fonts
+        pb3_ui_icon
         # juce_animation (JUCE 8): the top bar's folds are eased rather than
         # snapped (#115). Header-and-cpp only, no extra system dependency.
         juce::juce_animation
@@ -204,6 +218,7 @@ pb3_apply_strict_warnings(pb3_app_core
     ui/TransportBar.cpp
     ui/TempoPopover.cpp
     ui/TransportControls.cpp
+    ui/TrayIcon.cpp
 )
 
 # -----------------------------------------------------------------------------
